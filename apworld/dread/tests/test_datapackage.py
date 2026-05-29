@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client.datapackage import DataPackage, DEFAULT_AP_TO_PATCHER  # noqa: E402
+from dread.client.datapackage import DataPackage, DEFAULT_AP_TO_PATCHER  # noqa: E402
 
 
 def test_stub_loads_when_data_dir_missing(tmp_path):

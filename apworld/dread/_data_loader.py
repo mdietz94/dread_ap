@@ -1,11 +1,11 @@
 """Zip-safe data file loader.
 
 The apworld is shipped two ways:
-  * Dev: installed as a folder under ``worlds/dread_archipelago/`` — data
-    files live at ``apworld/dread_archipelago/data/*.json`` on disk.
-  * End user: distributed as ``dread_archipelago.apworld`` (a zip) dropped
+  * Dev: installed as a folder under ``worlds/dread/`` — data
+    files live at ``apworld/dread/data/*.json`` on disk.
+  * End user: distributed as ``dread.apworld`` (a zip) dropped
     into Archipelago's ``custom_worlds/``. Data files live inside the zip
-    at ``dread_archipelago/data/*.json``.
+    at ``dread/data/*.json``.
 
 ``Path(__file__).parent / "data" / *.json`` works for the folder case but
 breaks inside a zip. ``importlib.resources.files()`` handles both

@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client.protocol import (  # noqa: E402
+from dread.client.protocol import (  # noqa: E402
     _to_lua_table, build_receive_pickup_lua, DreadPickupLocation,
 )
 

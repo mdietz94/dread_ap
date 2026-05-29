@@ -40,7 +40,7 @@ import sys
 PORT = 6969
 
 # Packet type bytes (subset; full enum lives in
-# apworld/dread_archipelago/client/lua_packets.py).
+# apworld/dread/client/lua_packets.py).
 PACKET_HANDSHAKE = 0x01
 PACKET_REMOTE_LUA_EXEC = 0x03
 PACKET_LOG_MESSAGE = 0x02

@@ -8,8 +8,8 @@ covers the architecture; [PLAN.md](../PLAN.md) is the original
 implementation plan). 63 unit tests pass; phases 1–5 are complete.
 
 The one load-bearing gap is **logic**. The current
-[apworld/dread_archipelago/Rules.py](../apworld/dread_archipelago/Rules.py)
-is empty and [Regions.py](../apworld/dread_archipelago/Regions.py) uses
+[apworld/dread/Rules.py](../apworld/dread/Rules.py)
+is empty and [Regions.py](../apworld/dread/Regions.py) uses
 a star topology — every region connects directly from Menu with no
 requirements. A generated seed will trivially soft-lock (Power Bomb
 behind a Power Bomb door, Morph Ball behind a Morph Ball gate, etc.).
@@ -38,7 +38,7 @@ scales linearly so Milestone 2 is mechanical.
 - Other 8 areas (Artaria, Burenia, Cataris, Dairon, Ferenia, Ghavoran,
   Hanubia, Itorash). Compile them as a sanity test of the pipeline if
   you have time, but ship them only if their rules-test fixtures pass.
-- The Switch wire layer (`apworld/dread_archipelago/client/*`). Do not
+- The Switch wire layer (`apworld/dread/client/*`). Do not
   touch it.
 - The patcher adapter (`scripts/build_patcher_json.py`). Do not touch it.
 - AP-ID renumbering. The hash-derived IDs in `data/items.json` and
@@ -143,7 +143,7 @@ commit hash and record it in the cache directory.
     │
     │ scripts/cache_randovania_logic.py   (fetch + pin)
     ▼
-apworld/dread_archipelago/data/compiled_rules.json   (intermediate)
+apworld/dread/data/compiled_rules.json   (intermediate)
     │
     │ scripts/extract_dread_rules.py   (the compiler)
     │   - parse header.json → resource db + templates
@@ -151,9 +151,9 @@ apworld/dread_archipelago/data/compiled_rules.json   (intermediate)
     │   - per pickup, compute reachability requirement from Start
     │   - emit per-location rule as a serializable Lua-table-style record
     ▼
-apworld/dread_archipelago/Rules.py    (loads compiled_rules.json, applies add_rule)
-apworld/dread_archipelago/Regions.py  (uses node graph for region-to-region access)
-apworld/dread_archipelago/data/events.json  (event-item pool additions)
+apworld/dread/Rules.py    (loads compiled_rules.json, applies add_rule)
+apworld/dread/Regions.py  (uses node graph for region-to-region access)
+apworld/dread/data/events.json  (event-item pool additions)
 ```
 
 ### Step 1: cache
@@ -259,7 +259,7 @@ loud with the area + node so the gap surfaces immediately.
 
 ### Step 3: emit + load
 
-The compiler emits `apworld/dread_archipelago/data/compiled_rules.json`:
+The compiler emits `apworld/dread/data/compiled_rules.json`:
 
 ```json
 {
@@ -303,7 +303,7 @@ area connection comes from the cross-region docks in the logic JSON
 Add the event names to the AP item pool as `progression` items with
 zero copies in the natural pool (they're location-events, not collectible
 items). The compiler emits the event list to
-`apworld/dread_archipelago/data/events.json`; `World.create_items` adds
+`apworld/dread/data/events.json`; `World.create_items` adds
 one event item per event name; `set_rules` wires each event location's
 `place_locked_item` to its event item.
 
@@ -313,20 +313,20 @@ one event item per event name; `set_rules` wires each event location's
 |---|---|
 | `scripts/cache_randovania_logic.py` | Fetch + pin |
 | `scripts/extract_dread_rules.py` | The compiler |
-| `apworld/dread_archipelago/data/compiled_rules.json` | Compiler output |
-| `apworld/dread_archipelago/data/events.json` | Event item pool |
-| `apworld/dread_archipelago/tests/test_rule_compiler.py` | Unit tests on the compiler |
-| `apworld/dread_archipelago/tests/test_elun_rules.py` | Hand-verified Elun assertions |
+| `apworld/dread/data/compiled_rules.json` | Compiler output |
+| `apworld/dread/data/events.json` | Event item pool |
+| `apworld/dread/tests/test_rule_compiler.py` | Unit tests on the compiler |
+| `apworld/dread/tests/test_elun_rules.py` | Hand-verified Elun assertions |
 | `docs/randovania-logic-port-notes.md` | Where you ended up: what worked, what didn't, what Milestone 2 needs |
 
 ## Files to modify
 
 | Path | Change |
 |---|---|
-| `apworld/dread_archipelago/Rules.py` | Load compiled_rules.json, apply add_rule, set completion_condition |
-| `apworld/dread_archipelago/Regions.py` | Real graph instead of star topology (cross-area docks only — within-area is handled by per-location rules) |
-| `apworld/dread_archipelago/World.py` | Add event items in `create_items`; place_locked_item for events |
-| `apworld/dread_archipelago/data/items.json` | Append event items (DON'T renumber existing AP IDs — append only) |
+| `apworld/dread/Rules.py` | Load compiled_rules.json, apply add_rule, set completion_condition |
+| `apworld/dread/Regions.py` | Real graph instead of star topology (cross-area docks only — within-area is handled by per-location rules) |
+| `apworld/dread/World.py` | Add event items in `create_items`; place_locked_item for events |
+| `apworld/dread/data/items.json` | Append event items (DON'T renumber existing AP IDs — append only) |
 | `CLAUDE.md` | Update Phase 4 status to reflect real rules; bump version slug |
 
 ## Hand-verified assertions for Elun (Milestone 1 acceptance)

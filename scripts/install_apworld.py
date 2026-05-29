@@ -1,14 +1,14 @@
-"""Install apworld/dread_archipelago/ into an Archipelago checkout.
+"""Install apworld/dread/ into an Archipelago checkout.
 
 Two modes:
 
   * ``--mode folder`` (default): copy the package into ``<AP_ROOT>/worlds/
-    dread_archipelago/``. Lets the standard ``Path(__file__).parent /
+    dread/``. Lets the standard ``Path(__file__).parent /
     "data" / *.json`` data loads work, since the package lives on disk
     as files. Best for dev iteration.
 
   * ``--mode apworld``: zip into ``<AP_ROOT>/custom_worlds/
-    dread_archipelago.apworld``. The .apworld layout is what end users
+    dread.apworld``. The .apworld layout is what end users
     install but JSON-via-Path data loads fail inside a zip — only use
     once Items/Locations/Rules switch to ``importlib.resources``.
 
@@ -32,7 +32,7 @@ import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SRC = REPO / "apworld" / "dread_archipelago"
+SRC = REPO / "apworld" / "dread"
 DEFAULT_AP_ROOT = REPO.parent / "smo_archipelago" / "vendor" / "Archipelago"
 
 SKIP_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache",
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--name",
-        default="dread_archipelago",
+        default="dread",
         help="package / file name (folder mode uses worlds/<name>/; "
              "apworld mode uses custom_worlds/<name>.apworld)",
     )

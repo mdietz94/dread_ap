@@ -9,9 +9,9 @@ Inputs:
     — defines the ITEM_* identifier space (cross-checked).
 
 Outputs:
-  * apworld/dread_archipelago/data/items.json
-  * apworld/dread_archipelago/data/locations.json
-  * apworld/dread_archipelago/data/regions.json
+  * apworld/dread/data/items.json
+  * apworld/dread/data/locations.json
+  * apworld/dread/data/regions.json
 
 ID derivation: mirrors smo_archipelago — polynomial hash over the seed
 ``"Metroid Dread" + "maxdietz"`` to pick a 16-bit base; per-row
@@ -30,7 +30,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "vendor" / "open-dread-rando" / "tests" / "test_files" / "patcher_files" / "starter_preset_patcher.json"
-OUT_DIR = ROOT / "apworld" / "dread_archipelago" / "data"
+OUT_DIR = ROOT / "apworld" / "dread" / "data"
 
 # scenario internal name -> AP-facing region display name.
 SCENARIO_TO_REGION = {

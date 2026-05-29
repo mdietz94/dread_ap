@@ -1,6 +1,6 @@
 """Unit tests for lua_packets — pure functions, no network.
 
-Run with:  python -m pytest apworld/dread_archipelago/tests/test_lua_packets.py -v
+Run with:  python -m pytest apworld/dread/tests/test_lua_packets.py -v
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client import lua_packets as lp  # noqa: E402
+from dread.client import lua_packets as lp  # noqa: E402
 
 
 def test_encode_handshake_multiworld():

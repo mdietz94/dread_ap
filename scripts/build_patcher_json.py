@@ -1,7 +1,7 @@
 """Build an open-dread-rando input JSON from AP slot_data.
 
 Thin wrapper around
-``apworld/dread_archipelago/patcher_pipeline.merge_overrides`` — that
+``apworld/dread/patcher_pipeline.merge_overrides`` — that
 module is the single source of truth so both this CLI and the in-client
 ``/patch`` command share one implementation.
 
@@ -28,7 +28,7 @@ from typing import Any
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "apworld"))
 
-from dread_archipelago.patcher_pipeline import _pickup_key, merge_overrides  # noqa: E402
+from dread.patcher_pipeline import _pickup_key, merge_overrides  # noqa: E402
 
 
 def list_pickups(template_path: Path) -> int:

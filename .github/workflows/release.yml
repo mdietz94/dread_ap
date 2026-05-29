@@ -1,6 +1,6 @@
 name: Release apworld
 
-# Builds dread_archipelago.apworld and attaches it to a GitHub Release.
+# Builds dread.apworld and attaches it to a GitHub Release.
 #
 # Triggers:
 #   - Tag push matching `v*` (e.g. `git tag v0.1.0 && git push --tags`).
@@ -49,27 +49,27 @@ jobs:
           mkdir -p dist
           python scripts/install_apworld.py \
             --mode apworld \
-            --output dist/dread_archipelago.apworld
+            --output dist/dread.apworld
 
       - name: Verify zip contents
         run: |
           python - <<'PY'
           import zipfile, sys
-          z = zipfile.ZipFile("dist/dread_archipelago.apworld")
+          z = zipfile.ZipFile("dist/dread.apworld")
           names = z.namelist()
           required = [
-              "dread_archipelago/__init__.py",
-              "dread_archipelago/archipelago.json",
-              "dread_archipelago/World.py",
-              "dread_archipelago/_data_loader.py",
-              "dread_archipelago/patcher_pipeline.py",
-              "dread_archipelago/data/items.json",
-              "dread_archipelago/data/locations.json",
-              "dread_archipelago/data/regions.json",
-              "dread_archipelago/data/compiled_rules.json",
-              "dread_archipelago/data/starter_preset_patcher.json",
-              "dread_archipelago/client/main.py",
-              "dread_archipelago/client/context.py",
+              "dread/__init__.py",
+              "dread/archipelago.json",
+              "dread/World.py",
+              "dread/_data_loader.py",
+              "dread/patcher_pipeline.py",
+              "dread/data/items.json",
+              "dread/data/locations.json",
+              "dread/data/regions.json",
+              "dread/data/compiled_rules.json",
+              "dread/data/starter_preset_patcher.json",
+              "dread/client/main.py",
+              "dread/client/context.py",
           ]
           missing = [n for n in required if n not in names]
           if missing:
@@ -77,7 +77,7 @@ jobs:
               sys.exit(1)
           # The pycache + tests directories must NOT be in the zip.
           forbidden = [n for n in names
-                       if "__pycache__" in n or n.startswith("dread_archipelago/tests/")]
+                       if "__pycache__" in n or n.startswith("dread/tests/")]
           if forbidden:
               print("forbidden entries in .apworld:", forbidden[:5], file=sys.stderr)
               sys.exit(1)
@@ -91,19 +91,19 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/dread_archipelago.apworld
+          files: dist/dread.apworld
           generate_release_notes: true
           fail_on_unmatched_files: true
           # Drop a one-liner so the release page tells users what to do.
           body: |
             ## Installation
 
-            1. Download `dread_archipelago.apworld` (below) and drop it into your
+            1. Download `dread.apworld` (below) and drop it into your
                Archipelago install's `custom_worlds/` directory.
             2. Generate a multiworld using `Metroid Dread` as the game.
             3. Connect with the Dread Client:
                ```
-               python -m worlds.dread_archipelago.client.main \
+               python -m worlds.dread.client.main \
                  --connect <server>:<port> --name <slot> --switch-host <switch-ip>
                ```
             4. From the client, run `/patch <dreadvania-install-dir> <vanilla-romfs-dir>`
@@ -118,6 +118,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: dread_archipelago.apworld
-          path: dist/dread_archipelago.apworld
+          name: dread.apworld
+          path: dist/dread.apworld
           if-no-files-found: error

@@ -1,7 +1,7 @@
 """Convert AP-generated per-slot placements into the patcher overrides JSON.
 
 Now a thin wrapper around
-``apworld/dread_archipelago/patcher_pipeline.placements_to_overrides`` —
+``apworld/dread/patcher_pipeline.placements_to_overrides`` —
 that module is the single source of truth so both this CLI and the
 in-client ``/patch`` command share one implementation.
 
@@ -27,7 +27,7 @@ Usage:
 
     # Extract + convert from a seed zip
     python scripts/seed_to_patcher_overrides.py \\
-        apworld/dread_archipelago/tests/seeds/out/AP_<id>.zip \\
+        apworld/dread/tests/seeds/out/AP_<id>.zip \\
         --slot Samus \\
         --output build/dread_overrides.json
 
@@ -49,7 +49,7 @@ from typing import Any
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "apworld"))
 
-from dread_archipelago.patcher_pipeline import (  # noqa: E402
+from dread.patcher_pipeline import (  # noqa: E402
     CROSS_SLOT_PLACEHOLDER,
     STARTING_AREA_INDEX_TO_LOCATION,
     placements_to_overrides,

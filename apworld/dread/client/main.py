@@ -10,7 +10,7 @@ Standalone usage from inside an Archipelago checkout:
 
 Headless usage (no GUI; useful for the Phase 3 smoke test):
 
-    DREAD_NOGUI=1 python -m worlds.dread_archipelago.client.main \\
+    DREAD_NOGUI=1 python -m worlds.dread.client.main \\
         --connect localhost:38281 --name Samus --switch-host 127.0.0.1
 """
 from __future__ import annotations

@@ -10,8 +10,8 @@ We short-circuit that to keep the dev venv minimal.
 
 Usage:
     python scripts/ap_generate.py \\
-        --player_files_path apworld/dread_archipelago/tests/seeds \\
-        --outputpath apworld/dread_archipelago/tests/seeds/out
+        --player_files_path apworld/dread/tests/seeds \\
+        --outputpath apworld/dread/tests/seeds/out
 """
 from __future__ import annotations
 

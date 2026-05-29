@@ -111,7 +111,7 @@ End-to-end smoke test on real hardware (mirrors smo_archipelago/.claude/skills/s
 
 4. **Phase 5 done** — Beat the final boss, confirm `Init.bBeatenSinceLastReboot` flips and AP server records `Goal Completed`.
 
-5. **Regression** — `pytest apworld/dread_archipelago/tests/` mirrors the smo test layout (host-side, no Switch needed). Bridge wire-protocol tests, datapackage tests, Rules.py logic tests.
+5. **Regression** — `pytest apworld/dread/tests/` mirrors the smo test layout (host-side, no Switch needed). Bridge wire-protocol tests, datapackage tests, Rules.py logic tests.
 
 ## Open question to revisit after Phase 1
 

@@ -15,7 +15,7 @@ compiler produced.
 ### The headline problem
 
 Of 137 compiled rules, **85 (62%) reference at least one event node**.
-Today the lambda compiler in [Rules.py](../apworld/dread_archipelago/Rules.py)
+Today the lambda compiler in [Rules.py](../apworld/dread/Rules.py)
 short-circuits events to `True`:
 
 ```python
@@ -56,7 +56,7 @@ even if part 2 runs long.
    `compiled["victory_condition"]` (currently `{type: event, name: Ship}`)
    and sets the completion_condition accordingly.
 3. A fresh generation smoke run (`scripts/ap_generate.py` against
-   `apworld/dread_archipelago/tests/seeds/dread_smoke.yaml`) produces a
+   `apworld/dread/tests/seeds/dread_smoke.yaml`) produces a
    solvable seed.
 4. A regression test asserts: a rule that depends on an event becomes
    un-satisfiable in a State that lacks the event item.
@@ -77,7 +77,7 @@ even if part 2 runs long.
 - Ammo counting (per the retro, defer to v0.3).
 - Damage thresholds beyond the existing "suit ownership" collapse.
 - Rebuilding the compiler from scratch. Only extend where called out.
-- Touching the wire layer (`apworld/dread_archipelago/client/*`).
+- Touching the wire layer (`apworld/dread/client/*`).
 - Touching the patcher adapter (`scripts/build_patcher_json.py`).
 - Renumbering AP IDs for existing items / locations. APPEND ONLY.
 - Boss/EMMI/cutscene non-actor pickups (the 12 entries in
@@ -172,14 +172,14 @@ Naming convention: `"Event: <name>"` for both the item and the location.
 AP allows the item and its locked location to share a name; this makes
 debugging easier.
 
-**Update [Items.py](../apworld/dread_archipelago/Items.py)** if needed —
+**Update [Items.py](../apworld/dread/Items.py)** if needed —
 the `DreadItemData` dataclass already handles `quantity=0`; the
 `_CLASSIFICATION_MAP` already has `progression`. Probably zero changes
 here. Same for Locations.py — the `pickup_type` is a free-form string,
 "event" is a new value but the validator is loose.
 
 **Update the existing data-integrity tests** in
-[tests/test_data_tables.py](../apworld/dread_archipelago/tests/test_data_tables.py):
+[tests/test_data_tables.py](../apworld/dread/tests/test_data_tables.py):
 - `test_location_count_is_149` → bump to `149 + N_events` and rename to
   something forward-looking like `test_location_count_matches_table_sum`.
 - `test_item_count_at_least_30` already permissive; nothing to change.
@@ -189,7 +189,7 @@ here. Same for Locations.py — the `pickup_type` is a free-form string,
 
 ### A3. Wire World.create_items + set_rules
 
-**[World.py](../apworld/dread_archipelago/World.py) — `create_items`**:
+**[World.py](../apworld/dread/World.py) — `create_items`**:
 
 ```python
 def create_items(self):
@@ -210,7 +210,7 @@ def create_items(self):
         self.multiworld.itempool.append(item)
 ```
 
-**[Rules.py](../apworld/dread_archipelago/Rules.py) — `set_rules`**:
+**[Rules.py](../apworld/dread/Rules.py) — `set_rules`**:
 
 ```python
 def set_rules(world):
@@ -263,7 +263,7 @@ def set_rules(world):
         multiworld.completion_condition[player] = lambda state: True
 ```
 
-**[Rules.py](../apworld/dread_archipelago/Rules.py) — `compile_to_lambda`**,
+**[Rules.py](../apworld/dread/Rules.py) — `compile_to_lambda`**,
 update the event branch:
 
 ```python
@@ -279,7 +279,7 @@ defaults.
 ### A4. Tests for Gate A
 
 Required new tests in
-[tests/test_rule_compiler.py](../apworld/dread_archipelago/tests/test_rule_compiler.py):
+[tests/test_rule_compiler.py](../apworld/dread/tests/test_rule_compiler.py):
 
 ```python
 def test_event_branch_consults_state():
@@ -291,7 +291,7 @@ def test_event_branch_consults_state():
 ```
 
 Plus a new
-[tests/test_event_plumbing.py](../apworld/dread_archipelago/tests/test_event_plumbing.py):
+[tests/test_event_plumbing.py](../apworld/dread/tests/test_event_plumbing.py):
 
 - Asserts the compiled `events` list is non-empty.
 - Asserts every event has both a `region` and a `rule`.
@@ -306,7 +306,7 @@ rule still evaluates the speed condition — i.e. confirm the
 under-constrained behavior is gone.
 
 **Update the smoke seed** at
-[tests/seeds/dread_smoke.yaml](../apworld/dread_archipelago/tests/seeds/dread_smoke.yaml)
+[tests/seeds/dread_smoke.yaml](../apworld/dread/tests/seeds/dread_smoke.yaml)
 only if needed. `accessibility: items` is already correct.
 
 ## Gate B — the medium-impact follow-up
@@ -330,7 +330,7 @@ retro doc, in an internal `cross_region_exits` structure). Extend
 }
 ```
 
-Then rewrite [Regions.py](../apworld/dread_archipelago/Regions.py):
+Then rewrite [Regions.py](../apworld/dread/Regions.py):
 
 - Keep the Menu region.
 - Menu connects ONLY to the starting region (Artaria — derived from the
@@ -353,9 +353,9 @@ Two parts:
 per the retro). Output three artifacts:
 
 ```
-apworld/dread_archipelago/data/compiled_rules_l1.json   (Beginner — current behavior)
-apworld/dread_archipelago/data/compiled_rules_l2.json   (Intermediate)
-apworld/dread_archipelago/data/compiled_rules_l3.json   (Advanced)
+apworld/dread/data/compiled_rules_l1.json   (Beginner — current behavior)
+apworld/dread/data/compiled_rules_l2.json   (Intermediate)
+apworld/dread/data/compiled_rules_l3.json   (Advanced)
 ```
 
 Bake all three so the apworld can swap based on the user option without
@@ -396,7 +396,7 @@ Refresh top-of-file comments in:
 
 Update the "Logic status" section of [CLAUDE.md](../CLAUDE.md) and
 bump `__version__` in
-[apworld/dread_archipelago/__init__.py](../apworld/dread_archipelago/__init__.py)
+[apworld/dread/__init__.py](../apworld/dread/__init__.py)
 to `0.0.1-phase4-logic-m2`.
 
 ### B4. Tests for Gate B
@@ -413,16 +413,16 @@ to `0.0.1-phase4-logic-m2`.
 | Path | Why |
 |---|---|
 | `scripts/extract_dread_rules.py` | Emit per-event rules + cross-region edges + trick-level outputs |
-| `apworld/dread_archipelago/data/compiled_rules.json` | Regenerate with new schema |
-| `apworld/dread_archipelago/data/events.json` | Either restructure or remove (folded into compiled_rules.json) |
-| `apworld/dread_archipelago/data/items.json` | Append event items (DO NOT renumber existing) |
-| `apworld/dread_archipelago/data/locations.json` | Append event locations (DO NOT renumber existing) |
-| `apworld/dread_archipelago/Rules.py` | Event branch → state.has; victory_condition wiring; per-event place_locked_item |
-| `apworld/dread_archipelago/Regions.py` | Real graph from cross_region_edges (Gate B) |
-| `apworld/dread_archipelago/Options.py` | TrickLevel option (Gate B) |
-| `apworld/dread_archipelago/World.py` | Event item creation in `create_items`; docstring refresh |
-| `apworld/dread_archipelago/__init__.py` | Version bump |
-| `apworld/dread_archipelago/tests/test_data_tables.py` | Bump expected counts |
+| `apworld/dread/data/compiled_rules.json` | Regenerate with new schema |
+| `apworld/dread/data/events.json` | Either restructure or remove (folded into compiled_rules.json) |
+| `apworld/dread/data/items.json` | Append event items (DO NOT renumber existing) |
+| `apworld/dread/data/locations.json` | Append event locations (DO NOT renumber existing) |
+| `apworld/dread/Rules.py` | Event branch → state.has; victory_condition wiring; per-event place_locked_item |
+| `apworld/dread/Regions.py` | Real graph from cross_region_edges (Gate B) |
+| `apworld/dread/Options.py` | TrickLevel option (Gate B) |
+| `apworld/dread/World.py` | Event item creation in `create_items`; docstring refresh |
+| `apworld/dread/__init__.py` | Version bump |
+| `apworld/dread/tests/test_data_tables.py` | Bump expected counts |
 | `docs/randovania-logic-port-notes.md` | M2 plumbing retro; what worked / didn't |
 | `CLAUDE.md` | Refresh Status section |
 
@@ -430,10 +430,10 @@ to `0.0.1-phase4-logic-m2`.
 
 | Path | Why |
 |---|---|
-| `apworld/dread_archipelago/tests/test_event_plumbing.py` | Gate A regression coverage |
-| `apworld/dread_archipelago/tests/test_regions.py` | Gate B cross-region coverage |
-| `apworld/dread_archipelago/tests/test_trick_level_files_exist.py` | Gate B trick-level coverage |
-| `apworld/dread_archipelago/data/compiled_rules_l1.json` etc. | Gate B trick-level outputs |
+| `apworld/dread/tests/test_event_plumbing.py` | Gate A regression coverage |
+| `apworld/dread/tests/test_regions.py` | Gate B cross-region coverage |
+| `apworld/dread/tests/test_trick_level_files_exist.py` | Gate B trick-level coverage |
+| `apworld/dread/data/compiled_rules_l1.json` etc. | Gate B trick-level outputs |
 
 ## Pitfalls
 
@@ -489,7 +489,7 @@ to `0.0.1-phase4-logic-m2`.
 10. **Goal detection lives on the Switch, not in AP**. The client
     already reports `StatusUpdate{CLIENT_GOAL}` based on
     `Init.bBeatenSinceLastReboot` (see
-    [client/context.py](../apworld/dread_archipelago/client/context.py)).
+    [client/context.py](../apworld/dread/client/context.py)).
     The completion_condition change is for the AP **generator** to know
     the seed is solvable — it doesn't change the runtime goal signal.
 
@@ -499,15 +499,15 @@ Run, in order:
 
 ```pwsh
 # All existing tests still pass after each change
-python -m pytest apworld/dread_archipelago/tests/ scripts/tests/ -q
+python -m pytest apworld/dread/tests/ scripts/tests/ -q
 
 # Compiler still produces a parseable artifact
 python scripts/extract_dread_rules.py --all
-python -c "import json; print(len(json.load(open('apworld/dread_archipelago/data/compiled_rules.json'))['events']))"
+python -c "import json; print(len(json.load(open('apworld/dread/data/compiled_rules.json'))['events']))"
 
 # Generation smoke test produces a fresh seed
-python scripts/ap_generate.py apworld/dread_archipelago/tests/seeds/dread_smoke.yaml
-ls apworld/dread_archipelago/tests/seeds/out/
+python scripts/ap_generate.py apworld/dread/tests/seeds/dread_smoke.yaml
+ls apworld/dread/tests/seeds/out/
 ```
 
 Per the retro doc, watch for:

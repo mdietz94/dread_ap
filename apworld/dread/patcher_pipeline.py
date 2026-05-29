@@ -43,7 +43,7 @@ STARTING_AREA_INDEX_TO_LOCATION: dict[int, dict[str, str]] = {
 
 # Markers for idempotent re-injection of the telemetry block.
 TELEMETRY_START_MARKER = (
-    "-- BEGIN AP TELEMETRY INJECTION (apworld dread_archipelago.patcher_pipeline)"
+    "-- BEGIN AP TELEMETRY INJECTION (apworld dread.patcher_pipeline)"
 )
 TELEMETRY_END_MARKER = "-- END AP TELEMETRY INJECTION"
 
@@ -248,7 +248,7 @@ def build_telemetry_block(locations: list[dict[str, Any]]) -> str:
 -- atomically when /patch (or scripts/inject_ap_telemetry.py) re-runs.
 --
 -- Wire contract (PC side parses in
--- apworld/dread_archipelago/client/context.py::_handle_collected_indices):
+-- apworld/dread/client/context.py::_handle_collected_indices):
 --   RL.SendIndices("locations:" .. bitfield_bytes)
 -- where bit i of byte b means pickup_index (b*8 + i) is collected.
 

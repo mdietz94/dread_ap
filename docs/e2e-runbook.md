@@ -40,7 +40,7 @@ python scripts\install_apworld.py
 Expected output:
 
 ```
-Installed apworld at <archipelago-root>\custom_worlds\dread_archipelago.apworld
+Installed apworld at <archipelago-root>\custom_worlds\dread.apworld
 ```
 
 After this, Archipelago's Generate.py sees Metroid Dread as a known game.
@@ -87,23 +87,23 @@ For a Dread-only smoke seed:
 
 ```pwsh
 python scripts\ap_generate.py `
-  --player_files_path apworld\dread_archipelago\tests\seeds\dread_smoke.yaml `
-  --outputpath apworld\dread_archipelago\tests\seeds\out
+  --player_files_path apworld\dread\tests\seeds\dread_smoke.yaml `
+  --outputpath apworld\dread\tests\seeds\out
 ```
 
 For the 2-slot Dread + Clique multiworld smoke:
 
 ```pwsh
 python scripts\ap_generate.py `
-  --player_files_path apworld\dread_archipelago\tests\seeds\dread_clique.yaml `
-  --outputpath apworld\dread_archipelago\tests\seeds\out
+  --player_files_path apworld\dread\tests\seeds\dread_clique.yaml `
+  --outputpath apworld\dread\tests\seeds\out
 ```
 
 Expected output (abbreviated):
 
 ```
 ...
-wrote .../apworld/dread_archipelago/tests/seeds/out/AP_<seed-id>.zip
+wrote .../apworld/dread/tests/seeds/out/AP_<seed-id>.zip
 ```
 
 The zip contains:
@@ -117,7 +117,7 @@ The zip contains:
 
 ```pwsh
 python scripts\seed_to_patcher_overrides.py `
-  apworld\dread_archipelago\tests\seeds\out\AP_<seed-id>.zip `
+  apworld\dread\tests\seeds\out\AP_<seed-id>.zip `
   --slot Samus `
   --output build\dread_overrides.json
 ```
@@ -190,7 +190,7 @@ under the Dread mod folder, or symlink it.
 In a separate terminal:
 
 ```pwsh
-python scripts\ap_server.py apworld\dread_archipelago\tests\seeds\out\AP_<seed-id>.archipelago
+python scripts\ap_server.py apworld\dread\tests\seeds\out\AP_<seed-id>.archipelago
 ```
 
 Default port is 38281.
@@ -198,7 +198,7 @@ Default port is 38281.
 ## Step 8 — Start the Dread Client
 
 ```pwsh
-python -m worlds.dread_archipelago.client.main `
+python -m worlds.dread.client.main `
   --connect localhost:38281 `
   --name Samus `
   --switch-host <switch-ip>
@@ -267,12 +267,12 @@ For someone validating the pipeline who just cloned the repo:
 ```pwsh
 git clone <repo> dread_ap
 cd dread_ap
-python -m pytest apworld/dread_archipelago/tests/ scripts/tests/ -q
+python -m pytest apworld/dread/tests/ scripts/tests/ -q
 # Expect: NNN passed
 python scripts/install_apworld.py
 # Skip steps 1, 6, 8, 9 if no Switch — generation + conversion can be
 # verified without hardware.
-python scripts/ap_generate.py --player_files_path apworld/dread_archipelago/tests/seeds/dread_clique.yaml --outputpath apworld/dread_archipelago/tests/seeds/out
-python scripts/seed_to_patcher_overrides.py apworld/dread_archipelago/tests/seeds/out/AP_*.zip --slot Samus --output build/test_overrides.json
+python scripts/ap_generate.py --player_files_path apworld/dread/tests/seeds/dread_clique.yaml --outputpath apworld/dread/tests/seeds/out
+python scripts/seed_to_patcher_overrides.py apworld/dread/tests/seeds/out/AP_*.zip --slot Samus --output build/test_overrides.json
 python scripts/build_patcher_json.py --template vendor/open-dread-rando/tests/test_files/patcher_files/starter_preset_patcher.json --ap-overrides build/test_overrides.json --output build/test_input.json
 ```

@@ -128,7 +128,7 @@ C:\Users\maxwe\Documents\dread_ap\
     ap_generate.py           AP Generate wrapper (to be added Phase 3)
     ap_server.py             AP MultiServer wrapper (to be added Phase 3)
     install_apworld.py       Zip apworld into Archipelago's custom_worlds/
-  apworld/dread_archipelago/  (to be added Phase 4)
+  apworld/dread/  (to be added Phase 4)
     __init__.py              World class + DreadSettings + "Dread Client" Component
     data/
       items.json             ~30 entries (Missile Expansion, Energy Tank, Suit upgrades, beams)
@@ -198,7 +198,7 @@ already wired. `DreadWorld.generate_output` writes a per-slot
 placements JSON; `scripts/seed_to_patcher_overrides.py` converts
 that to the override shape `scripts/build_patcher_json.py` consumes.
 2-slot Dread+Clique fixture lives at
-`apworld/dread_archipelago/tests/seeds/dread_clique.yaml`. End-to-end
+`apworld/dread/tests/seeds/dread_clique.yaml`. End-to-end
 runbook at [docs/e2e-runbook.md](docs/e2e-runbook.md); wire-wiring
 retrospective at [docs/wire-wiring-notes.md](docs/wire-wiring-notes.md).
 186 tests pass. Apworld now slugged `0.0.1-phase4-logic-m2-wire`.
@@ -231,7 +231,7 @@ cd C:\Users\maxwe\Documents\dread_ap
 python scripts\phase1_validate.py <switch-ip>
 
 # Once apworld lands:
-python -m pytest apworld\dread_archipelago\tests\ -v
+python -m pytest apworld\dread\tests\ -v
 ```
 
 ## External paths (outside the repo)

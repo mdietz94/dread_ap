@@ -12,9 +12,9 @@ in a multiworld is the **runtime wire wiring**. The AP→Switch direction
 **Switch→AP direction (the player collecting a pickup in-game → AP
 server seeing a CheckLocations) is a no-op**:
 
-- [context.py:291-297](../apworld/dread_archipelago/client/context.py#L291-L297)
+- [context.py:291-297](../apworld/dread/client/context.py#L291-L297)
   `_dispatch_collected_response` does `del resp` and returns.
-- [context.py:299-310](../apworld/dread_archipelago/client/context.py#L299-L310)
+- [context.py:299-310](../apworld/dread/client/context.py#L299-L310)
   `_on_switch_push` logs the payload bytes and drops them on the floor.
 
 There's also a missing translation step between an AP-generated seed and
@@ -67,7 +67,7 @@ runs long.
    build_patcher_json → produces a romfs/ tree the exlaunch
    sysmodule could serve. Document with an example invocation in
    `docs/e2e-runbook.md`.
-9. A 2-slot test fixture: `apworld/dread_archipelago/tests/seeds/
+9. A 2-slot test fixture: `apworld/dread/tests/seeds/
    dread_clique.yaml` (Dread + Clique). Used by the integration
    tests to prove a real multiworld generates clean.
 10. A short `docs/e2e-runbook.md` walking a user from "fresh Switch
@@ -87,7 +87,7 @@ runs long.
 
 ### A1. Push-frame demux in `lua_executor`
 
-**Today's behavior**: [lua_executor._read_loop](../apworld/dread_archipelago/client/lua_executor.py#L143-L166)
+**Today's behavior**: [lua_executor._read_loop](../apworld/dread/client/lua_executor.py#L143-L166)
 treats every Switch-originated frame as a Lua-exec reply, fulfilling
 the pending future positionally. Push frames (NEW_INVENTORY,
 COLLECTED_INDICES, etc.) interleaving with Lua-exec replies will
@@ -147,7 +147,7 @@ async def _read_loop(self) -> None:
 mirror it exactly. If you can't determine the shape, **stop and ask** —
 guessing wrong here corrupts every Lua call.
 
-Update [tests/test_lua_executor.py](../apworld/dread_archipelago/tests/test_lua_executor.py)'s
+Update [tests/test_lua_executor.py](../apworld/dread/tests/test_lua_executor.py)'s
 `FakeSwitch` to emit push frames in the format you confirm, and add a
 test that asserts pushed frames invoke `on_push` with the right
 `PacketType`.
@@ -172,7 +172,7 @@ implement and test.
 
 **Option (a) — pre-compute and ship as data**:
 - Add a `scripts/extract_pickup_index_map.py` that reads the template
-  and emits `apworld/dread_archipelago/data/pickup_index_map.json`:
+  and emits `apworld/dread/data/pickup_index_map.json`:
   ```json
   [
     {"pickup_index": 0, "scenario": "s010_cave", "actor": "ItemSphere_ChargeBeam"},
@@ -262,17 +262,17 @@ in the explicit polling path.
 Required new tests:
 
 ```
-apworld/dread_archipelago/tests/test_lua_executor.py
+apworld/dread/tests/test_lua_executor.py
   - test_push_frame_routes_to_on_push
   - test_lua_exec_reply_still_routes_to_pending_future
   - test_interleaved_push_and_reply (push arrives between request and reply)
 
-apworld/dread_archipelago/tests/test_pickup_index_map.py
+apworld/dread/tests/test_pickup_index_map.py
   - test_every_actor_location_has_pickup_index
   - test_pickup_indices_are_unique
   - test_pickup_indices_match_template_order  (spot-check 3 known mappings)
 
-apworld/dread_archipelago/tests/test_context_e2e.py
+apworld/dread/tests/test_context_e2e.py
   - test_collected_indices_push_emits_location_checks
   - test_duplicate_indices_dont_double_send
   - test_unknown_index_is_skipped (out-of-range index, e.g. from a
@@ -331,9 +331,9 @@ docstring:
 **Translation rules:**
 
 - For each placement in the Dread slot, look up:
-  - `location_id` → `(scenario, actor)` via `apworld/dread_archipelago/data/locations.json`
+  - `location_id` → `(scenario, actor)` via `apworld/dread/data/locations.json`
   - `item_id` → `(patcher_item_id, quantity)` via
-    `apworld/dread_archipelago/data/items.json`
+    `apworld/dread/data/items.json`
   - If the item is going to ANOTHER player (cross-slot), the caption
     should reflect that ("Sent X to Player N"). For own-slot items,
     use the natural vanilla caption.
@@ -362,11 +362,11 @@ Document the pipeline in
 
 ```pwsh
 # 1. Generate the AP seed (Dread + Clique)
-python scripts/ap_generate.py apworld/dread_archipelago/tests/seeds/dread_clique.yaml
+python scripts/ap_generate.py apworld/dread/tests/seeds/dread_clique.yaml
 
 # 2. Translate the Dread slot to patcher overrides
 python scripts/seed_to_patcher_overrides.py \
-    apworld/dread_archipelago/tests/seeds/out/AP_<id>.zip \
+    apworld/dread/tests/seeds/out/AP_<id>.zip \
     --slot Samus \
     --output build/dread_overrides.json
 
@@ -387,7 +387,7 @@ python -m open_dread_rando \
 #    /atmosphere/contents/010093801237C000/romfs/
 
 # 6. Run the Dread Client (PC side, talks to AP and to the Switch)
-python -m worlds.dread_archipelago.client.main \
+python -m worlds.dread.client.main \
     --connect localhost:38281 --name Samus --switch-host 192.168.1.42
 
 # 7. Boot Dread on the Switch, play, watch items flow
@@ -395,7 +395,7 @@ python -m worlds.dread_archipelago.client.main \
 
 ### B3. 2-slot test fixture
 
-[apworld/dread_archipelago/tests/seeds/dread_clique.yaml](../apworld/dread_archipelago/tests/seeds/dread_clique.yaml):
+[apworld/dread/tests/seeds/dread_clique.yaml](../apworld/dread/tests/seeds/dread_clique.yaml):
 
 ```yaml
 # Dread + Clique 2-slot multiworld smoke test.
@@ -471,7 +471,7 @@ asking questions. Include:
    releases. Test the converter against an actual zip from
    `scripts/ap_generate.py`, not a hand-written fixture. The smoke
    test already produces one at
-   `apworld/dread_archipelago/tests/seeds/out/AP_<id>.zip`.
+   `apworld/dread/tests/seeds/out/AP_<id>.zip`.
 
 6. **Pickup_index for event locations.** Our locations.json now
    includes 184 event locations (M2 Gate A). Those are AP-synthetic and
@@ -506,14 +506,14 @@ asking questions. Include:
 
 | Path | Why |
 |---|---|
-| `apworld/dread_archipelago/client/lua_executor.py` | Type-byte push demux in `_read_loop` |
-| `apworld/dread_archipelago/client/lua_packets.py` | Maybe: add `parse_push_header` helper |
-| `apworld/dread_archipelago/client/context.py` | `_on_switch_push` real parsing; remove or no-op `_dispatch_collected_response` |
-| `apworld/dread_archipelago/client/datapackage.py` | `pickup_index_to_location` lookup |
-| `apworld/dread_archipelago/data/locations.json` | Append `pickup_index` field to actor/EMMI/corex/corpius/cutscene entries |
+| `apworld/dread/client/lua_executor.py` | Type-byte push demux in `_read_loop` |
+| `apworld/dread/client/lua_packets.py` | Maybe: add `parse_push_header` helper |
+| `apworld/dread/client/context.py` | `_on_switch_push` real parsing; remove or no-op `_dispatch_collected_response` |
+| `apworld/dread/client/datapackage.py` | `pickup_index_to_location` lookup |
+| `apworld/dread/data/locations.json` | Append `pickup_index` field to actor/EMMI/corex/corpius/cutscene entries |
 | `scripts/extract_dread_data.py` | Emit `pickup_index` per location (preserve template order) |
-| `apworld/dread_archipelago/tests/test_lua_executor.py` | New push-demux tests |
-| `apworld/dread_archipelago/tests/test_data_tables.py` | Bump assertions to cover new `pickup_index` field |
+| `apworld/dread/tests/test_lua_executor.py` | New push-demux tests |
+| `apworld/dread/tests/test_data_tables.py` | Bump assertions to cover new `pickup_index` field |
 | `docs/randovania-logic-port-notes.md` | Append a wire-wiring section |
 | `CLAUDE.md` | Refresh Status |
 
@@ -522,31 +522,31 @@ asking questions. Include:
 | Path | Why |
 |---|---|
 | `scripts/seed_to_patcher_overrides.py` | Gate B core |
-| `apworld/dread_archipelago/tests/seeds/dread_clique.yaml` | Gate B fixture |
-| `apworld/dread_archipelago/tests/test_pickup_index_map.py` | Map invariants |
-| `apworld/dread_archipelago/tests/test_context_e2e.py` | Fake-AP collected-indices test |
-| `apworld/dread_archipelago/tests/test_seed_to_patcher.py` | Gate B unit tests |
+| `apworld/dread/tests/seeds/dread_clique.yaml` | Gate B fixture |
+| `apworld/dread/tests/test_pickup_index_map.py` | Map invariants |
+| `apworld/dread/tests/test_context_e2e.py` | Fake-AP collected-indices test |
+| `apworld/dread/tests/test_seed_to_patcher.py` | Gate B unit tests |
 | `docs/e2e-runbook.md` | The user-facing E2E playbook |
 
 ## Verification
 
 ```pwsh
 # 1. All pre-existing tests still pass
-python -m pytest apworld/dread_archipelago/tests/ scripts/tests/ -q
+python -m pytest apworld/dread/tests/ scripts/tests/ -q
 
 # 2. Push-demux works against the fake server
-python -m pytest apworld/dread_archipelago/tests/test_lua_executor.py -v
+python -m pytest apworld/dread/tests/test_lua_executor.py -v
 
 # 3. Pickup-index map is consistent
-python -m pytest apworld/dread_archipelago/tests/test_pickup_index_map.py -v
+python -m pytest apworld/dread/tests/test_pickup_index_map.py -v
 
 # 4. Mocked AP receives CheckLocations on collected push
-python -m pytest apworld/dread_archipelago/tests/test_context_e2e.py -v
+python -m pytest apworld/dread/tests/test_context_e2e.py -v
 
 # 5. Generation + seed→patcher pipeline produces a valid romfs JSON
-python scripts/ap_generate.py apworld/dread_archipelago/tests/seeds/dread_clique.yaml
+python scripts/ap_generate.py apworld/dread/tests/seeds/dread_clique.yaml
 python scripts/seed_to_patcher_overrides.py \
-    apworld/dread_archipelago/tests/seeds/out/AP_<id>.zip \
+    apworld/dread/tests/seeds/out/AP_<id>.zip \
     --slot Samus --output build/test_overrides.json
 python scripts/build_patcher_json.py \
     --template vendor/open-dread-rando/tests/test_files/patcher_files/starter_preset_patcher.json \

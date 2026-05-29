@@ -3,8 +3,8 @@
 Reads ``.dread-cache/randovania-logic/{header,Elun,...}.json`` and emits
 two artifacts the apworld consumes:
 
-  apworld/dread_archipelago/data/compiled_rules.json   per-location rule AST
-  apworld/dread_archipelago/data/events.json           event-item pool entries
+  apworld/dread/data/compiled_rules.json   per-location rule AST
+  apworld/dread/data/events.json           event-item pool entries
 
 The serialized AST is intentionally simple — no Python objects, no
 lambdas — so the apworld can re-compile against the live ``player``
@@ -43,7 +43,7 @@ from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".dread-cache" / "randovania-logic"
-DATA_DIR = REPO_ROOT / "apworld" / "dread_archipelago" / "data"
+DATA_DIR = REPO_ROOT / "apworld" / "dread" / "data"
 
 ALL_AREAS = [
     "Artaria", "Burenia", "Cataris", "Dairon", "Elun",

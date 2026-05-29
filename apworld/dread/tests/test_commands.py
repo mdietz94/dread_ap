@@ -7,8 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client.commands import parse_command  # noqa: E402
-from dread_archipelago.client.state import BridgeState  # noqa: E402
+from dread.client.commands import parse_command  # noqa: E402
+from dread.client.state import BridgeState  # noqa: E402
 
 
 def test_empty_line_is_noop():

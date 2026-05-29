@@ -17,7 +17,7 @@ from .protocol import DreadItem, DreadPickupLocation
 
 try:
     # Available when the apworld is importable (i.e. installed under
-    # worlds/dread_archipelago/ or as a .apworld zip in custom_worlds/).
+    # worlds/dread/ or as a .apworld zip in custom_worlds/).
     from .._data_loader import load_json as _load_json
 except ImportError:  # pragma: no cover — defensive
     _load_json = None

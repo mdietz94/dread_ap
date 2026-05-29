@@ -1,5 +1,5 @@
 """Test config — puts the apworld root on sys.path so ``from
-dread_archipelago.client.X import …`` works without an Archipelago
+dread.client.X import …`` works without an Archipelago
 install (the apworld package is normally loaded by AP's worlds.X
 machinery, which we don't have in unit-test isolation).
 
