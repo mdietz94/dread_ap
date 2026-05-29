@@ -14,7 +14,7 @@ in locations.json:
   4. Matches the actual position in the template (spot-checked).
   5. Is NOT present on synthetic event locations.
 
-Run with:  python -m pytest apworld/dread_archipelago/tests/test_pickup_index_map.py -v
+Run with:  python -m pytest apworld/dread/tests/test_pickup_index_map.py -v
 """
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ def test_known_spot_check_index_137_is_first_non_actor(locations):
 def test_datapackage_pickup_index_to_location_id_round_trip():
     """DataPackage.pickup_index_to_location_id should resolve to a valid
     AP location_id, and that ID should resolve back to the same scenario/actor."""
-    from dread_archipelago.client.datapackage import DataPackage  # noqa: E402
+    from dread.client.datapackage import DataPackage  # noqa: E402
 
     dp = DataPackage(apworld_data_dir=DATA)
     # Spot-check index 0
@@ -154,7 +154,7 @@ def test_datapackage_pickup_index_to_location_id_round_trip():
 
 
 def test_datapackage_returns_none_for_unknown_pickup_index():
-    from dread_archipelago.client.datapackage import DataPackage  # noqa: E402
+    from dread.client.datapackage import DataPackage  # noqa: E402
 
     dp = DataPackage(apworld_data_dir=DATA)
     assert dp.pickup_index_to_location_id(9999) is None

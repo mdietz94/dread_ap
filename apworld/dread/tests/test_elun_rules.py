@@ -24,7 +24,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.Rules import compile_to_lambda  # noqa: E402
+from dread.Rules import compile_to_lambda  # noqa: E402
 
 
 # ---- fixtures ----

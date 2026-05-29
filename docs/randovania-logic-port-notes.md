@@ -40,7 +40,7 @@ Results:
   cross-region traversal — that's exactly the M2 cross-region-access
   signal.
 - 134 tests pass (was 111). New ones in
-  [test_all_regions_rules.py](../apworld/dread_archipelago/tests/test_all_regions_rules.py):
+  [test_all_regions_rules.py](../apworld/dread/tests/test_all_regions_rules.py):
   per-region coverage + non-impossible + late-game-reaches-all + 4
   hand-vetted per-region assertions.
 
@@ -50,11 +50,11 @@ Results:
 |---|---|
 | `scripts/cache_randovania_logic.py` | ✓ pulls 10 files (header + 9 areas) from upstream `3559136dc44`, pins commit |
 | `scripts/extract_dread_rules.py` | ✓ compiles Randovania req-tree → serializable AST |
-| `apworld/dread_archipelago/data/compiled_rules.json` | ✓ Elun (5 pickups) + victory + event list |
-| `apworld/dread_archipelago/data/events.json` | ✓ 3 events used (ElunSoldier, Ship, grapplepulloff1x2_000) |
-| `apworld/dread_archipelago/Rules.py` | ✓ AST → `state.has(...)` lambda → `add_rule` |
-| `apworld/dread_archipelago/tests/test_rule_compiler.py` | ✓ 18 tests on lambda compiler |
-| `apworld/dread_archipelago/tests/test_elun_rules.py` | ✓ 10 wiki-vetted Elun assertions |
+| `apworld/dread/data/compiled_rules.json` | ✓ Elun (5 pickups) + victory + event list |
+| `apworld/dread/data/events.json` | ✓ 3 events used (ElunSoldier, Ship, grapplepulloff1x2_000) |
+| `apworld/dread/Rules.py` | ✓ AST → `state.has(...)` lambda → `add_rule` |
+| `apworld/dread/tests/test_rule_compiler.py` | ✓ 18 tests on lambda compiler |
+| `apworld/dread/tests/test_elun_rules.py` | ✓ 10 wiki-vetted Elun assertions |
 | `scripts/tests/test_extract_dread_rules.py` | ✓ 20 tests on AST builder + simplifier |
 | `scripts/install_apworld.py` | ✓ installs into sibling AP checkout (folder or .apworld mode) |
 | `scripts/ap_generate.py` | ✓ wraps `Archipelago/Generate.py` |
@@ -247,7 +247,7 @@ is large. Reasonable to push to v0.3.
   confirms Plasma Beam Door is the canonical entry. Compiler caught it.
 - **First apworld zip name (`dread.apworld`).** Archipelago imports
   the world as `worlds.<zip-stem>`, but our package is
-  `dread_archipelago/`. Renamed the zip to `dread_archipelago.apworld`.
+  `dread/`. Renamed the zip to `dread.apworld`.
 - **Loading JSON from inside the zipped apworld.** `Path(__file__).
   parent / "data" / "items.json"` doesn't work for a zip-loaded
   package. M1 sidesteps it by installing the apworld as a folder
@@ -263,27 +263,27 @@ Created:
 - `scripts/install_apworld.py`
 - `scripts/ap_generate.py`
 - `scripts/tests/test_extract_dread_rules.py`
-- `apworld/dread_archipelago/data/compiled_rules.json` (generated)
-- `apworld/dread_archipelago/data/events.json` (generated)
-- `apworld/dread_archipelago/tests/test_rule_compiler.py`
-- `apworld/dread_archipelago/tests/test_elun_rules.py`
-- `apworld/dread_archipelago/tests/seeds/dread_smoke.yaml`
+- `apworld/dread/data/compiled_rules.json` (generated)
+- `apworld/dread/data/events.json` (generated)
+- `apworld/dread/tests/test_rule_compiler.py`
+- `apworld/dread/tests/test_elun_rules.py`
+- `apworld/dread/tests/seeds/dread_smoke.yaml`
 - `docs/randovania-logic-port-notes.md` (this file)
 - `.dread-cache/randovania-logic/{header,9 areas}.json` + `PINNED_COMMIT.txt` (gitignored)
 
 Modified:
-- `apworld/dread_archipelago/Rules.py` — compile AST → lambda, apply add_rule
+- `apworld/dread/Rules.py` — compile AST → lambda, apply add_rule
 - `CLAUDE.md` — bump Status line per the Plan's success documentation
 
 Not touched (per scope constraints):
-- `apworld/dread_archipelago/client/*` — wire layer
-- `apworld/dread_archipelago/data/items.json` — AP-ID stability
-- `apworld/dread_archipelago/data/locations.json` — AP-ID stability
+- `apworld/dread/client/*` — wire layer
+- `apworld/dread/data/items.json` — AP-ID stability
+- `apworld/dread/data/locations.json` — AP-ID stability
 - `scripts/build_patcher_json.py` — patcher adapter
-- `apworld/dread_archipelago/Regions.py` — star topology unchanged
+- `apworld/dread/Regions.py` — star topology unchanged
   (cross-region access is M2)
-- `apworld/dread_archipelago/World.py` — no event items yet (M2)
-- `apworld/dread_archipelago/Options.py` — trick-level option is M2
+- `apworld/dread/World.py` — no event items yet (M2)
+- `apworld/dread/Options.py` — trick-level option is M2
 
 
 ## M2 plumbing retrospective
@@ -304,17 +304,17 @@ high-impact half. Plan for Gate B: see
 |---|---|
 | `scripts/extract_dread_rules.py` — per-event reach rules + AP-ID assignment | ✓ emits 184 events with `{name, region, rule, item_ap_id, location_ap_id}` |
 | `scripts/append_event_data.py` (new, idempotent) | ✓ appends event items / locations to data tables |
-| `apworld/dread_archipelago/data/compiled_rules.json` schema bump | ✓ `events` is now a list of dicts (was a flat name list); see schema below |
-| `apworld/dread_archipelago/data/items.json` | ✓ +184 event items appended (AP IDs 21554..21737) |
-| `apworld/dread_archipelago/data/locations.json` | ✓ +184 event locations appended (AP IDs 31303..31486) |
-| `apworld/dread_archipelago/Rules.py` event branch | ✓ `state.has("Event: <name>", player)` (was `_const_true`) |
-| `apworld/dread_archipelago/Rules.py::set_rules` | ✓ adds per-event reach rules + `place_locked_item`s the event onto its location |
-| `apworld/dread_archipelago/Rules.py` completion_condition | ✓ now reads `compiled["victory_condition"]` — currently `state.has("Event: Ship", player)` |
-| `apworld/dread_archipelago/World.py::create_items` | ✓ appends one event item per compiled event with classification `progression`; refactored filler math to only count non-event slots |
-| `apworld/dread_archipelago/tests/test_event_plumbing.py` (new) | ✓ 10 tests: structural invariants, AP-ID disjointness, sorted-by-name, victory condition, Burenia event-gated regression |
-| `apworld/dread_archipelago/tests/test_rule_compiler.py` | ✓ `test_event_branch_consults_state` replaces the M1 `_const_true` pin |
-| `apworld/dread_archipelago/tests/test_data_tables.py` | ✓ `test_location_count_is_149` → `test_location_count_matches_table_sum`; per-item/location asserts now skip event entries |
-| `apworld/dread_archipelago/tests/test_all_regions_rules.py` / `test_elun_rules.py` | ✓ LATE_GAME / VANILLA_LATE_GAME dicts now include every event item so the "fully equipped reaches everything" invariant still holds |
+| `apworld/dread/data/compiled_rules.json` schema bump | ✓ `events` is now a list of dicts (was a flat name list); see schema below |
+| `apworld/dread/data/items.json` | ✓ +184 event items appended (AP IDs 21554..21737) |
+| `apworld/dread/data/locations.json` | ✓ +184 event locations appended (AP IDs 31303..31486) |
+| `apworld/dread/Rules.py` event branch | ✓ `state.has("Event: <name>", player)` (was `_const_true`) |
+| `apworld/dread/Rules.py::set_rules` | ✓ adds per-event reach rules + `place_locked_item`s the event onto its location |
+| `apworld/dread/Rules.py` completion_condition | ✓ now reads `compiled["victory_condition"]` — currently `state.has("Event: Ship", player)` |
+| `apworld/dread/World.py::create_items` | ✓ appends one event item per compiled event with classification `progression`; refactored filler math to only count non-event slots |
+| `apworld/dread/tests/test_event_plumbing.py` (new) | ✓ 10 tests: structural invariants, AP-ID disjointness, sorted-by-name, victory condition, Burenia event-gated regression |
+| `apworld/dread/tests/test_rule_compiler.py` | ✓ `test_event_branch_consults_state` replaces the M1 `_const_true` pin |
+| `apworld/dread/tests/test_data_tables.py` | ✓ `test_location_count_is_149` → `test_location_count_matches_table_sum`; per-item/location asserts now skip event entries |
+| `apworld/dread/tests/test_all_regions_rules.py` / `test_elun_rules.py` | ✓ LATE_GAME / VANILLA_LATE_GAME dicts now include every event item so the "fully equipped reaches everything" invariant still holds |
 | Smoke seed `tests/seeds/dread_smoke.yaml` | ✓ regenerates under `accessibility: minimal` with the M2 pool (149 non-event item slots + 184 locked event items) |
 | All tests | ✓ 144 pass (134 pre-M2 + 10 new) |
 

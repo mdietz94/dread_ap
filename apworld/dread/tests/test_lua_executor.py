@@ -10,7 +10,7 @@ Wire format (confirmed from vendor/open-dread-rando-exlaunch/source/program/):
     Push frames           [type:1][len:4 LE u32][payload]
     MALFORMED             [0x09][failing_type:1][rcv:4 LE u32][should:4 LE u32]
 
-Run with:  python -m pytest apworld/dread_archipelago/tests/test_lua_executor.py -v
+Run with:  python -m pytest apworld/dread/tests/test_lua_executor.py -v
 """
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client import lua_executor as le  # noqa: E402
-from dread_archipelago.client import lua_packets as lp  # noqa: E402
+from dread.client import lua_executor as le  # noqa: E402
+from dread.client import lua_packets as lp  # noqa: E402
 
 
 # ---- Frame builders mirroring the exlaunch C++ sender ---------------------

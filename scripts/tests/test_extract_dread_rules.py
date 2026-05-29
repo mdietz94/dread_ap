@@ -238,7 +238,7 @@ def test_rdv_item_mapping_resolves_to_valid_ap_items_or_none():
     name in our items.json. If you add a new RDV item, you also need
     to either add it to items.json or set its mapping to None."""
     import json
-    items = json.loads((ROOT.parent / "apworld" / "dread_archipelago" /
+    items = json.loads((ROOT.parent / "apworld" / "dread" /
                         "data" / "items.json").read_text())
     valid = {it["name"] for it in items}
     for rdv_name, ap_name in RDV_ITEM_TO_AP.items():

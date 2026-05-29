@@ -9,7 +9,7 @@ Mocks the AP server connection with a tiny ``send_msgs`` capture; mocks
 the Switch executor entirely (we don't need real sockets here, only the
 push handler).
 
-Run with:  python -m pytest apworld/dread_archipelago/tests/test_context_e2e.py -v
+Run with:  python -m pytest apworld/dread/tests/test_context_e2e.py -v
 """
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client import lua_packets as lp  # noqa: E402
-from dread_archipelago.client.datapackage import DataPackage  # noqa: E402
-from dread_archipelago.client.state import BridgeState  # noqa: E402
+from dread.client import lua_packets as lp  # noqa: E402
+from dread.client.datapackage import DataPackage  # noqa: E402
+from dread.client.state import BridgeState  # noqa: E402
 
 DATA = ROOT / "data"
 
@@ -46,7 +46,7 @@ def _bitfield_for(pickup_indices: list[int]) -> bytes:
 @pytest.fixture
 def ctx():
     """Build a DreadContext with mocked AP-server hookup."""
-    from dread_archipelago.client.context import DreadContext  # noqa: E402
+    from dread.client.context import DreadContext  # noqa: E402
 
     state = BridgeState()
     dp = DataPackage(apworld_data_dir=DATA)

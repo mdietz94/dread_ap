@@ -65,15 +65,15 @@ of the upstream code, possibly never run against real hardware.
 
 ### What changed
 
-- `apworld/dread_archipelago/client/lua_packets.py`: replaced the single
+- `apworld/dread/client/lua_packets.py`: replaced the single
   `parse_response_header` with three type-specific parsers
   (`parse_lua_exec_reply_header`, `parse_push_length`,
   `parse_malformed_body`), plus `PUSH_TYPES` / `REPLY_TYPES` sets.
-- `apworld/dread_archipelago/client/lua_executor.py`: collapsed the old
+- `apworld/dread/client/lua_executor.py`: collapsed the old
   `_read_one` into a `_read_frame` that reads the type byte and
   dispatches; `_read_loop` then routes to either the pending-future or
   `on_push` based on the type byte.
-- `apworld/dread_archipelago/tests/test_lua_executor.py`: `FakeSwitch`
+- `apworld/dread/tests/test_lua_executor.py`: `FakeSwitch`
   rewritten to emit the actual wire bytes. Added 4 new tests
   (push routes to handler, reply still routes to future, interleaved
   push+reply, unknown type raises).
@@ -201,16 +201,16 @@ old (incorrect) reply parser. Replaced by `test_parse_lua_exec_reply_header_*`
 
 ```pwsh
 # All tests pass
-python -m pytest apworld/dread_archipelago/tests/ scripts/tests/ -q
+python -m pytest apworld/dread/tests/ scripts/tests/ -q
 
 # Wire-format unit tests
-python -m pytest apworld/dread_archipelago/tests/test_lua_packets.py apworld/dread_archipelago/tests/test_lua_executor.py -v
+python -m pytest apworld/dread/tests/test_lua_packets.py apworld/dread/tests/test_lua_executor.py -v
 
 # Pickup-index map invariants
-python -m pytest apworld/dread_archipelago/tests/test_pickup_index_map.py -v
+python -m pytest apworld/dread/tests/test_pickup_index_map.py -v
 
 # Switch→AP path with a fake AP server
-python -m pytest apworld/dread_archipelago/tests/test_context_e2e.py -v
+python -m pytest apworld/dread/tests/test_context_e2e.py -v
 
 # Seed → patcher converter
 python -m pytest scripts/tests/test_seed_to_patcher.py -v

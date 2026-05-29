@@ -69,7 +69,7 @@ Thumbs.db
 # ============================================================================
 # Test scratch
 # ============================================================================
-apworld/dread_archipelago/tests/seeds/out/
+apworld/dread/tests/seeds/out/
 .pytest_cache/
 .coverage
 htmlcov/
@@ -84,7 +84,7 @@ third_party/
 # We use them as reference clones during dev. End users get the same code
 # via `pip install open-dread-rando open-dread-rando-exlaunch`. The starter
 # patcher template we actually need at runtime is bundled inside the
-# apworld at apworld/dread_archipelago/data/starter_preset_patcher.json.
+# apworld at apworld/dread/data/starter_preset_patcher.json.
 # vendor/CHANGES.md (tracked) documents how to clone these locally.
 # ============================================================================
 vendor/open-dread-rando/

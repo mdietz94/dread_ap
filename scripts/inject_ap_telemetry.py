@@ -1,7 +1,7 @@
 """Inject AP telemetry Lua into the deployed mod's init.lc.
 
 Thin wrapper around
-``apworld/dread_archipelago/patcher_pipeline.inject_telemetry_into_init_lc``
+``apworld/dread/patcher_pipeline.inject_telemetry_into_init_lc``
 — that module is the single source of truth so both this CLI and the
 in-client ``/patch`` command share one implementation.
 
@@ -11,7 +11,7 @@ replaces the appended block rather than duplicating it).
 Usage:
     python scripts/inject_ap_telemetry.py \\
         --init-lc "%APPDATA%/Ryujinx/mods/contents/010093801237c000/DreadRandovania/romfs/system/scripts/init.lc" \\
-        --locations apworld/dread_archipelago/data/locations.json
+        --locations apworld/dread/data/locations.json
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "apworld"))
 
-from dread_archipelago.patcher_pipeline import inject_telemetry_into_init_lc  # noqa: E402
+from dread.patcher_pipeline import inject_telemetry_into_init_lc  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--init-lc", type=Path, required=True,
                    help="Path to the deployed init.lc (under romfs/system/scripts/)")
     p.add_argument("--locations", type=Path, required=True,
-                   help="Path to apworld/dread_archipelago/data/locations.json")
+                   help="Path to apworld/dread/data/locations.json")
     args = p.parse_args(argv)
 
     if not args.init_lc.exists():

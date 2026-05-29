@@ -1,6 +1,6 @@
 """Append event items + event locations to apworld data tables.
 
-Reads ``apworld/dread_archipelago/data/compiled_rules.json`` (produced
+Reads ``apworld/dread/data/compiled_rules.json`` (produced
 by extract_dread_rules.py) and APPENDS one event item + one event
 location per event into ``items.json`` / ``locations.json``.
 
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = REPO_ROOT / "apworld" / "dread_archipelago" / "data"
+DATA_DIR = REPO_ROOT / "apworld" / "dread" / "data"
 
 # Hanubia is the in-game name for the s080_shipyard scenario where the
 # Ship event lives. Itorash events use s090_skybase, which has no

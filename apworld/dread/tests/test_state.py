@@ -9,8 +9,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread_archipelago.client.state import BridgeState  # noqa: E402
-from dread_archipelago.client.protocol import (  # noqa: E402
+from dread.client.state import BridgeState  # noqa: E402
+from dread.client.protocol import (  # noqa: E402
     DreadItem, ReceivedItemEvent, CollectedLocationEvent,
 )
 
