@@ -53,6 +53,11 @@ _CLIENT_LOGGER = __name__.rpartition(".")[0]
 # Switch-forwarded device logs land here (a child of _CLIENT_LOGGER) so they
 # appear in the GUI log pane, tagged distinct from PC-side diagnostics.
 _switch_log = logging.getLogger(f"{_CLIENT_LOGGER}.switch")
+# The "Client" logger is what the GUI maps to the **Archipelago** tab
+# (DreadManager.logging_pairs = [("Client", "Archipelago")]). User-facing
+# setup guidance (e.g. the exact `pip install` command) goes here so it lands
+# in the tab AP users watch by default.
+_ap_log = logging.getLogger("Client")
 
 
 GAME_NAME = "Metroid Dread"
@@ -123,6 +128,12 @@ def _field(obj: Any, name: str, idx: int) -> Any:
 # Randovania's RL.UpdateRDVClient self-scheduling interval.
 POLL_INTERVAL_SECONDS = 2.0
 
+# Switch auto-connect backoff bounds (seconds). The supervisor doubles from
+# START up to MAX between failed dials; MAX also caps the idle re-check cadence
+# while connected.
+_SWITCH_BACKOFF_START = 1.0
+_SWITCH_BACKOFF_MAX = 30.0
+
 
 class DreadClientCommandProcessor(ClientCommandProcessor):
     """`/`-prefixed commands typed into the Kivy command bar."""
@@ -171,6 +182,8 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
             ctx.switch_host = new_host
             if new_port is not None:
                 ctx.switch_port = new_port
+        # reconnect_switch wakes the backoff supervisor (request_redial) once
+        # it has re-dialed, so no explicit signal is needed here.
         asyncio.ensure_future(ctx.reconnect_switch())
         self.output(f"reconnecting to Switch at {ctx.switch_host}:{ctx.switch_port} …")
         return True
@@ -236,14 +249,6 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         ``%APPDATA%/Ryujinx/mods/contents/010093801237c000/DreadRandovania``;
         the vanilla romfs dir is your extracted Dread 2.1.0 romfs.
         """
-        if not dreadvania_dir or not vanilla_romfs_dir:
-            self.output("usage: /patch <dreadvania-install-dir> <vanilla-romfs-dir>")
-            self.output(
-                "  example: /patch "
-                r'"%APPDATA%\Ryujinx\mods\contents\010093801237c000\DreadRandovania" '
-                r'"D:\dread\romfs"'
-            )
-            return True
         ctx = self.ctx
         if not ctx.slot_data or "placements" not in ctx.slot_data:
             self.output(
@@ -252,9 +257,14 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
                 "placements in fill_slot_data)?"
             )
             return True
-        # Run the orchestration in a thread so the asyncio loop isn't
-        # blocked by the patcher's ~3s subprocess call.
-        asyncio.ensure_future(ctx._run_patch(dreadvania_dir, vanilla_romfs_dir))
+        if dreadvania_dir and vanilla_romfs_dir:
+            # Explicit paths given (scripts / power users) — run directly.
+            asyncio.ensure_future(ctx._run_patch(dreadvania_dir, vanilla_romfs_dir))
+            return True
+        # No (or partial) args: pop native folder pickers, pre-filled with the
+        # folders used last time. Runs the orchestration in a thread so the
+        # asyncio loop isn't blocked by the patcher's ~3s subprocess call.
+        asyncio.ensure_future(ctx._patch_interactive())
         return True
 
 
@@ -293,6 +303,10 @@ class DreadContext(CommonContext):
         self.executor: Optional[DreadExecutor] = None
         self._poll_task: Optional[asyncio.Task[None]] = None
         self._reconnect_lock = asyncio.Lock()
+        # Set by the backoff supervisor / manual reconnect to interrupt the
+        # exponential-backoff sleep and dial the Switch immediately. See
+        # _switch_supervisor.
+        self._redial_event = asyncio.Event()
         self._goal_reported = False
         # Whether the RL.* bootstrap has been sent to the Switch this connection.
         # Until it has, RL.GetCollectedIndicesAndSend / RL.ReceivePickup / etc.
@@ -316,6 +330,10 @@ class DreadContext(CommonContext):
         self.dreadvania_python: Optional[str] = _load_user_config().get(
             "dreadvania_python"
         )
+        # Human-readable result of the last patcher-Python autodetect; mirrored
+        # to the GUI panel + logged to the Archipelago tab. See
+        # _ensure_patcher_python.
+        self.patcher_python_status: str = ""
 
     # ---- CommonContext overrides --------------------------------------
 
@@ -381,6 +399,9 @@ class DreadContext(CommonContext):
             await self._send_bootstrap(api.buffer_size)
             self._bootstrapped = True
             self.state.set_switch_conn("connected")
+            # Remember the host that actually worked so the next session dials
+            # it without the user re-typing (default is Ryujinx loopback).
+            self._remember_switch_target()
             log.info("Switch connected + bootstrapped: api=%s game=%s layout=%s",
                      api.api_version, api.game_version, api.layout_uuid)
             self._poll_task = asyncio.create_task(self._poll_loop(), name="dread-poll")
@@ -419,6 +440,84 @@ class DreadContext(CommonContext):
                 await self.executor.close()
                 self.executor = None
             await self.connect_switch()
+        # Wake the supervisor so it resets its backoff and resumes watching
+        # (also covers the case where this manual dial failed).
+        self.request_redial()
+
+    def request_redial(self) -> None:
+        """Signal the backoff supervisor to dial the Switch immediately.
+
+        Both ``/dread_connect`` and the GUI reconnect popup go through
+        ``reconnect_switch``, which calls this so a manual retry never has to
+        wait out the current backoff sleep."""
+        self._redial_event.set()
+
+    def _remember_switch_target(self) -> None:
+        """Persist the current Switch host/port so the next session reuses it."""
+        cfg = _load_user_config()
+        cfg["switch_host"] = self.switch_host
+        cfg["switch_port"] = self.switch_port
+        _save_user_config(cfg)
+
+    async def _switch_supervisor(self) -> None:
+        """Keep a Switch connection up, retrying with exponential backoff.
+
+        The initial dial often loses the race with Dreadvania finishing its own
+        boot; rather than make the user hit /dread_connect, we retry 1, 2, 4 …
+        up to 30s. A manual reconnect (``request_redial``) interrupts the sleep
+        and resets the backoff. While connected we idle until the wire drops
+        (``executor`` cleared by a failed reconnect or close), then resume."""
+        backoff = _SWITCH_BACKOFF_START
+        while not self.exit_event.is_set():
+            if self.executor is None:
+                # connect_switch is a no-op if already connected and is
+                # serialized against manual reconnects via _reconnect_lock.
+                await self.connect_switch()
+                if self.executor is not None:
+                    backoff = _SWITCH_BACKOFF_START
+                    continue
+                wait = backoff
+                backoff = min(backoff * 2, _SWITCH_BACKOFF_MAX)
+            else:
+                wait = _SWITCH_BACKOFF_MAX
+            self._redial_event.clear()
+            try:
+                await asyncio.wait_for(self._redial_event.wait(), timeout=wait)
+                # Woken by a manual redial — dial now with a fresh backoff.
+                backoff = _SWITCH_BACKOFF_START
+            except asyncio.TimeoutError:
+                pass
+
+    async def _ensure_patcher_python(self) -> None:
+        """Ensure a usable patcher Python is configured and tell the user.
+
+        Keeps a previously-saved interpreter if its deps still import; else
+        auto-detects one (persisting it on success). The actionable result —
+        an OK line or the exact ``pip install`` command — is logged to the
+        Archipelago tab. Dep checks shell out, so they run off the loop."""
+        from ..patcher_pipeline import autodetect_patcher_python, check_dependencies
+
+        def _resolve() -> tuple[Optional[str], str]:
+            configured = self.dreadvania_python
+            if configured and check_dependencies(configured) is None:
+                return configured, f"patcher Python OK: {configured}"
+            return autodetect_patcher_python()
+
+        path, message = await asyncio.to_thread(_resolve)
+        self.patcher_python_status = message
+        if path:
+            if path != self.dreadvania_python:
+                self.dreadvania_python = path
+                cfg = _load_user_config()
+                cfg["dreadvania_python"] = path
+                _save_user_config(cfg)
+            self.state.set_patcher_python(f"ready ({Path(path).name})")
+            _ap_log.info(message)
+        else:
+            self.state.set_patcher_python("not installed — see Archipelago tab")
+            _ap_log.warning("Patcher setup needed for /patch:")
+            for line in message.splitlines():
+                _ap_log.warning("  %s", line)
 
     # ---- AP-driven flows ---------------------------------------------
 
@@ -550,6 +649,49 @@ class DreadContext(CommonContext):
             if result.cli_stderr_tail:
                 for line in result.cli_stderr_tail.splitlines():
                     log.error("  | %s", line)
+
+    async def _patch_interactive(self) -> None:
+        """``/patch`` with no args: pop native folder pickers (pre-filled with
+        the last-used folders) for the Dreadvania install dir and the vanilla
+        romfs dir, remember the choices, then run the patch.
+
+        Falls back to printing the text-arg usage if no native dialog backend
+        is available (e.g. a tkinter-less frozen launcher)."""
+        from .filedialog import ask_directory, FileDialogUnavailable
+
+        cfg = _load_user_config()
+        dv_init = cfg.get("dreadvania_dir")
+        if not dv_init:
+            guess = _expand(
+                r"%APPDATA%\Ryujinx\mods\contents\010093801237c000\DreadRandovania"
+            )
+            if Path(guess).is_dir():
+                dv_init = guess
+        romfs_init = cfg.get("vanilla_romfs_dir")
+
+        try:
+            dreadvania_dir = await asyncio.to_thread(
+                ask_directory, "Select your Dreadvania mod install folder", dv_init)
+            if not dreadvania_dir:
+                log.info("/patch: cancelled (no Dreadvania folder chosen)")
+                return
+            vanilla_romfs_dir = await asyncio.to_thread(
+                ask_directory, "Select your extracted Dread 2.1.0 romfs folder",
+                romfs_init)
+            if not vanilla_romfs_dir:
+                log.info("/patch: cancelled (no romfs folder chosen)")
+                return
+        except FileDialogUnavailable as exc:
+            log.warning(
+                "/patch: no folder picker available (%s). Pass the paths "
+                "directly:\n  /patch <dreadvania-install-dir> <vanilla-romfs-dir>",
+                exc)
+            return
+
+        cfg["dreadvania_dir"] = dreadvania_dir
+        cfg["vanilla_romfs_dir"] = vanilla_romfs_dir
+        _save_user_config(cfg)
+        await self._run_patch(dreadvania_dir, vanilla_romfs_dir)
 
     # ---- Switch poll loop --------------------------------------------
 

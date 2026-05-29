@@ -74,6 +74,10 @@ class BridgeState:
         self.inventory: dict[str, int] = {}
         self.game_state: DreadGameState = DreadGameState()
 
+        # Short, human-readable patcher-Python status for the GUI panel
+        # ("ready (python.exe)" / "not installed — see Archipelago tab").
+        self.patcher_python: str = ""
+
         self.last_messages: list[str] = []  # cap 200, for log surface
 
     # ---- AP connection state ----
@@ -185,6 +189,12 @@ class BridgeState:
         with self._lock:
             return self.game_state.beaten_since_reboot
 
+    # ---- Patcher Python status (for the GUI panel) ----
+
+    def set_patcher_python(self, status: str) -> None:
+        with self._lock:
+            self.patcher_python = status
+
     # ---- Log surface ----
 
     def add_log(self, text: str) -> None:
@@ -211,6 +221,7 @@ class BridgeState:
                 "game_mode": self.game_state.game_mode_id,
                 "beaten": self.game_state.beaten_since_reboot,
                 "layout_uuid": self.game_state.layout_uuid,
+                "patcher_python": self.patcher_python,
                 "recent_messages": list(self.last_messages[-50:]),
                 "recent_items": [
                     {

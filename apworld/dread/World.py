@@ -293,18 +293,31 @@ class DreadWorld(World):
         return "Missile Tank"
 
     def generate_output(self, output_directory: str) -> None:
-        """Write per-slot Dread placements JSON alongside the .archipelago.
+        """Write the per-slot artifacts AP bundles into the seed zip:
 
-        This is the legacy path consumed by
-        ``scripts/seed_to_patcher_overrides.py``. The same payload is also
-        embedded in ``fill_slot_data`` for in-client ``/patch``.
+        * ``<base>.dreadap`` — the clickable Launcher entry point. Double-
+          clicking it opens the Dread Client pre-filled with this slot's name
+          (see ``client/dreadap_file.py`` + ``launch_dread_client``).
+        * ``AP_<seed>_P<n>_Dread_<slot>.json`` — the placements payload the
+          CLI patcher path (``scripts/seed_to_patcher_overrides.py``) consumes.
+          The same payload also rides ``fill_slot_data`` for in-client
+          ``/patch``, so this file is only needed for the offline CLI flow.
         """
         payload = self._build_placements_payload()
         seed_id = payload["seed_id"]
         slot_name = payload["slot_name"]
-        # AP bundles anything we write into output_directory into the seed zip.
-        out_path = (
-            Path(output_directory)
-            / f"AP_{seed_id}_P{self.player}_Dread_{slot_name}.json"
-        )
+        out_dir = Path(output_directory)
+
+        # Clickable launcher file. server_address is intentionally empty — the
+        # generator can't know where the user will host; the client's Connect
+        # bar prompts for it.
+        from .client.dreadap_file import DreadapFile
+        base = self.multiworld.get_out_file_name_base(self.player)
+        DreadapFile(
+            slot_name=slot_name,
+            seed_name=seed_id,
+        ).write(out_dir / f"{base}.dreadap")
+
+        # Legacy placements JSON for the CLI patcher path.
+        out_path = out_dir / f"AP_{seed_id}_P{self.player}_Dread_{slot_name}.json"
         out_path.write_text(json.dumps(payload, indent=2))
