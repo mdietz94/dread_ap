@@ -42,8 +42,18 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
             continue
         if argv[i] in path_flags and i + 1 < len(argv):
+            value = argv[i + 1]
+            if value.startswith("--"):
+                # The next token is another flag, so this path flag got no
+                # value — almost always an empty/unset shell variable (e.g.
+                # `--player_files_path $PLAYERS` when $PLAYERS wasn't set).
+                # Fail loudly here instead of letting Generate.py emit a
+                # baffling "unrecognized arguments" about the orphaned value.
+                print(f"{argv[i]} expects a path but the next token is {value!r} "
+                      "-- did a shell variable expand to empty?", file=sys.stderr)
+                return 2
             cleaned.append(argv[i])
-            cleaned.append(str(Path(argv[i + 1]).resolve()))
+            cleaned.append(str(Path(value).resolve()))
             i += 2
             continue
         cleaned.append(argv[i])
