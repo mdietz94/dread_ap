@@ -123,6 +123,34 @@ every poll (and every reconnect), so dedup against `BridgeState`
 matters — without it we'd send a LocationChecks containing every
 previously-collected location every 2 seconds.
 
+### Removed: the redundant init.lc telemetry injection
+
+Before the client sent the Randovania bootstrap, the Switch→AP collected
+path was driven by a second, home-grown mechanism: `patcher_pipeline.py`
+injected a Lua block into the patched `init.lc` that wrapped
+`RandomizerPowerup.OnPickedUp` and pushed the same `locations:` bitfield
+via `RL.SendIndices`. That code carried a docstring claiming upstream
+exlaunch had "removed the `RL.Get*AndSend` pull-style helpers" — which
+was wrong. Those helpers live in randovania's bootstrap; the bug was
+that our old client never *sent* the bootstrap (fixed in the bootstrap
+port — see CLAUDE.md "Bootstrap + RL.ReceivePickup delivery port").
+
+Once the bootstrap ships `RL.GetCollectedIndicesAndSend` (which reads the
+authoritative Blackboard `Location_Collected_*` props and is re-scheduled
+every poll tick by `bootstrap_part_3.lua`), the injection became dead
+weight pushing duplicate frames the PC already deduped. It was also
+fragile: `bootstrap_part_0.lua` does
+`Game.DoFile('.../randomizer_powerup.lua')`, which resets
+`RandomizerPowerup = {}` and wiped the injected `OnPickedUp` hook on
+every re-send (it only self-healed on the next `RL.Update` tick).
+
+So it was removed entirely. The bootstrap path is strictly better: it
+reads persisted Blackboard state, so it also captures pre-existing
+collected locations on reconnect — which the `OnPickedUp`-hook approach
+(only fires on a *live* pickup) missed. `build_telemetry_block` /
+`inject_telemetry_into_init_lc` and `scripts/inject_ap_telemetry.py` are
+gone; `patch()` no longer touches `init.lc`.
+
 ## Other push payloads
 
 - `NEW_INVENTORY`: JSON `{"index":int,"inventory":[float,...]}`. The

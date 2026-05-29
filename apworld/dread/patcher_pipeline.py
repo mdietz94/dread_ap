@@ -1,19 +1,25 @@
 """Patcher pipeline glue — bundled inside the apworld so /patch works
 from a deployed .apworld zip (no scripts/ needed).
 
-Three pure functions that mirror the historic CLI scripts:
+Two pure functions that mirror the historic CLI scripts:
 
   * :func:`placements_to_overrides` — was ``scripts/seed_to_patcher_overrides.py``.
   * :func:`merge_overrides` — was ``scripts/build_patcher_json.py``.
-  * :func:`build_telemetry_block` — was ``scripts/inject_ap_telemetry.py``.
 
-The :func:`patch` orchestration runs the three in sequence, invokes the
-upstream ``open-dread-rando`` CLI to write the modded romfs, and edits
-the deployed ``init.lc`` to inject the AP telemetry block. It's the
+The :func:`patch` orchestration runs both in sequence and invokes the
+upstream ``open-dread-rando`` CLI to write the modded romfs. It's the
 implementation behind the in-client ``/patch`` command.
 
-The three CLI scripts under ``scripts/`` are now thin wrappers around
-this module — single source of truth for the conversion logic.
+The CLI scripts under ``scripts/`` are thin wrappers around this module
+— single source of truth for the conversion logic.
+
+The Switch→PC collected-checks path needs no init.lc patching: it is
+handled entirely by the client-sent Randovania bootstrap
+(``client/bootstrap.py`` → ``RL.GetCollectedIndicesAndSend``), which
+reads the authoritative Blackboard ``Location_Collected_*`` props and
+pushes the COLLECTED_INDICES bitfield. (An earlier design injected an
+equivalent Lua block into ``init.lc``; that was removed as redundant
+once the bootstrap shipped — see docs/wire-wiring-notes.md.)
 """
 from __future__ import annotations
 
@@ -70,12 +76,6 @@ def _set_in(root: dict, path: tuple[str, ...], value: Any) -> None:
             )
         node = node[key]
     node[path[-1]] = value
-
-# Markers for idempotent re-injection of the telemetry block.
-TELEMETRY_START_MARKER = (
-    "-- BEGIN AP TELEMETRY INJECTION (apworld dread.patcher_pipeline)"
-)
-TELEMETRY_END_MARKER = "-- END AP TELEMETRY INJECTION"
 
 
 # ---------------------------------------------------------------------
@@ -265,170 +265,6 @@ def build_patcher_input_from_placements(
 
 
 # ---------------------------------------------------------------------
-# Telemetry injection
-# ---------------------------------------------------------------------
-
-
-def build_telemetry_block(locations: list[dict[str, Any]]) -> str:
-    """Generate the Lua block injected into init.lc that wires Switch→AP
-    pickup pushes through the modern (Send*-only) exlaunch API.
-
-    Upstream open-dread-rando-exlaunch removed the ``RL.Get*AndSend``
-    pull-style Lua helpers — only the C-implemented push primitives
-    (``RL.SendIndices`` etc.) remain. Nothing in the patcher's emitted
-    Lua actually calls them on pickup. This block:
-
-      1. Pre-computes a static map of ``"<scenario>/<actor>" → pickup_index``.
-      2. Wraps ``RandomizerPowerup.OnPickedUp`` (lazily — installed from
-         the first ``RL.Update`` tick after the function exists) to
-         flag the corresponding bit and force-send the bitfield.
-      3. Wraps ``RL.Update`` (engine-driven C tick) for a throttled
-         heartbeat that catches any state PC missed during disconnect.
-    """
-    actor_entries: list[tuple[str, int]] = []
-    max_idx = -1
-    for loc in locations:
-        pidx = loc.get("pickup_index")
-        if pidx is None:
-            continue
-        scenario = loc.get("scenario")
-        actor = loc.get("actor")
-        if scenario is None or actor is None:
-            continue
-        actor_entries.append((f"{scenario}/{actor}", int(pidx)))
-        if int(pidx) > max_idx:
-            max_idx = int(pidx)
-
-    byte_count = (max_idx // 8) + 1 if max_idx >= 0 else 1
-
-    map_body = "\n".join(
-        f'    ["{key}"] = {pidx},'
-        for key, pidx in sorted(actor_entries, key=lambda t: t[1])
-    )
-
-    return f"""{TELEMETRY_START_MARKER}
--- Auto-generated. The block between BEGIN/END markers is replaced
--- atomically when /patch (or scripts/inject_ap_telemetry.py) re-runs.
---
--- Wire contract (PC side parses in
--- apworld/dread/client/context.py::_handle_collected_indices):
---   RL.SendIndices("locations:" .. bitfield_bytes)
--- where bit i of byte b means pickup_index (b*8 + i) is collected.
-
-Init.tAPPickupIndexByActor = {{
-{map_body}
-}}
-Init.iAPBitfieldByteCount = {byte_count}
-Init.tAPCollectedBits = Init.tAPCollectedBits or {{}}
-Init.tAPCachedBytes = nil
-
-local function _ap_recompute_bytes()
-    local bytes = {{}}
-    for i = 1, Init.iAPBitfieldByteCount do bytes[i] = 0 end
-    for pidx, v in pairs(Init.tAPCollectedBits) do
-        if v then
-            local byte_idx = math.floor(pidx / 8) + 1
-            local bit_mask = 1
-            for _ = 1, pidx % 8 do bit_mask = bit_mask * 2 end
-            if byte_idx >= 1 and byte_idx <= Init.iAPBitfieldByteCount then
-                if bytes[byte_idx] % (bit_mask * 2) < bit_mask then
-                    bytes[byte_idx] = bytes[byte_idx] + bit_mask
-                end
-            end
-        end
-    end
-    Init.tAPCachedBytes = bytes
-end
-
--- Send-throttle state. Bumped each time bits change; APMaybeSend only
--- pushes if the dirty cursor is ahead of the last-sent cursor.
-Init.iAPDirtyCursor = Init.iAPDirtyCursor or 0
-Init.iAPSentCursor = Init.iAPSentCursor or -1
--- Heartbeat: if no changes, send once every N ticks anyway. Tuned so the
--- heartbeat is roughly 1 Hz against a ~30-60 Hz RL.Update tick.
-Init.iAPHeartbeatTickInterval = 60
-Init.iAPHeartbeatTicksSince = 0
-
-function Init.APMarkCollected(pickup_index)
-    if pickup_index == nil then return end
-    if Init.tAPCollectedBits[pickup_index] then return end
-    Init.tAPCollectedBits[pickup_index] = true
-    Init.tAPCachedBytes = nil
-    Init.iAPDirtyCursor = Init.iAPDirtyCursor + 1
-end
-
-function Init.APSendBitfield()
-    if RL == nil or RL.SendIndices == nil then return end
-    if Init.tAPCachedBytes == nil then _ap_recompute_bytes() end
-    local parts = {{"locations:"}}
-    for i = 1, Init.iAPBitfieldByteCount do
-        parts[#parts + 1] = string.char(Init.tAPCachedBytes[i])
-    end
-    RL.SendIndices(table.concat(parts))
-    Init.iAPSentCursor = Init.iAPDirtyCursor
-    Init.iAPHeartbeatTicksSince = 0
-end
-
-function Init.APMaybeSend()
-    if Init.iAPDirtyCursor ~= Init.iAPSentCursor then
-        Init.APSendBitfield()
-        return
-    end
-    Init.iAPHeartbeatTicksSince = Init.iAPHeartbeatTicksSince + 1
-    if Init.iAPHeartbeatTicksSince >= Init.iAPHeartbeatTickInterval then
-        Init.APSendBitfield()
-    end
-end
-
-local _ap_try_install_pickup_hook = function()
-    if RandomizerPowerup == nil or RandomizerPowerup.OnPickedUp == nil then
-        return
-    end
-    if RandomizerPowerup._APHookInstalled then return end
-    RandomizerPowerup._APHookInstalled = true
-    local _orig_OnPickedUp = RandomizerPowerup.OnPickedUp
-    function RandomizerPowerup.OnPickedUp(actor, resources)
-        local result = _orig_OnPickedUp(actor, resources)
-        if actor ~= nil and Scenario ~= nil and Scenario.CurrentScenarioID ~= nil then
-            local key = Scenario.CurrentScenarioID .. "/" .. actor.sName
-            local pidx = Init.tAPPickupIndexByActor[key]
-            if pidx ~= nil then
-                Init.APMarkCollected(pidx)
-                Init.APSendBitfield()
-            end
-        end
-        return result
-    end
-end
-
-local _orig_RL_Update = RL.Update
-function RL.Update()
-    if _orig_RL_Update ~= nil then
-        _orig_RL_Update()
-    end
-    _ap_try_install_pickup_hook()
-    Init.APMaybeSend()
-end
-{TELEMETRY_END_MARKER}
-"""
-
-
-def inject_telemetry_into_init_lc(init_lc_path: Path, locations: Optional[list[dict]] = None) -> None:
-    """Append (or replace) the telemetry block in the deployed ``init.lc``.
-
-    Idempotent — re-running strips any previous block before appending."""
-    if locations is None:
-        locations = load_json("locations.json")
-    block = build_telemetry_block(locations)
-    body = init_lc_path.read_text(encoding="utf-8")
-    if TELEMETRY_START_MARKER in body:
-        before, _, rest = body.partition(TELEMETRY_START_MARKER)
-        _, _, after = rest.partition(TELEMETRY_END_MARKER)
-        body = before.rstrip() + "\n" + after.lstrip()
-    init_lc_path.write_text(body.rstrip() + "\n\n" + block + "\n", encoding="utf-8")
-
-
-# ---------------------------------------------------------------------
 # Orchestration (the /patch command's implementation)
 # ---------------------------------------------------------------------
 
@@ -438,7 +274,6 @@ class PatchResult:
     ok: bool
     message: str
     patcher_input_path: Optional[Path] = None
-    init_lc_path: Optional[Path] = None
     cli_returncode: Optional[int] = None
     cli_stderr_tail: str = ""
     notes: list[str] = field(default_factory=list)
@@ -482,7 +317,9 @@ def patch(
       2. build patcher_input.json from `placements`
       3. invoke `python -m open_dread_rando` against the vanilla romfs,
          writing into `dreadvania_install_dir` (overwriting in place)
-      4. inject the AP telemetry block into the deployed init.lc
+
+    The Switch→PC collected-checks wiring lives in the client-sent
+    Randovania bootstrap, so no post-patch init.lc edit is needed.
     """
     dep_err = check_dependencies()
     if dep_err:
@@ -530,27 +367,6 @@ def patch(
             cli_stderr_tail="\n".join((proc.stderr or "").splitlines()[-20:]),
         )
 
-    # 4: inject telemetry
-    # open_dread_rando emits its output under <output-path>/DreadRandovania/.
-    # When --output-path is itself a DreadRandovania folder, the patcher
-    # writes another nested DreadRandovania subdir. Detect both layouts.
-    candidates = [
-        dreadvania_install_dir / "DreadRandovania" / "romfs" / "system" / "scripts" / "init.lc",
-        dreadvania_install_dir / "romfs" / "system" / "scripts" / "init.lc",
-    ]
-    init_lc = next((p for p in candidates if p.exists()), None)
-    if init_lc is None:
-        return PatchResult(
-            ok=False,
-            message=(
-                "patcher ran, but couldn't find init.lc to inject telemetry into.\n"
-                f"Looked at: {[str(p) for p in candidates]}"
-            ),
-            patcher_input_path=patcher_input_path,
-            cli_returncode=proc.returncode,
-        )
-    inject_telemetry_into_init_lc(init_lc)
-
     n_actors = len(placements.get("placements", []))
     n_cross = sum(1 for p in placements.get("placements", []) if not p.get("is_own_player", True))
     return PatchResult(
@@ -560,6 +376,5 @@ def patch(
             f"({n_cross} cross-slot). Re-launch Dread to load the new mod."
         ),
         patcher_input_path=patcher_input_path,
-        init_lc_path=init_lc,
         cli_returncode=0,
     )
