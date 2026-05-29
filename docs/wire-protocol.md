@@ -125,6 +125,23 @@ it to `OnPickedUp`, which is the game's native pickup-grant function, so
 all downstream effects (inventory increment, sound, HUD flash) fire as
 they would for a vanilla pickup.
 
+> **What our client actually sends (and two caveats).** The snippet above is
+> the Randovania *reference*. Current `open-dread-rando-exlaunch` does NOT
+> define `RL.ReceivePickup`, so our client
+> (`apworld/dread/client/protocol.py::build_receive_pickup_lua`) calls
+> `RandomizerPowerup.OnPickedUp(nil, <resources>)` directly. Two consequences
+> the reference's signature implies but our path does NOT provide:
+> 1. **No idempotence.** `inventory_index` is a no-op in our Lua, so a repeat
+>    send re-grants the item. Additive items (Missile / Energy / Power Bomb
+>    tanks) would gain capacity twice. Delivery dedup lives entirely in the
+>    PC-side `received_count` cursor, which advances on send.
+> 2. **No cutscene queueing.** Upstream `RL.ReceivePickup` queues a grant when
+>    user input is disabled (cinematic); calling `OnPickedUp` directly does
+>    not, so an item delivered mid-cutscene can be dropped. This is the
+>    documented risk #1 in CLAUDE.md. A safe replay needs idempotent delivery
+>    (gate on the `PACKET_RECEIVED_PICKUPS` / `Blackboard.ReceivedPickups`
+>    count) FIRST — it cannot be lifted from smo_archipelago as-is.
+
 ## Polling cadence
 
 Upstream's `RL.UpdateRDVClient` self-schedules every 2 s via `Game.AddSF`.

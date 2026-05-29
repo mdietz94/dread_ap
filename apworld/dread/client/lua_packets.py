@@ -29,8 +29,10 @@ bytes are ``0x01`` … ``0x09`` (raw), not ASCII '1' … '9'.
 from __future__ import annotations
 
 import enum
+import re
 import struct
 from dataclasses import dataclass
+from typing import Optional
 
 
 class PacketType(enum.IntEnum):
@@ -147,6 +149,27 @@ def parse_push_length(length_field: bytes) -> int:
     if length < 0:
         raise ValueError(f"negative push payload length: {length}")
     return length
+
+
+_RECEIVED_PICKUPS_DIGITS = re.compile(rb"-?\d+")
+
+
+def parse_received_pickups_count(payload: bytes) -> Optional[int]:
+    """Decode a ``PACKET_RECEIVED_PICKUPS`` payload into the game's confirmed
+    ``Blackboard.ReceivedPickups`` counter.
+
+    The bootstrap we send emits this as ``RL.SendReceivedPickups(tostring(
+    RL.ReceivedPickups()))`` (``bootstrap_part_2.lua``) — i.e. a bare decimal
+    string, the same family as the JSON ``NEW_INVENTORY`` and the
+    ``locations:``-prefixed ``COLLECTED_INDICES`` pushes. We still parse
+    defensively (first run of decimal digits, tolerating any prefix) and return
+    ``None`` on a non-integer payload so callers log-and-skip rather than crash.
+    This count is the delivery cursor — see ``DreadContext._handle_received_pickups``
+    and [[dread-delivery-protocol]]."""
+    m = _RECEIVED_PICKUPS_DIGITS.search(payload)
+    if m is None:
+        return None
+    return int(m.group(0))
 
 
 def parse_malformed_body(body: bytes) -> tuple[int, int, int]:

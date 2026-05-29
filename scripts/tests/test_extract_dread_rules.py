@@ -157,12 +157,38 @@ def test_translate_resource_event():
     assert translate_requirement(req, hdr) == {"type": "event", "name": "Cool Event"}
 
 
-def test_translate_resource_negate_is_impossible():
-    """v0.1 doesn't model 'must NOT have X'."""
+def test_translate_negated_item_is_trivial():
+    """Negated item/event = TEMPORAL ('haven't got/triggered it yet'). Dread's
+    major progression is gated solely by negated state, so we treat it as
+    Trivial (satisfiable in the early state); the forward resolver inlines
+    events in dependency order to keep AP's sweep consistent."""
     hdr = _empty_header()
     req = {"type": "resource", "data": {
         "type": "items", "name": "Morph", "amount": 1, "negate": True}}
-    assert translate_requirement(req, hdr) == IMPOSSIBLE
+    assert translate_requirement(req, hdr) == TRIVIAL
+
+
+def test_translate_negated_event_is_trivial():
+    hdr = _empty_header()
+    req = {"type": "resource", "data": {
+        "type": "events", "name": "Cool Event", "amount": 1, "negate": True}}
+    assert translate_requirement(req, hdr) == TRIVIAL
+
+
+def test_translate_misc_resolves_against_config():
+    """misc resources are static config flags resolved against our values:
+    DoorLocks off → non-negated impossible, negated trivial; NerfPowerBombs on
+    → non-negated trivial, negated impossible."""
+    hdr = _empty_header()
+
+    def misc(name, negate):
+        return translate_requirement({"type": "resource", "data": {
+            "type": "misc", "name": name, "amount": 1, "negate": negate}}, hdr)
+
+    assert misc("DoorLocks", False) == IMPOSSIBLE
+    assert misc("DoorLocks", True) == TRIVIAL
+    assert misc("NerfPowerBombs", False) == TRIVIAL
+    assert misc("NerfPowerBombs", True) == IMPOSSIBLE
 
 
 def test_translate_template_expansion():

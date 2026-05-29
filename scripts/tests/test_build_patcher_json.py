@@ -37,7 +37,24 @@ def _template() -> dict:
                 "pickup_actor": {"scenario": "s010_cave", "actor": "Item_MissileTank011"},
                 "model": ["item_missiletank"],
             },
+            {
+                "pickup_type": "corpius",
+                "caption": "Metroid DNA 1 acquired.",
+                "resources": [[{"item_id": "ITEM_RANDO_ARTIFACT_1", "quantity": 1}]],
+                "pickup_actor": None,
+                "pickup_lua_callback": {"scenario": "s010_cave",
+                                        "function": "OnCorpiusDeath_CUSTOM"},
+            },
         ],
+        "cosmetic_patches": {
+            "config": {"AIManager": {"bShowBossLifebar": True, "bShowEnemyLife": False,
+                                     "bShowEnemyDamage": False, "bShowPlayerDamage": True}},
+            "lua": {"custom_init": {"enable_death_counter": True,
+                                    "enable_room_name_display": "NEVER"}},
+        },
+        "game_patches": {"raven_beak_damage_table_handling": "consistent_low",
+                         "nerf_power_bombs": True},
+        "objective": {"required_artifacts": 3, "hints": ["hint text"]},
     }
 
 
@@ -109,6 +126,70 @@ def test_unknown_pickup_key_raises():
                 "s010_cave/DoesNotExist": [[{"item_id": "ITEM_X", "quantity": 1}]],
             },
         })
+
+
+def test_cosmetic_combat_overrides_applied():
+    t = _template()
+    out = merge_overrides(t, {
+        "cosmetic_combat": {
+            "bShowEnemyLife": True,
+            "enable_room_name_display": "WITH_FADE",
+            "raven_beak_damage_table_handling": "consistent_high",
+            "nerf_power_bombs": False,
+        },
+    })
+    ai = out["cosmetic_patches"]["config"]["AIManager"]
+    assert ai["bShowEnemyLife"] is True
+    # Untouched leaves keep template values.
+    assert ai["bShowBossLifebar"] is True
+    assert ai["bShowPlayerDamage"] is True
+    assert out["cosmetic_patches"]["lua"]["custom_init"]["enable_room_name_display"] == "WITH_FADE"
+    assert out["cosmetic_patches"]["lua"]["custom_init"]["enable_death_counter"] is True
+    assert out["game_patches"]["raven_beak_damage_table_handling"] == "consistent_high"
+    assert out["game_patches"]["nerf_power_bombs"] is False
+
+
+def test_cosmetic_combat_absent_leaves_template_untouched():
+    t = _template()
+    out = merge_overrides(t, {})
+    assert out["cosmetic_patches"] == _template()["cosmetic_patches"]
+    assert out["game_patches"] == _template()["game_patches"]
+
+
+def test_cosmetic_combat_missing_parent_raises():
+    t = _template()
+    del t["game_patches"]
+    with pytest.raises(KeyError, match="game_patches"):
+        merge_overrides(t, {"cosmetic_combat": {"nerf_power_bombs": False}})
+
+
+def test_objective_required_artifacts_applied():
+    t = _template()
+    out = merge_overrides(t, {"required_artifacts": 7})
+    assert out["objective"]["required_artifacts"] == 7
+    # hints preserved
+    assert out["objective"]["hints"] == ["hint text"]
+
+
+def test_objective_absent_when_not_supplied():
+    t = _template()
+    out = merge_overrides(t, {})
+    assert out["objective"]["required_artifacts"] == 3
+
+
+def test_non_actor_pickup_resource_override():
+    """A pickup with pickup_actor=None is keyed by its pickup_lua_callback
+    (scenario/function), so AP-placed DNA lands on the boss."""
+    t = _template()
+    out = merge_overrides(t, {
+        "pickup_resources": {
+            "s010_cave/OnCorpiusDeath_CUSTOM": [[
+                {"item_id": "ITEM_RANDO_ARTIFACT_5", "quantity": 1}
+            ]],
+        },
+    })
+    corpius = next(p for p in out["pickups"] if p["pickup_actor"] is None)
+    assert corpius["resources"][0][0]["item_id"] == "ITEM_RANDO_ARTIFACT_5"
 
 
 def test_does_not_mutate_template():

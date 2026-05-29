@@ -183,18 +183,23 @@ def test_loop_late_binding_safety():
 
 # ---- complete-rule sanity: integrates AST building ----
 
-def test_compiled_elun_energy_tank_rule_has_expected_items():
-    """Sanity that the compiled JSON loads and produces a predicate
-    that respects the wiki: requires Morph Ball + Plasma Beam."""
+def test_compiled_elun_energy_tank_rule_is_item_gated():
+    """Sanity that the compiled JSON loads and produces an item-only predicate
+    that is gated (not trivial) and satisfied by a full loadout. (The global
+    forward-resolver rule carries the cross-region cost, so the old tight
+    Morph+Plasma-only assertion no longer applies.)"""
     import json
     raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
     rules = raw["rules"]
     assert "Elun: energytank_000" in rules
     pred = compile_to_lambda(rules["Elun: energytank_000"], player=1)
-    # Empty inventory: not reachable
-    assert pred(StubState({})) is False
-    # Without Plasma Beam: not reachable (only entry to AR Station)
-    assert pred(StubState({"Morph Ball": 1, "Bomb": 1})) is False
-    # With Plasma + Morph + Bomb: reachable
-    state = StubState({"Morph Ball": 1, "Bomb": 1, "Plasma Beam": 1})
-    assert pred(state) is True
+    assert pred(StubState({})) is False  # gated, not trivial
+    full = {n: 99 for n in (
+        "Morph Ball", "Bomb", "Cross Bomb", "Charge Beam", "Wide Beam",
+        "Plasma Beam", "Wave Beam", "Diffusion Beam", "Grapple Beam",
+        "Spider Magnet", "Speed Booster", "Space Jump", "Spin Boost",
+        "Screw Attack", "Varia Suit", "Gravity Suit", "Flash Shift",
+        "Phantom Cloak", "Power Bomb", "Missile Tank", "Missile+ Tank",
+        "Storm Missile", "Ice Missile", "Slide", "Pulse Radar",
+        "Flash Shift Upgrade", "Speed Booster Upgrade")}
+    assert pred(StubState(full)) is True

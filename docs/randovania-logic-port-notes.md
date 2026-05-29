@@ -412,10 +412,136 @@ Inherited from M1 (still true):
 - Real ammo counting (Missile Tank count ≥ N rather than ≥ 1).
 - Damage / E-Tank thresholding for non-suit-gated rooms.
 
-Newly visible after M2:
-- The cross-region star is now the dominant remaining over-permissive
-  approximation. Gate B will close it; v0.3 should already plan
-  around the assumption that cross-region edges land before then.
-- The `accessibility: items` failure mode (cross-region-induced) is a
-  clear next-task signal. The smoke yaml flips to `items` the moment
-  Gate B lands.
+Newly visible after M2 — NOW RESOLVED (see "Gate B + options retrospective"
+and "Forward resolver + items/full accessibility" below; kept here for the
+trail):
+- The cross-region star *was* the dominant over-permissive approximation.
+  The forward resolver replaced it: cross-region cost is now inlined into
+  each per-pickup item-only rule, so `region_access` is a deliberate star
+  (cost lives in the rules, not the edges) rather than an unmodeled gap.
+- The `accessibility: items` failure mode is GONE. `items`/`full` generate
+  8/8 across seeds and trick levels; the smoke yaml runs under `items`.
+
+Still open for v0.3 (delivery layer, not logic):
+- Cutscene-safe item delivery is NOT yet implementable. Delivery is
+  non-idempotent (`build_receive_pickup_lua` → `OnPickedUp` directly,
+  `inventory_index` a no-op, `PACKET_RECEIVED_PICKUPS` ignored), so a naive
+  post-HELLO replay would double-grant additive items on reconnect. A safe
+  fix gates sends on the game's real `ReceivedPickups` count first, then adds
+  the replay — and that hinges on hardware-validated counter semantics. See
+  CLAUDE.md risk #1 and client/state.py.
+
+## Gate B + options retrospective
+
+Gate B and the difficulty/cosmetic/goal options shipped.
+
+### What shipped
+
+- **Cross-region access (Gate B B1)** — but NOT the way the original plan
+  assumed. The compiler's per-area `cross_region_exits` are all Trivial
+  (every cross-region dock is treated as a free area entry, and Dread's
+  cross-region links have no weapon locks), so emitting them as edges would
+  have been a no-op. Instead the compiler runs ONE global reachability pass
+  over the merged 9-area graph (`build_global_graph` / `compute_region_access`
+  in `extract_dread_rules.py`) and emits a new `region_access` map:
+  region name → the global rule to first set foot in it. Regions.py gates
+  `Menu→region` on it; the per-pickup rules are unchanged. The start region
+  (Artaria) is Trivial.
+- **region_access is ITEM-ONLY.** `_strip_events` drops event atoms from the
+  region rules. This is load-bearing: events are themselves locked
+  progression whose area-relative rules assume free area entry, so coupling
+  region entry to them deadlocks the goal (Ship became unreachable in
+  testing). Item-only gating stays over-permissive about event-gated
+  traversal — the safe direction — while still adding real gates (Cataris
+  needs Charge Beam + Cross Bomb, etc.). Boss/EMMI locations, which carry no
+  per-pickup rule, are now gated by their region's reach instead of being
+  trivially reachable.
+- **Trick Level (Gate B B2/B3)** — `TrickLevel` Choice (beginner/intermediate/
+  advanced) selects one of three pre-baked files (`compiled_rules.json`,
+  `_l2`, `_l3`). The compiler takes `--trick-level`; a TrickReq of level N is
+  Trivial when N ≤ the configured level.
+- **Compiler determinism** — the disjunct cap now breaks ties with a stable
+  key (`_disjunct_sort_key`) instead of hash-seed-dependent frozenset order,
+  so repeated bakes are byte-reproducible. (Re-baking previously churned ~30
+  rules.) The event-ID base now also excludes `Event:`/`Metroid DNA` items so
+  re-running never renumbers events.
+- **Difficulty/cosmetic passthrough options** — HUD toggles, room-name
+  display, death counter, Raven Beak damage table, nerf power bombs. Pure
+  patcher passthrough via a declarative `COSMETIC_COMBAT_PATHS` table; no
+  logic impact. Energy/environmental-damage settings were deliberately NOT
+  exposed (they need the v0.3 damage model).
+- **Metroid DNA goal** — `RequiredArtifacts` (0–12) + `ArtifactPlacement`
+  (prefer_bosses/anywhere). 12 distinct `Metroid DNA k` items map to
+  `ITEM_RANDO_ARTIFACT_k`, so they ride the normal own-item / datapackage /
+  receive paths with zero client special-casing (double-granting an artifact
+  flag is idempotent). Non-actor (boss/EMMI/cutscene) pickups are now keyed
+  by their `pickup_lua_callback` (scenario/function) so AP-placed items land
+  on them; this also fixed the prior desync where bosses kept their vanilla
+  drop regardless of what AP placed.
+
+### Schema bump
+
+`compiled_rules.json` grew two additive keys: `trick_level` (int) and
+`region_access` ({region: item-only rule AST}). `rules`/`events`/
+`victory_condition` are unchanged in content.
+
+### Forward resolver + items/full accessibility (the breakthrough)
+
+`accessibility: items` and `full` now generate (verified 8/8 across seeds at
+every trick level, plus minimal). This took a forward resolver that emits
+ITEM-ONLY rules, a classification fix, and one forced starting item. The pieces:
+
+- **Config-misc negation — resolved exactly.** Randovania `misc` resources
+  (`DoorLocks`, `Teleporters`, `HighDanger`, `NerfPowerBombs`, `SeparateBeams`,
+  `SeparateMissiles`) are static per-seed CONFIG flags, not collectible state.
+  `MISC_RESOURCE_VALUES` in `extract_dread_rules.py` encodes their value for our
+  patcher config and resolves both negated and non-negated `misc` against it
+  (EXCLUDES the 36 `HighDanger` edges, ADMITS the 86 `NOT DoorLocks` edges).
+- **Temporal negation — Trivial.** Negated item/event ("haven't got/triggered
+  it yet") → `TRIVIAL`. Dread's major progression (Ship, bosses, X-release,
+  chain reaction) is gated SOLELY by negated state, so `IMPOSSIBLE` would break
+  completion. The forward resolver collects events in dependency order, so this
+  stays consistent.
+- **Forward resolver with EVENT INLINING (`compile_forward`).** Global
+  round-based sphere expansion: each round, every event atom in an edge is
+  replaced by the ITEM-ONLY reach cost of events collected in EARLIER rounds
+  (uncollected events block the edge). The output rules — per-pickup, per-boss
+  (mapped via pickup_index), and the victory condition — are **item-only**: no
+  event atoms remain. This is the crux. The old event-as-locked-item model
+  created item↔event bootstrap cycles (an event needs an item whose location
+  needs that event) that AP's monotonic, precollected-only `fulfills_
+  accessibility` sweep could not unwind. Folding each event's cost into pure
+  item requirements removes events from the dependency graph, so the rules
+  bootstrap like ordinary AP item logic. `_strip_self_event` guards the
+  self-reference case. region_access becomes a plain star (cross-region cost is
+  inlined into each rule).
+- **Events are no longer AP items/locations.** Since they're inlined,
+  `World.create_items` skips event items, `Regions.create_regions` skips event
+  locations, and `Rules.set_rules` does no event locking. (The data tables still
+  list them for AP-ID stability — they're just unused.)
+- **Classification fix (the bug that masked everything).** Four logic-required
+  items were mis-classified, so AP's logic sweep never collected them, making
+  their gated locations unreachable: `Missile Tank` (was `filler`) →
+  `progression_skip_balancing`; `Missile+ Tank`, `Flash Shift Upgrade`,
+  `Speed Booster Upgrade` (were `useful`) → `progression`. A test
+  (`test_logic_required_items_are_progression`) pins this.
+- **One forced starting item — Charge Beam.** The global rules make Charge Beam
+  a near-universal early prerequisite, so AP's fill has too few early-reachable
+  spots to place it. `World.EXTRA_STARTING_ITEMS = ("Charge Beam",)` (plus the
+  base Slide/Pulse Radar/Missile) is the empirically MINIMAL set; it's
+  precollected AND added to the patcher's starting_items. With it, all of
+  minimal/items/full generate at every trick level.
+
+### Remaining approximations
+
+- The disjunct cap (32) can drop the easiest alternative paths when inlining
+  long event chains, so some rules are stricter than strictly necessary
+  (over-conservative — safe for solvability, may slightly constrain placement).
+- `MISC_RESOURCE_VALUES` bakes `NerfPowerBombs=True` regardless of the per-seed
+  option (logic is pre-baked); the 2 affected edges are combat-only — negligible.
+- DNA-on-boss gates on reaching the boss's *region* (now via its item-only
+  rule), not the in-game boss fight — consistent with suit-ownership fidelity.
+- Events are vestigial in the data tables (kept for ID stability). A future
+  cleanup could drop them entirely (a one-time datapackage bump).
+- ~~Approximation #2 (cross-region unmodeled)~~ closed; ~~#5 (tricks 2+
+  impossible)~~ user-selectable; ~~item↔event bootstrap~~ closed by inlining.

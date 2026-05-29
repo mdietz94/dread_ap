@@ -1,8 +1,13 @@
 name: Samus
 game: Metroid Dread
-description: Dread-only smoke test — single-slot, minimal accessibility (only goal must be reachable). Post-M2 plumbing every event is a real AP item locked to its synthetic event location. Tightening to accessibility=items currently fails because Regions.py still uses a star topology — that's Gate B of the M2 plumbing milestone (see docs/randovania-logic-port-m2plumbing.md).
+description: Dread-only smoke test — single-slot, accessibility=items. The forward resolver inlines events into item-only rules, the logic-required items are classified progression, and Charge Beam is forced as the one bottleneck starting item, so items/full now generate. Exercises trick level, the DNA goal, and cosmetic options.
 
 Metroid Dread:
-  accessibility: minimal
+  accessibility: items
   starting_area: artaria
   include_boss_pickups: true
+  trick_level: beginner
+  required_artifacts: 3
+  artifact_placement: prefer_bosses
+  room_name_display: never
+  raven_beak_damage_table: consistent_low

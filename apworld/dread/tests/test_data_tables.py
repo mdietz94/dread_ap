@@ -106,7 +106,7 @@ def test_every_item_has_patcher_id_and_quantity(items):
 
 
 def test_every_item_has_valid_classification(items):
-    valid = {"progression", "useful", "filler", "trap"}
+    valid = {"progression", "progression_skip_balancing", "useful", "filler", "trap"}
     for it in items:
         assert it["classification"] in valid, f"bad classification: {it}"
 

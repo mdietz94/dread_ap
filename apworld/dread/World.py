@@ -5,17 +5,26 @@ item-pool entry, and writes a small slot_data so the client can derive
 its mapping at connect time.
 
 Logic status (see docs/randovania-logic-port-notes.md):
-  * Milestone 2 plumbing shipped: 137 actor pickup rules + ~184 event
-    reach rules consumed end-to-end. Events are real AP items locked to
-    synthetic event locations.
+  * Forward resolver: a whole-game sphere expansion (scripts/extract_dread_
+    rules.py::compile_forward) emits ITEM-ONLY rules — events are INLINED
+    (each event atom replaced by its item-only reach cost), so they are no
+    longer AP items/locations (we skip them in create_items / create_regions /
+    set_rules; the data tables keep them only for AP-ID stability).
+    region_access is a plain star — cross-region cost is inlined per rule.
+  * accessibility=items/full WORK: item-only rules bootstrap in AP's monotonic
+    sweep. This needed (a) classifying logic-required items as progression
+    (Missile Tank etc.), and (b) forcing Charge Beam as a starting item
+    (EXTRA_STARTING_ITEMS) to clear the early-prerequisite fill bottleneck.
+  * Trick Level option (3 pre-baked rule files); DNA-collection goal
+    (RequiredArtifacts 0-12 + ArtifactPlacement; goal = reach-ship AND N DNA).
 
-Skipped for v0.1 (lands in later phases):
-  * Cross-region access rules (Regions.py still uses star topology — Gate B)
-  * Trick-level UI Choice option — Gate B
-  * Progressive items (Progressive Beam, Progressive Suit)
-  * Per-area starting-location randomization
-  * Hint distribution
-  * Filler-item rebalancing
+Skipped for now (later phases):
+  * Progressive items; per-area starting-location randomization; hint
+    distribution; per-trick-category granularity; door/elevator randomization.
+  * Ammo / damage / E-tank counting (v0.3) — rules collapse ammo to >=1 and
+    damage to suit ownership (over/under-permissive, not blocking).
+  * Cutscene-safe item delivery — see client/protocol.py + the risk note in
+    CLAUDE.md. Needs idempotent (ReceivedPickups-gated) delivery first.
 """
 from __future__ import annotations
 
@@ -95,15 +104,43 @@ class DreadWorld(World):
         non_event_locations = sum(
             1 for l in location_table if l.pickup_type != "event"
         )
+        # Forced starting items: precollect into AP logic so state.has() is true
+        # from turn 0 (the compiled rules reference them; without this the
+        # opening rooms and everything past them are unreachable). See the
+        # class-attr docstrings for why the bottleneck set is needed.
+        forced_starting = tuple(self.BASE_STARTING_ITEMS) + tuple(self.EXTRA_STARTING_ITEMS)
+        for name in forced_starting:
+            self.multiworld.push_precollected(self.create_item(name))
+        # Starting-only items are removed from the findable pool. Missile Tank
+        # is precollected for capacity but stays findable.
+        pool_excluded = {"Slide", "Pulse Radar"} | set(self.EXTRA_STARTING_ITEMS)
+
         pool: list[Item] = []
         for it in item_table:
             if it.name.startswith("Event: "):
-                pool.append(self.create_item(it.name))
+                # Events are inlined into the item-only compiled rules (their
+                # reach cost is folded into the item requirements), so they are
+                # no longer AP items/locations — skip them entirely. (The data
+                # tables still list them for ID stability; they're just unused.)
+                continue
+            if it.name.startswith("Metroid DNA"):
+                # Goal items — added explicitly below, exactly N of them.
+                continue
+            if it.name in pool_excluded:
+                # Starting-only — precollected above, not findable.
                 continue
             if it.classification == "progression":
                 pool.append(self.create_item(it.name))
             elif it.classification == "useful":
                 pool.append(self.create_item(it.name))
+
+        # Metroid DNA: exactly the first N (mapping to artifacts 1..N). They
+        # count as non-event pool items, so the filler loop self-adjusts. For
+        # prefer_bosses, set_rules pulls them back out and locks them to boss
+        # locations (like events); for anywhere they stay in the pool.
+        n_dna = int(self.options.required_artifacts.value)
+        for k in range(1, n_dna + 1):
+            pool.append(self.create_item(f"Metroid DNA {k}"))
 
         non_event_in_pool = sum(
             1 for i in pool if not i.name.startswith("Event: ")
@@ -131,28 +168,31 @@ class DreadWorld(World):
     #     Pulse Radar available; without it some routes become unreachable.
     #   - 15 starting missile capacity: matches Randovania default; vanilla
     #     gives 5. Less than ~10 makes early-game boss fights unwinnable.
-    #   - Rando artifacts 4..12 (9 of 12): the patcher's init.lc sets
-    #     `iNumRequiredArtifacts = 3`, so 9 starting artifacts means the
-    #     player only needs to find 0 more by default. This is the
-    #     Randovania starter setting; it makes the goal trivially
-    #     reachable for a smoke seed without affecting the rest of the
-    #     pool. Future Options.py work can expose artifact count.
-    # TODO(post-v0.1): make this configurable via DreadOptions
-    # (a `starting_inventory` Option mirroring Randovania's "starting items").
+    # Rando artifacts are handled dynamically in _build_placements_payload:
+    # the RequiredArtifacts option picks N, the in-game gate checks
+    # ITEM_RANDO_ARTIFACT_1..N (granted by the N placed Metroid DNA pickups),
+    # and artifacts N+1..12 are added to the starting inventory there so the
+    # remaining artifact flags are pre-satisfied (mirroring the starter
+    # preset, which placed 3 and started 9).
     DEFAULT_STARTING_ITEMS: dict[str, int] = {
         "ITEM_FLOOR_SLIDE": 1,
         "ITEM_SONAR": 1,
         "ITEM_WEAPON_MISSILE_MAX": 15,
-        "ITEM_RANDO_ARTIFACT_4": 1,
-        "ITEM_RANDO_ARTIFACT_5": 1,
-        "ITEM_RANDO_ARTIFACT_6": 1,
-        "ITEM_RANDO_ARTIFACT_7": 1,
-        "ITEM_RANDO_ARTIFACT_8": 1,
-        "ITEM_RANDO_ARTIFACT_9": 1,
-        "ITEM_RANDO_ARTIFACT_10": 1,
-        "ITEM_RANDO_ARTIFACT_11": 1,
-        "ITEM_RANDO_ARTIFACT_12": 1,
     }
+
+    # Randovania starter abilities — precollected into AP logic AND granted by
+    # the patcher. Slide + Pulse Radar are starting-only (not findable); Missile
+    # Tank is precollected for the starting capacity but stays findable.
+    BASE_STARTING_ITEMS: tuple[str, ...] = ("Slide", "Pulse Radar", "Missile Tank")
+
+    # Minimal bottleneck set forced as STARTING items so the globally-faithful
+    # (forward-resolver, item-only) logic is fillable. Those rules make Charge
+    # Beam a near-universal early prerequisite, so AP's fill_restrictive has too
+    # few early-reachable spots to place it; granting it at start clears the
+    # bottleneck. Determined empirically as the MINIMAL set (just Charge Beam).
+    # Precollected into AP logic, removed from the findable pool, and added to
+    # the patcher's starting_items so the game grants it too.
+    EXTRA_STARTING_ITEMS: tuple[str, ...] = ("Charge Beam",)
 
     def _build_placements_payload(self) -> dict[str, Any]:
         """Build the per-slot placements payload.
@@ -198,12 +238,42 @@ class DreadWorld(World):
                 "is_own_player": is_own,
             })
 
+        o = self.options
+        n_dna = int(o.required_artifacts.value)
+        # Starting inventory: baseline + the artifacts the player ISN'T required
+        # to collect (N+1..12), so the in-game gate (which checks 1..N) is
+        # satisfied exactly by collecting the N placed Metroid DNA.
+        starting_items = dict(self.DEFAULT_STARTING_ITEMS)
+        for k in range(n_dna + 1, 13):
+            starting_items[f"ITEM_RANDO_ARTIFACT_{k}"] = 1
+        # The forced bottleneck starting items must ALSO be granted in-game, or
+        # the player would have them in AP logic but not on the Switch.
+        for name in self.EXTRA_STARTING_ITEMS:
+            data = item_name_to_item.get(name)
+            if data and data.patcher_item_id:
+                starting_items[data.patcher_item_id] = max(1, int(data.quantity))
+        # Resolve cosmetic/combat options to the exact patcher values here so
+        # patcher_pipeline stays AP-import-free. Choices map their current_key
+        # to the schema string (room name is upper-cased; raven beak keys ARE
+        # the schema strings).
+        cosmetic_combat = {
+            "bShowBossLifebar": bool(o.show_boss_lifebar.value),
+            "bShowEnemyLife": bool(o.show_enemy_life.value),
+            "bShowEnemyDamage": bool(o.show_enemy_damage.value),
+            "bShowPlayerDamage": bool(o.show_player_damage.value),
+            "enable_death_counter": bool(o.enable_death_counter.value),
+            "enable_room_name_display": o.room_name_display.current_key.upper(),
+            "raven_beak_damage_table_handling": o.raven_beak_damage_table.current_key,
+            "nerf_power_bombs": bool(o.nerf_power_bombs.value),
+        }
         return {
             "slot_name": slot_name,
             "seed_id": seed_id,
-            "starting_area": int(self.options.starting_area.value),
-            "include_boss_pickups": bool(self.options.include_boss_pickups.value),
-            "starting_items": dict(self.DEFAULT_STARTING_ITEMS),
+            "starting_area": int(o.starting_area.value),
+            "include_boss_pickups": bool(o.include_boss_pickups.value),
+            "starting_items": starting_items,
+            "cosmetic_combat": cosmetic_combat,
+            "required_artifacts": n_dna,
             "placements": placements,
         }
 

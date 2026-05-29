@@ -41,6 +41,36 @@ STARTING_AREA_INDEX_TO_LOCATION: dict[int, dict[str, str]] = {
     0: {"scenario": "s010_cave", "actor": "StartPoint0"},
 }
 
+# Cosmetic / combat passthrough: payload field name → json-path of the leaf to
+# overwrite in the patcher template. World.py resolves each value to its final
+# patcher form, so this layer only relocates leaves. Adding a new passthrough
+# setting is one line here + one line in World._build_placements_payload.
+COSMETIC_COMBAT_PATHS: dict[str, tuple[str, ...]] = {
+    "bShowBossLifebar": ("cosmetic_patches", "config", "AIManager", "bShowBossLifebar"),
+    "bShowEnemyLife": ("cosmetic_patches", "config", "AIManager", "bShowEnemyLife"),
+    "bShowEnemyDamage": ("cosmetic_patches", "config", "AIManager", "bShowEnemyDamage"),
+    "bShowPlayerDamage": ("cosmetic_patches", "config", "AIManager", "bShowPlayerDamage"),
+    "enable_death_counter": ("cosmetic_patches", "lua", "custom_init", "enable_death_counter"),
+    "enable_room_name_display": ("cosmetic_patches", "lua", "custom_init", "enable_room_name_display"),
+    "raven_beak_damage_table_handling": ("game_patches", "raven_beak_damage_table_handling"),
+    "nerf_power_bombs": ("game_patches", "nerf_power_bombs"),
+}
+
+
+def _set_in(root: dict, path: tuple[str, ...], value: Any) -> None:
+    """Overwrite a leaf in an existing nested dict. Parent keys must already
+    exist (the starter preset is complete); a missing parent raises so
+    template/schema drift surfaces loudly rather than silently no-op'ing."""
+    node = root
+    for key in path[:-1]:
+        if key not in node or not isinstance(node[key], dict):
+            raise KeyError(
+                f"cosmetic/combat path {'.'.join(path)} missing parent {key!r} "
+                f"in template — template/schema drift?"
+            )
+        node = node[key]
+    node[path[-1]] = value
+
 # Markers for idempotent re-injection of the telemetry block.
 TELEMETRY_START_MARKER = (
     "-- BEGIN AP TELEMETRY INJECTION (apworld dread.patcher_pipeline)"
@@ -95,12 +125,12 @@ def placements_to_overrides(
         # Events are AP-synthetic — no patcher counterpart.
         if p.get("pickup_type") == "event":
             continue
-        # Non-actor pickups (EMMI / corex / corpius / cutscene) keep their
-        # vanilla resources in v0.1; the patcher template differentiates
-        # them by pickup_lua_callback, which our override protocol doesn't
-        # touch.
-        if p.get("pickup_type") != "actor":
-            continue
+        # Non-actor pickups (EMMI / corex / corpius / cutscene) ARE overridden
+        # now: their location's (scenario, actor) equals the template's
+        # pickup_lua_callback (scenario, function), so the key below matches a
+        # template pickup via _pickup_key. This is what lets Metroid DNA (and
+        # any AP item) land on a boss/EMMI location and grant the right
+        # resource, instead of the boss keeping its vanilla drop.
 
         key = f"{scenario}/{actor}"
         recipient = p.get("recipient_slot_name") or slot_name
@@ -129,17 +159,29 @@ def placements_to_overrides(
         "configuration_identifier": cfg_id,
         "starting_location": starting_location,
         "starting_items": starting_items,
+        "cosmetic_combat": placements.get("cosmetic_combat", {}),
+        "required_artifacts": placements.get("required_artifacts"),
         "pickup_resources": pickup_resources,
         "pickup_captions": pickup_captions,
     }
 
 
 def _pickup_key(pickup: dict[str, Any]) -> Optional[str]:
-    """Return ``"<scenario>/<actor>"`` for actor-type pickups; else None."""
+    """Return a stable ``"<scenario>/<name>"`` key for a template pickup.
+
+    Actor pickups key off ``pickup_actor`` (scenario/actor). Non-actor
+    pickups (EMMI / corex / corpius / cutscene) have ``pickup_actor: null``
+    but carry a ``pickup_lua_callback`` whose ``(scenario, function)`` pair
+    matches the ``(scenario, actor)`` our locations.json stores for those
+    boss/EMMI locations — so both shapes share one key space (verified
+    unique across the template)."""
     actor = pickup.get("pickup_actor")
-    if not actor:
-        return None
-    return f"{actor.get('scenario')}/{actor.get('actor')}"
+    if actor:
+        return f"{actor.get('scenario')}/{actor.get('actor')}"
+    cb = pickup.get("pickup_lua_callback")
+    if cb:
+        return f"{cb.get('scenario')}/{cb.get('function')}"
+    return None
 
 
 def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
@@ -159,6 +201,20 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
 
     if "starting_items" in overrides:
         out["starting_items"] = overrides["starting_items"]
+
+    # Cosmetic / combat leaves. Only fields actually supplied are written;
+    # an absent key leaves the template default untouched (so a pre-this-change
+    # seed payload yields byte-identical output).
+    cosmetic_combat = overrides.get("cosmetic_combat", {})
+    for field_name, path in COSMETIC_COMBAT_PATHS.items():
+        if field_name in cosmetic_combat:
+            _set_in(out, path, cosmetic_combat[field_name])
+
+    # Goal: how many Metroid DNA must be collected. Overwrite only the count,
+    # preserving the template's objective.hints. None ⇒ leave template default.
+    required_artifacts = overrides.get("required_artifacts")
+    if required_artifacts is not None:
+        out.setdefault("objective", {})["required_artifacts"] = int(required_artifacts)
 
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})

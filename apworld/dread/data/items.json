@@ -172,28 +172,28 @@
     "ap_id": 21548,
     "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
     "quantity": 10,
-    "classification": "useful"
+    "classification": "progression"
   },
   {
     "name": "Flash Shift Upgrade",
     "ap_id": 21549,
     "patcher_item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN",
     "quantity": 1,
-    "classification": "useful"
+    "classification": "progression"
   },
   {
     "name": "Speed Booster Upgrade",
     "ap_id": 21550,
     "patcher_item_id": "ITEM_UPGRADE_SPEED_BOOST_CHARGE",
     "quantity": 1,
-    "classification": "useful"
+    "classification": "progression"
   },
   {
     "name": "Missile Tank",
     "ap_id": 21551,
     "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
     "quantity": 2,
-    "classification": "filler"
+    "classification": "progression_skip_balancing"
   },
   {
     "name": "Power Bomb Tank",
@@ -1494,6 +1494,90 @@
     "name": "Event: s090_skybase:default:block_pbcolumn_000",
     "ap_id": 21737,
     "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 1",
+    "ap_id": 21738,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_1",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 2",
+    "ap_id": 21739,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_2",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 3",
+    "ap_id": 21740,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_3",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 4",
+    "ap_id": 21741,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_4",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 5",
+    "ap_id": 21742,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_5",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 6",
+    "ap_id": 21743,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_6",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 7",
+    "ap_id": 21744,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_7",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 8",
+    "ap_id": 21745,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_8",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 9",
+    "ap_id": 21746,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_9",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 10",
+    "ap_id": 21747,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_10",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 11",
+    "ap_id": 21748,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_11",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Metroid DNA 12",
+    "ap_id": 21749,
+    "patcher_item_id": "ITEM_RANDO_ARTIFACT_12",
     "quantity": 1,
     "classification": "progression"
   }

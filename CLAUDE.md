@@ -99,8 +99,14 @@ Prior versions of this document described the response shape as
 3. Read response
 4. Send Lua-exec: `return string.format('%d,%d,%s,%s,%s', RL.Version, RL.BufferSize, tostring(RL.Bootstrap), Init.sLayoutUUID, GameVersion)`
 5. Read response, split on `,` → `(api_version, buffer_size, bootstrap, layout_uuid, game_version)`
-6. (Optional in our case — already done by exlaunch + Randovania-patched ROM) Send bootstrap Lua files
-7. Start poll loop: every 2.0s send `Game.AddSF(2.0, RL.UpdateRDVClient, "")` initially, then the Lua side keeps re-scheduling itself
+6. **REQUIRED, not optional** — send the `RL.*` bootstrap Lua (vendored under
+   `client/lua/`, assembled by `client/bootstrap.py`, chunked to `buffer_size`).
+   The exlaunch ROM ships only stubs; without this the API probe at step 4 even
+   fails (`RL.Version` is nil). `connect_switch` does this before polling.
+   Earlier docs called this optional — WRONG; randovania bootstraps every connect.
+7. Start the 2s poll loop, which calls `RL.GetInventoryAndSend` /
+   `GetCollectedIndicesAndSend` / `GetReceivedPickupsAndSend` directly each tick
+   (we don't rely on `RL.UpdateRDVClient` self-scheduling) + reads the goal flag.
 
 **RL namespace** (the Lua API exposed by the bootstrap files):
 
@@ -178,13 +184,37 @@ Run with `python scripts/phase1_validate.py <switch-ip>` after installing
 upstream exlaunch on the Switch. Exit status 0 means the wire is up and
 the rest of the plan can proceed. Non-zero status means stop and triage.
 
-Logic: M2 plumbing Gate A shipped. All 137 actor pickups have
+Logic: M2 plumbing Gate A + Gate B shipped. All 137 actor pickups have
 non-trivial rules; 184 events are real AP items locked to synthetic
 event locations; the lambda compiler's event branch consults
 `state.has("Event: <name>", player)`; completion_condition reads
-`victory_condition` from compiled output (currently `Event: Ship`).
-Generation smoke test produces a solvable seed under
-`accessibility: minimal`.
+`victory_condition` from compiled output. Gate B: cross-region access is
+modeled via a global-reachability `region_access` map (item-only — see the
+notes retro for why) that gates `Menu→region`, so boss/EMMI locations are no
+longer trivially reachable; Trick Level is a user option backed by three
+pre-baked `compiled_rules{,_l2,_l3}.json`. The compiler is now deterministic
+(stable disjunct-cap tie-break). Generation smoke produces a solvable seed
+under `accessibility: minimal` across trick levels and DNA configs.
+Negation handling was made faithful (config-`misc` flags resolved against our
+config; temporal negated item/event → drop-the-transient = impossible, relying
+on the stable post-event path; self-referential event rules stripped). Starting
+items (Slide, Pulse Radar, missile capacity) are now `push_precollected` into AP
+logic. `accessibility: items`/`full` NOW WORK (verified 8/8 across seeds at every trick
+level). The compiler uses a forward resolver (`compile_forward` in
+scripts/extract_dread_rules.py) that INLINES events into ITEM-ONLY rules — each
+event atom is replaced by that event's item-only reach cost, computed in
+dependency-sphere order. This removes events from the dependency graph, so the
+old item↔event bootstrap cycle (which AP's monotonic `fulfills_accessibility`
+sweep couldn't unwind) is gone, and the rules bootstrap like ordinary AP item
+logic. Events are therefore NO LONGER AP items/locations (World/Regions/Rules
+skip them; data tables keep them for ID stability). Two more pieces were
+required: a classification fix (Missile Tank was `filler`, Missile+ Tank /
+Flash Shift Upgrade / Speed Booster Upgrade were `useful` — all logic-required,
+now progression(_skip_balancing)), and ONE forced starting item, Charge Beam
+(`World.EXTRA_STARTING_ITEMS`, precollected + in the patcher starting_items),
+the minimal set that clears the fill bottleneck. region_access is a star (cost
+inlined per-rule). Smoke seed is now `accessibility: items`. See the notes retro
+for the full diagnosis.
 
 Wire wiring: Gate A + B shipped. Every Switch→PC frame is now
 demuxed by leading type byte; the wire format documented previously
@@ -201,21 +231,87 @@ that to the override shape `scripts/build_patcher_json.py` consumes.
 `apworld/dread/tests/seeds/dread_clique.yaml`. End-to-end
 runbook at [docs/e2e-runbook.md](docs/e2e-runbook.md); wire-wiring
 retrospective at [docs/wire-wiring-notes.md](docs/wire-wiring-notes.md).
-186 tests pass. Apworld now slugged `0.0.1-phase4-logic-m2-wire`.
 
-Outstanding for the rest of M2 (Gate B; non-blocking for v0.1):
-cross-region access graph (Regions.py is still a star, so
-`accessibility: items` fails), trick-level UI Choice option, three
-pre-baked trick-level rule files. See
-[docs/randovania-logic-port-notes.md](docs/randovania-logic-port-notes.md)
-§"M2 plumbing retrospective" and
-[docs/randovania-logic-port-m2plumbing.md](docs/randovania-logic-port-m2plumbing.md)
-for the full Gate B punch list. Real-hardware end-to-end run on a
-Switch is the next manual gate. Kivy GUI is a separate later milestone.
+Bootstrap + RL.ReceivePickup delivery port (resolves risk #1 from source — see
+the delivery-protocol reading below). The earlier "idempotent-delivery
+groundwork behind a flag" was built on a WRONG premise and has been replaced.
+Reading upstream (`randovania/games/dread/assets/lua/bootstrap_part_*.lua`,
+open-dread-rando `randomizer_powerup.lua`, exlaunch `main.cpp`) established:
+(1) there are TWO counters — `InventoryIndex` (bumped by EVERY `OnPickedUp`,
+local or remote) and `ReceivedPickups` (bumped ONLY by `RL.ConfirmPickup`);
+(2) our old `OnPickedUp`-direct delivery moved `InventoryIndex`, never
+`ReceivedPickups`, so gating on `ReceivedPickups` was a no-op — the flag never
+worked; (3) `RL.ReceivePickup` already provides idempotence (it grants only when
+`receivedPickupIndex==ReceivedPickups() and inventoryIndex==InventoryIndex()`,
+guards a single `PendingPickup`, defers through cutscenes via
+`Scenario.IsUserInteractionEnabled`, and bumps the counter on confirm); and (4)
+**the exlaunch ROM ships only RL.* stubs — the real functions are Lua randovania
+sends at every connect.** Our client never sent it, so it could not have worked
+against a real ROM (the API probe alone reads `RL.Version`, nil pre-bootstrap).
+So now: `client/lua/bootstrap_part_*.lua` + `bootstrap_locations.lua` are
+vendored verbatim (randovania `68a2b52`, see `client/lua/NOTICE.md`);
+`client/bootstrap.py` reproduces `get_bootstrapper_for` from OUR data tables and
+`connect_switch` sends the chunked bootstrap before polling;
+`protocol.build_receive_pickup_lua` emits `RL.ReceivePickup(...)`;
+`DreadContext` tracks both game counters (`RECEIVED_PICKUPS` + `NEW_INVENTORY`
+`index`) and `_attempt_delivery` sends the pickup at `received_pickup_index ==
+ReceivedPickups`, tagged with the live `InventoryIndex`, one per poll tick.
+Delivery is idempotent + cutscene-safe BY CONSTRUCTION; no flag. The validation
+harness `apworld/dread/tests/fakeswitch.py` (stateful fake modelling the two
+counters + `RL.ReceivePickup` + cutscene deferral) drives the REAL `DreadContext`
+over a loopback socket in `test_session_e2e.py` (connect→bootstrap→collect→
+`LocationChecks`→ordered exactly-once delivery→restart-no-double-grant→cutscene-
+deferral→goal). That harness also caught a real bug: a push handler calling
+`run_lua` deadlocks the read loop, so delivery is driven only from the poll /
+AP-message tasks. See [[dread-delivery-protocol]].
+Options: beyond StartingArea/IncludeBossPickups, the apworld now exposes
+TrickLevel, a Metroid DNA collection goal (RequiredArtifacts 0-12 +
+ArtifactPlacement), and cosmetic/combat passthrough (HUD toggles, room-name
+display, death counter, Raven Beak damage table, nerf power bombs). Energy /
+environmental-damage settings are intentionally NOT exposed (they need the
+v0.3 damage model). DNA `Metroid DNA k` items map to `ITEM_RANDO_ARTIFACT_k`
+and ride the normal item paths; non-actor (boss/EMMI) pickups are keyed by
+`pickup_lua_callback`. 233 tests pass (182 apworld + 51 scripts; 1 pre-existing
+vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged
+`0.0.1-phase4-logic-m2-gateB-options` (world_version 0.2.0).
+
+`accessibility: items`/`full` now GENERATE (forward resolver + classification
+fix + Charge Beam forced start — see above and the notes retro); the smoke seed
+runs under `items`.
+
+Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
+collapse ammo to >=1 and damage to suit ownership); per-trick-category
+granularity; door/elevator randomization; per-item pickup classes (delivery
+currently passes the generic `RandomizerPowerup` for all items — additive items
++ most upgrades work, but input-toggle items like Speed Booster / Phantom Cloak
+and progressive beam/missile model updates want their specific `Randomizer*`
+class; no regression vs. before, it's a refinement). Real-hardware (or Ryujinx)
+end-to-end run is the next manual gate — but now an *integration smoke* (does the
+bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
+NOT a semantics probe: the counter/cutscene questions are settled from source.
+Kivy GUI is a separate later milestone.
 
 ## Known unknowns / risks for new work
 
-1. **Cutscene-blocked item delivery.** `RL.GivePendingPickup` no-ops during cinematics. Lift the pending-queue + post-HELLO replay pattern from `smo_archipelago/apworld/smo_archipelago/client/state.py`.
+1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**
+   We now deliver via the bootstrap's `RL.ReceivePickup`, which is idempotent
+   and cutscene-safe by construction: it grants only when the sent indices match
+   the game's live `ReceivedPickups`/`InventoryIndex`, holds one `PendingPickup`,
+   defers the grant through cinematics (`Scenario.IsUserInteractionEnabled`), and
+   bumps `ReceivedPickups` only on confirm. So a mid-cutscene delivery is
+   deferred (never dropped), a duplicate/out-of-order send is ignored, and a
+   client restart reads the real count and re-grants nothing. No
+   hardware-validated counter mystery remains — the semantics are in
+   `bootstrap_part_2.lua` + `randomizer_powerup.lua` (read them, not hardware).
+   *Residual live check* (integration, not semantics): confirm the bootstrap
+   loads on the actual 2.1.0 ROM and that an item pops + a check registers; see
+   the e2e runbook. A future polish is per-item pickup classes (we pass generic
+   `RandomizerPowerup`); and a `Game.AddSF(2.0,RL.UpdateRDVClient,"")` arm could
+   replace our explicit per-tick `RL.Get*AndSend` calls if we want game-driven
+   pushes. **Hard rule learned here:** never call `run_lua` from inside a push
+   handler (`_on_switch_push` / `_handle_*`) — it runs on the read loop and
+   deadlocks awaiting a reply only that loop can read. Drive sends from the poll
+   task or AP-message task. See [[dread-delivery-protocol]].
 
 2. **Lua-eval poll latency (2s floor).** Acceptable for v0.1; revisit only if AP async features (deathlink) need it.
 
