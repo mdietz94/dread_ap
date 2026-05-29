@@ -208,16 +208,35 @@ Default port is 38281.
 
 ## Step 8 — Start the Dread Client
 
+### GUI (recommended)
+
+Open Archipelago's **Launcher** and click **"Dread Client"** (or double-click a
+`.dreadap` file). The window opens with:
+
+- Standard AP server address bar + Connect button
+- A **"Dread"** tab (left half: live status — AP + Switch wire state, scenario,
+  item/check counts, goal; right half: client and Switch device log)
+- A **Switch-status pill** in the top bar — click it to open the reconnect
+  popup, edit the Switch IP, and click **Reconnect**
+
+Enter the AP server address (`localhost:38281`) and click **Connect**. Then click
+the Switch pill, set `<switch-ip>`, and click **Reconnect**. If the pill turns
+orange ("error"), just click it and reconnect — delivery is idempotent so
+retrying never double-grants items.
+
+### Headless (CI / no display server)
+
 ```pwsh
+$env:DREAD_NOGUI = "1"
 python -m worlds.dread.client.main `
   --connect localhost:38281 `
   --name Samus `
   --switch-host <switch-ip>
 ```
 
-The headless client logs to stdout. It will:
+In either mode the client will:
 
-1. Connect to AP server at `localhost:38281` as slot `Samus`.
+1. Connect to the AP server at `localhost:38281` as slot `Samus`.
 2. Dial the Switch at `<switch-ip>:6969`, handshake + API probe.
 3. **Send the `RL.*` bootstrap** (chunked Lua — `Sending RL bootstrap: 13
    blocks in N chunk(s)` in the log). This defines the query/delivery functions
@@ -283,8 +302,6 @@ Quick proof the wire is actually working:
 
 ## What's NOT in this milestone
 
-- **Kivy GUI**: this is a separate later milestone. The headless client
-  works but lacks the in-app `/dread_status`, `/poke`, command UI.
 - **Cross-region access rules**: the apworld currently uses a star
   topology in `Regions.py`. Tightening to `accessibility: items` is M2
   Gate B work (see `docs/randovania-logic-port-m2plumbing.md`).
