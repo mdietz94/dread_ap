@@ -1,0 +1,123 @@
+name: Release apworld
+
+# Builds dread_archipelago.apworld and attaches it to a GitHub Release.
+#
+# Triggers:
+#   - Tag push matching `v*` (e.g. `git tag v0.1.0 && git push --tags`).
+#   - Manual dispatch — useful for testing the build without cutting a tag.
+#     The manual run uploads a workflow artifact instead of creating a release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write  # required for softprops/action-gh-release to publish the release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Sanity: run the project's test suite before shipping a zip.
+      # The apworld is the canonical artifact — if its tests are red,
+      # the release would carry known-broken code.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest jsonschema
+
+      - name: Run tests (apworld + scripts)
+        run: |
+          # apworld tests pull in BaseClasses / CommonClient / NetUtils
+          # from Archipelago. We don't run them in CI because that would
+          # require checking out the AP repo. Scripts tests are pure
+          # Python and validate the patcher-pipeline conversion logic.
+          python -m pytest scripts/tests/ -q
+
+      - name: Build apworld zip
+        run: |
+          mkdir -p dist
+          python scripts/install_apworld.py \
+            --mode apworld \
+            --output dist/dread_archipelago.apworld
+
+      - name: Verify zip contents
+        run: |
+          python - <<'PY'
+          import zipfile, sys
+          z = zipfile.ZipFile("dist/dread_archipelago.apworld")
+          names = z.namelist()
+          required = [
+              "dread_archipelago/__init__.py",
+              "dread_archipelago/archipelago.json",
+              "dread_archipelago/World.py",
+              "dread_archipelago/_data_loader.py",
+              "dread_archipelago/patcher_pipeline.py",
+              "dread_archipelago/data/items.json",
+              "dread_archipelago/data/locations.json",
+              "dread_archipelago/data/regions.json",
+              "dread_archipelago/data/compiled_rules.json",
+              "dread_archipelago/data/starter_preset_patcher.json",
+              "dread_archipelago/client/main.py",
+              "dread_archipelago/client/context.py",
+          ]
+          missing = [n for n in required if n not in names]
+          if missing:
+              print("MISSING from .apworld:", missing, file=sys.stderr)
+              sys.exit(1)
+          # The pycache + tests directories must NOT be in the zip.
+          forbidden = [n for n in names
+                       if "__pycache__" in n or n.startswith("dread_archipelago/tests/")]
+          if forbidden:
+              print("forbidden entries in .apworld:", forbidden[:5], file=sys.stderr)
+              sys.exit(1)
+          print(f"OK — {len(names)} entries, all required files present.")
+          PY
+
+      # Tagged release path: publish to GitHub Releases with the apworld
+      # as the only asset. The release notes pull from the tag annotation
+      # if present, otherwise softprops auto-generates a changelog.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/dread_archipelago.apworld
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          # Drop a one-liner so the release page tells users what to do.
+          body: |
+            ## Installation
+
+            1. Download `dread_archipelago.apworld` (below) and drop it into your
+               Archipelago install's `custom_worlds/` directory.
+            2. Generate a multiworld using `Metroid Dread` as the game.
+            3. Connect with the Dread Client:
+               ```
+               python -m worlds.dread_archipelago.client.main \
+                 --connect <server>:<port> --name <slot> --switch-host <switch-ip>
+               ```
+            4. From the client, run `/patch <dreadvania-install-dir> <vanilla-romfs-dir>`
+               to build and deploy your mod.
+
+            See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md)
+            for prerequisites (Dreadvania install, vanilla Dread 2.1.0 romfs, etc.).
+
+      # Manual dispatch path: upload as a workflow artifact so we can
+      # download + test without cutting a release tag.
+      - name: Upload artifact (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dread_archipelago.apworld
+          path: dist/dread_archipelago.apworld
+          if-no-files-found: error
