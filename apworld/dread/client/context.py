@@ -414,8 +414,6 @@ class DreadContext(CommonContext):
             log.info("/patch: %s", result.message)
             if result.patcher_input_path:
                 log.info("  patcher input: %s", result.patcher_input_path)
-            if result.init_lc_path:
-                log.info("  injected telemetry into: %s", result.init_lc_path)
         else:
             log.error("/patch: %s", result.message)
             if result.cli_stderr_tail:
