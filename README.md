@@ -13,15 +13,35 @@ existing protocol.
 
 ## Status
 
-**Phase 1 in progress.** Wire-up validation script at [scripts/phase1_validate.py](scripts/phase1_validate.py).
-Nothing playable yet.
+The apworld (logic, items/locations, options) and the PC client — wire protocol,
+idempotent cutscene-safe item delivery, goal detection, and a **Kivy GUI** — are
+implemented and unit-tested. The remaining gate is a live integration smoke on
+real hardware / Ryujinx (does the bootstrap load on the 2.1.0 ROM, does an item
+pop, does a check register). Early wire-up validation lives at
+[scripts/phase1_validate.py](scripts/phase1_validate.py).
+
+## Installing & running the client
+
+1. Install the apworld into your Archipelago checkout:
+   `python scripts/install_apworld.py` (folder mode → `worlds/dread/`; pass
+   `--mode apworld` for a `dread.apworld` zip, or `--ap-root <path>` to target a
+   specific install).
+2. Launch Archipelago's **Launcher** and click **"Dread Client"** (or open a
+   `.dreadap` file). The client window opens with the standard AP server bar plus
+   a **"Dread"** tab (status + log) and a top-bar **Switch-status pill**.
+3. Enter your AP server address and connect as usual. Point the client at your
+   Switch / Ryujinx: click the Switch pill → edit the IP → **Reconnect**, or run
+   `/dread_connect <ip[:port]>` in the command bar.
+4. The Switch dial sometimes loses the race with Dreadvania's own startup. If the
+   pill is orange/"error", just click it and Reconnect (or `/dread_connect`) — the
+   delivery protocol is idempotent, so retrying never double-grants items.
 
 ## Architecture
 
 ```
 [ Switch / Dread 2.1.0 ]  <--TCP/binary LAN-->  [ PC client (Python) ]  <--ws-->  [ AP server ]
    exlaunch sysmodule                              DreadContext(CommonContext)       archipelago.gg
-   (UPSTREAM Randovania)                           Kivy GUI (Tracker + Connections)
+   (UPSTREAM Randovania)                           Kivy GUI (status + Switch pill)
    - bootstraps RL.* Lua namespace                 LuaProtocol on port 6969
    - opens TCP :6969                               (lifted from smo_archipelago)
    - executes arbitrary Lua, returns result

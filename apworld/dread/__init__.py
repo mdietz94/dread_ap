@@ -56,9 +56,9 @@ def add_client_to_launcher() -> None:
         func=launch_dread_client,
         component_type=Type.CLIENT,
         file_identifier=SuffixIdentifier('.dreadap'),
-        # game_name will be set once Phase 4's World subclass lands; until
-        # then a missing game_name just means the Component won't auto-
-        # associate with a seed file. The Launcher button still works.
+        # Matches DreadWorld.game so the Launcher groups the client under the
+        # right game and a .dreadap file auto-routes to this Component.
+        game_name="Metroid Dread",
     ))
 
 

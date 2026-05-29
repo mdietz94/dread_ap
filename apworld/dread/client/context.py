@@ -28,7 +28,7 @@ from typing import Any, Optional
 from CommonClient import CommonContext, ClientCommandProcessor
 from NetUtils import ClientStatus
 
-from .commands import parse_command
+from .commands import parse_command, parse_switch_target
 from .datapackage import DataPackage
 from .lua_executor import DreadExecutor
 from .lua_packets import PacketType, Response, parse_received_pickups_count
@@ -42,6 +42,15 @@ from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
 
 log = logging.getLogger(__name__)
+
+# Parent package logger ("<pkg>.client") that the GUI log pane tails; the
+# per-module loggers (context, lua_executor, …) propagate into it. Derived
+# from __name__ so it's right whether installed as worlds.dread.* (AP folder
+# install) or apworld.dread.* (tests / dev). The GUI computes the same name.
+_CLIENT_LOGGER = __name__.rpartition(".")[0]
+# Switch-forwarded device logs land here (a child of _CLIENT_LOGGER) so they
+# appear in the GUI log pane, tagged distinct from PC-side diagnostics.
+_switch_log = logging.getLogger(f"{_CLIENT_LOGGER}.switch")
 
 
 GAME_NAME = "Metroid Dread"
@@ -101,12 +110,34 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         self.output(f"switch_host set to {host!r}; use /switch_reconnect to apply")
         return True
 
-    def _cmd_switch_reconnect(self) -> bool:
-        """Drop the current Switch connection and re-dial."""
+    def _cmd_dread_connect(self, host: str = "") -> bool:
+        """``/dread_connect [ip[:port]]`` — (re)dial the Switch.
+
+        The initial dial sometimes loses the race with Dreadvania finishing
+        its own startup, so this is the recovery hatch. With no argument it
+        just re-dials the current target; pass ``ip`` (optionally ``ip:port``)
+        to re-point first — e.g. ``/dread_connect 192.168.1.42`` or
+        ``/dread_connect localhost:6969``.
+        """
         ctx = self.ctx
+        if host:
+            try:
+                new_host, new_port = parse_switch_target(host)
+            except ValueError as exc:
+                self.output(f"err: {exc}")
+                self.output("usage: /dread_connect [ip[:port]]")
+                return True
+            ctx.switch_host = new_host
+            if new_port is not None:
+                ctx.switch_port = new_port
         asyncio.ensure_future(ctx.reconnect_switch())
-        self.output("reconnecting to Switch …")
+        self.output(f"reconnecting to Switch at {ctx.switch_host}:{ctx.switch_port} …")
         return True
+
+    def _cmd_switch_reconnect(self) -> bool:
+        """Drop the current Switch connection and re-dial. Alias of
+        ``/dread_connect`` (kept for muscle memory)."""
+        return self._cmd_dread_connect()
 
     def _cmd_poke(self, *lua_words: str) -> bool:
         """``/poke <lua-source>`` — run arbitrary Lua. Debug only."""
@@ -229,6 +260,18 @@ class DreadContext(CommonContext):
         if self.executor:
             await self.executor.close()
         await super().shutdown()
+
+    def run_gui(self) -> None:
+        """Lazy-import + start the Kivy UI.
+
+        gui.py pulls kvui/Kivy, which crashes on headless generation hosts
+        (no display server). The apworld __init__ is imported at generation
+        time, so we must never import gui.py at module load — defer it to
+        here, which only runs inside ``launch()`` from the Launcher
+        subprocess. Mirrors ``SMOContext.run_gui``."""
+        from .gui import DreadManager
+        self.ui = DreadManager(self)
+        self.ui_task = asyncio.create_task(self.ui.async_run(), name="DreadUI")
 
     # ---- Switch connection lifecycle ----------------------------------
 
@@ -493,7 +536,12 @@ class DreadContext(CommonContext):
             return
         if packet_type == PacketType.LOG_MESSAGE:
             if resp.payload:
-                self.state.add_log(resp.payload.decode("utf-8", errors="replace"))
+                text = resp.payload.decode("utf-8", errors="replace")
+                self.state.add_log(text)
+                # Surface device-side logs in the GUI log pane (which tails
+                # the _CLIENT_LOGGER tree). "[switch]" tags them apart from
+                # PC-side client diagnostics.
+                _switch_log.info("[switch] %s", text)
             return
         if packet_type == PacketType.MALFORMED:
             log.warning("Switch reported MALFORMED for our request (payload=%r)", resp.payload)

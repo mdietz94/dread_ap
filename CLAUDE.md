@@ -289,7 +289,21 @@ class; no regression vs. before, it's a refinement). Real-hardware (or Ryujinx)
 end-to-end run is the next manual gate — but now an *integration smoke* (does the
 bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
 NOT a semantics probe: the counter/cutscene questions are settled from source.
-Kivy GUI is a separate later milestone.
+
+Kivy GUI: SHIPPED. `client/gui.py` defines `DreadManager(GameManager)` (lazy-
+imported by `DreadContext.run_gui`, so Kivy is never pulled at apworld/generation
+load time). It adds one "Dread" tab (50/50 split: an at-a-glance status panel +
+a log pane tailing the `<pkg>.client` logger tree, into which Switch-forwarded
+`PACKET_LOG_MESSAGE` lines are routed) and a top-bar Switch-status pill that
+opens a reconnect popup (editable Switch IP + Reconnect button). The same retry
+is available as `/dread_connect [ip[:port]]` (a superset of `/switch_reconnect`,
+which is now an alias) — the recovery hatch for the Switch dial losing the race
+with Dreadvania's startup. `main.py` calls `run_gui()` when `gui_enabled` and
+`DREAD_NOGUI` is unset (the env var still forces the headless CLI used by the
+e2e smoke). Pure formatters live in the Kivy-free `client/display.py`
+(unit-tested); `tests/test_display.py` + `tests/test_gui_smoke.py` cover them.
+The Launcher `Component` now carries `game_name="Metroid Dread"` so it groups
+under the game and `.dreadap` files auto-route to it.
 
 ## Known unknowns / risks for new work
 
