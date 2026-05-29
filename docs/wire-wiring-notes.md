@@ -131,8 +131,17 @@ previously-collected location every 2 seconds.
   slot↔name map is v0.2.
 - `GAME_STATE`: semicolon-delimited `<state>[;<beaten:bool>]`.
 - `LOG_MESSAGE`: utf-8 string → BridgeState log surface.
-- `RECEIVED_PICKUPS`: ignored for v0.1 (we already track position
-  cursor on the PC side).
+- `RECEIVED_PICKUPS`: UTF-8 decimal count of `Blackboard.ReceivedPickups`
+  (`lua_packets.parse_received_pickups_count`). This is the delivery cursor:
+  `DreadContext` delivers the AP item at position `== ReceivedPickups` via
+  `RL.ReceivePickup`, tagged with the live `InventoryIndex` (from `NEW_INVENTORY`
+  `index`). The index-match + single-pending + cutscene-deferral in the bootstrap
+  Lua make delivery idempotent + cutscene-safe by construction (CLAUDE.md risk #1
+  is resolved from source; there is no `idempotent_delivery` flag — an earlier
+  attempt at one was built on the false premise that our old `OnPickedUp`-direct
+  delivery bumped `ReceivedPickups`; it bumps only `InventoryIndex`).
+- `NEW_INVENTORY` `index`: the game's `InventoryIndex` (every pickup, local or
+  remote) — the other half of the delivery index match.
 
 ## Gate B — generate_output + converter
 

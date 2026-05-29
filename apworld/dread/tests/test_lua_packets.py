@@ -121,3 +121,23 @@ def test_packet_type_values_match_wire():
 
 def test_push_and_reply_type_sets_are_disjoint():
     assert lp.PUSH_TYPES.isdisjoint(lp.REPLY_TYPES)
+
+
+# ---- parse_received_pickups_count -----------------------------------------
+
+def test_parse_received_pickups_plain_count():
+    assert lp.parse_received_pickups_count(b"0") == 0
+    assert lp.parse_received_pickups_count(b"7") == 7
+    assert lp.parse_received_pickups_count(b"137") == 137
+
+
+def test_parse_received_pickups_tolerates_prefix_and_whitespace():
+    # Defensive: COLLECTED_INDICES carries a "locations:" prefix, so we don't
+    # assume RECEIVED_PICKUPS is bare digits.
+    assert lp.parse_received_pickups_count(b"received:42") == 42
+    assert lp.parse_received_pickups_count(b"  12\n") == 12
+
+
+def test_parse_received_pickups_non_integer_returns_none():
+    assert lp.parse_received_pickups_count(b"") is None
+    assert lp.parse_received_pickups_count(b"nope") is None

@@ -47,23 +47,32 @@ def test_to_lua_table_nested_progression():
 
 
 def test_build_receive_pickup_lua_shape():
-    # Now emits RandomizerPowerup.OnPickedUp(nil, ...) — RL.ReceivePickup
-    # was the old upstream API surface; current open-dread-rando-exlaunch
-    # doesn't define it. See build_receive_pickup_lua's docstring.
+    # Delivers via the bootstrap's RL.ReceivePickup — the idempotent,
+    # cutscene-safe path. The two trailing ints are the index match the Switch
+    # checks against its live ReceivedPickups / InventoryIndex counters.
     lua = build_receive_pickup_lua(
         message="Received Missile Tank",
-        parent_ref=0,
         progression=[[{"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 2}]],
-        num_pickups=1,
-        inventory_index=0,
+        received_pickup_index=3,
+        inventory_index=5,
     )
-    assert lua.startswith("do ")
-    assert lua.endswith(" end")
-    assert "RandomizerPowerup.OnPickedUp(nil, " in lua
-    assert "Game.LogWarn" in lua
-    assert '"Received Missile Tank"' in lua  # message arg quoted
-    assert "ITEM_WEAPON_MISSILE_MAX" in lua  # item id present
-    assert "quantity=2" in lua  # Lua key=value, not JSON
+    assert lua.startswith("RL.ReceivePickup(")
+    assert lua.endswith(", 3, 5)")              # received index, inventory index
+    assert "RandomizerPowerup" in lua            # default pickup class (bareword)
+    assert '"Received Missile Tank"' in lua      # message arg quoted
+    assert "ITEM_WEAPON_MISSILE_MAX" in lua      # item id present
+    # progression is passed as a Lua STRING (loadstring'd on the Switch), so its
+    # inner quotes are escaped:
+    assert '\\"ITEM_WEAPON_MISSILE_MAX\\"' in lua
+    assert "quantity=2" in lua
+
+
+def test_build_receive_pickup_lua_custom_class():
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1}]],
+        received_pickup_index=0, inventory_index=0, cls="RandomizerSpeedBooster",
+    )
+    assert ", RandomizerSpeedBooster, " in lua
 
 
 def test_pickup_location_key():

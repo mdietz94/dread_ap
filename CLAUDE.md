@@ -99,8 +99,14 @@ Prior versions of this document described the response shape as
 3. Read response
 4. Send Lua-exec: `return string.format('%d,%d,%s,%s,%s', RL.Version, RL.BufferSize, tostring(RL.Bootstrap), Init.sLayoutUUID, GameVersion)`
 5. Read response, split on `,` → `(api_version, buffer_size, bootstrap, layout_uuid, game_version)`
-6. (Optional in our case — already done by exlaunch + Randovania-patched ROM) Send bootstrap Lua files
-7. Start poll loop: every 2.0s send `Game.AddSF(2.0, RL.UpdateRDVClient, "")` initially, then the Lua side keeps re-scheduling itself
+6. **REQUIRED, not optional** — send the `RL.*` bootstrap Lua (vendored under
+   `client/lua/`, assembled by `client/bootstrap.py`, chunked to `buffer_size`).
+   The exlaunch ROM ships only stubs; without this the API probe at step 4 even
+   fails (`RL.Version` is nil). `connect_switch` does this before polling.
+   Earlier docs called this optional — WRONG; randovania bootstraps every connect.
+7. Start the 2s poll loop, which calls `RL.GetInventoryAndSend` /
+   `GetCollectedIndicesAndSend` / `GetReceivedPickupsAndSend` directly each tick
+   (we don't rely on `RL.UpdateRDVClient` self-scheduling) + reads the goal flag.
 
 **RL namespace** (the Lua API exposed by the bootstrap files):
 
@@ -225,6 +231,39 @@ that to the override shape `scripts/build_patcher_json.py` consumes.
 `apworld/dread/tests/seeds/dread_clique.yaml`. End-to-end
 runbook at [docs/e2e-runbook.md](docs/e2e-runbook.md); wire-wiring
 retrospective at [docs/wire-wiring-notes.md](docs/wire-wiring-notes.md).
+
+Bootstrap + RL.ReceivePickup delivery port (resolves risk #1 from source — see
+the delivery-protocol reading below). The earlier "idempotent-delivery
+groundwork behind a flag" was built on a WRONG premise and has been replaced.
+Reading upstream (`randovania/games/dread/assets/lua/bootstrap_part_*.lua`,
+open-dread-rando `randomizer_powerup.lua`, exlaunch `main.cpp`) established:
+(1) there are TWO counters — `InventoryIndex` (bumped by EVERY `OnPickedUp`,
+local or remote) and `ReceivedPickups` (bumped ONLY by `RL.ConfirmPickup`);
+(2) our old `OnPickedUp`-direct delivery moved `InventoryIndex`, never
+`ReceivedPickups`, so gating on `ReceivedPickups` was a no-op — the flag never
+worked; (3) `RL.ReceivePickup` already provides idempotence (it grants only when
+`receivedPickupIndex==ReceivedPickups() and inventoryIndex==InventoryIndex()`,
+guards a single `PendingPickup`, defers through cutscenes via
+`Scenario.IsUserInteractionEnabled`, and bumps the counter on confirm); and (4)
+**the exlaunch ROM ships only RL.* stubs — the real functions are Lua randovania
+sends at every connect.** Our client never sent it, so it could not have worked
+against a real ROM (the API probe alone reads `RL.Version`, nil pre-bootstrap).
+So now: `client/lua/bootstrap_part_*.lua` + `bootstrap_locations.lua` are
+vendored verbatim (randovania `68a2b52`, see `client/lua/NOTICE.md`);
+`client/bootstrap.py` reproduces `get_bootstrapper_for` from OUR data tables and
+`connect_switch` sends the chunked bootstrap before polling;
+`protocol.build_receive_pickup_lua` emits `RL.ReceivePickup(...)`;
+`DreadContext` tracks both game counters (`RECEIVED_PICKUPS` + `NEW_INVENTORY`
+`index`) and `_attempt_delivery` sends the pickup at `received_pickup_index ==
+ReceivedPickups`, tagged with the live `InventoryIndex`, one per poll tick.
+Delivery is idempotent + cutscene-safe BY CONSTRUCTION; no flag. The validation
+harness `apworld/dread/tests/fakeswitch.py` (stateful fake modelling the two
+counters + `RL.ReceivePickup` + cutscene deferral) drives the REAL `DreadContext`
+over a loopback socket in `test_session_e2e.py` (connect→bootstrap→collect→
+`LocationChecks`→ordered exactly-once delivery→restart-no-double-grant→cutscene-
+deferral→goal). That harness also caught a real bug: a push handler calling
+`run_lua` deadlocks the read loop, so delivery is driven only from the poll /
+AP-message tasks. See [[dread-delivery-protocol]].
 Options: beyond StartingArea/IncludeBossPickups, the apworld now exposes
 TrickLevel, a Metroid DNA collection goal (RequiredArtifacts 0-12 +
 ArtifactPlacement), and cosmetic/combat passthrough (HUD toggles, room-name
@@ -232,7 +271,7 @@ display, death counter, Raven Beak damage table, nerf power bombs). Energy /
 environmental-damage settings are intentionally NOT exposed (they need the
 v0.3 damage model). DNA `Metroid DNA k` items map to `ITEM_RANDO_ARTIFACT_k`
 and ride the normal item paths; non-actor (boss/EMMI) pickups are keyed by
-`pickup_lua_callback`. 206 tests pass (157 apworld + 49 scripts; 1 pre-existing
+`pickup_lua_callback`. 233 tests pass (182 apworld + 51 scripts; 1 pre-existing
 vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged
 `0.0.1-phase4-logic-m2-gateB-options` (world_version 0.2.0).
 
@@ -242,31 +281,37 @@ runs under `items`.
 
 Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
 collapse ammo to >=1 and damage to suit ownership); per-trick-category
-granularity; door/elevator randomization; cutscene-safe item delivery (risk #1
-below — needs idempotent delivery first). Real-hardware end-to-end run on a
-Switch is the next manual gate. Kivy GUI is a separate later milestone.
+granularity; door/elevator randomization; per-item pickup classes (delivery
+currently passes the generic `RandomizerPowerup` for all items — additive items
++ most upgrades work, but input-toggle items like Speed Booster / Phantom Cloak
+and progressive beam/missile model updates want their specific `Randomizer*`
+class; no regression vs. before, it's a refinement). Real-hardware (or Ryujinx)
+end-to-end run is the next manual gate — but now an *integration smoke* (does the
+bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
+NOT a semantics probe: the counter/cutscene questions are settled from source.
+Kivy GUI is a separate later milestone.
 
 ## Known unknowns / risks for new work
 
-1. **Cutscene-blocked item delivery — NOT yet safe to fix by naive replay.**
-   An item delivered mid-cinematic can be dropped by the game. The tempting fix
-   (lift the pending-queue + post-HELLO replay from smo_archipelago) is **unsafe
-   as-is** because Dread delivery is currently **non-idempotent**:
-   `client/protocol.py::build_receive_pickup_lua` calls
-   `RandomizerPowerup.OnPickedUp(nil, resources)` directly, the `inventory_index`
-   arg is a no-op, and `PACKET_RECEIVED_PICKUPS` (the game's own confirmed count)
-   is ignored ("log and skip" in `context.py`). The only dedup is the PC-side
-   `received_count` cursor, which advances on SEND. So replaying received items
-   on reconnect would **double-grant additive items** (Missile/Energy/Power Bomb
-   tanks → inflated capacity) on any reconnect where the game kept its inventory.
-   A safe fix is a two-step: (a) make delivery idempotent — gate sends on the
-   game's real `Blackboard.ReceivedPickups` count (consume the existing
-   `PACKET_RECEIVED_PICKUPS` push and only send items beyond the confirmed
-   count), matching Randovania's `dread_remote_connector`; THEN (b) add the
-   replay. Step (a) hinges on hardware-validated counter semantics (does a
-   cutscene-dropped grant still bump the counter? does OnPickedUp bump it
-   exactly once?) that are **untested on real hardware** — so this is gated on
-   the manual Switch end-to-end run, not implementable blind.
+1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**
+   We now deliver via the bootstrap's `RL.ReceivePickup`, which is idempotent
+   and cutscene-safe by construction: it grants only when the sent indices match
+   the game's live `ReceivedPickups`/`InventoryIndex`, holds one `PendingPickup`,
+   defers the grant through cinematics (`Scenario.IsUserInteractionEnabled`), and
+   bumps `ReceivedPickups` only on confirm. So a mid-cutscene delivery is
+   deferred (never dropped), a duplicate/out-of-order send is ignored, and a
+   client restart reads the real count and re-grants nothing. No
+   hardware-validated counter mystery remains — the semantics are in
+   `bootstrap_part_2.lua` + `randomizer_powerup.lua` (read them, not hardware).
+   *Residual live check* (integration, not semantics): confirm the bootstrap
+   loads on the actual 2.1.0 ROM and that an item pops + a check registers; see
+   the e2e runbook. A future polish is per-item pickup classes (we pass generic
+   `RandomizerPowerup`); and a `Game.AddSF(2.0,RL.UpdateRDVClient,"")` arm could
+   replace our explicit per-tick `RL.Get*AndSend` calls if we want game-driven
+   pushes. **Hard rule learned here:** never call `run_lua` from inside a push
+   handler (`_on_switch_push` / `_handle_*`) — it runs on the read loop and
+   deadlocks awaiting a reply only that loop can read. Drive sends from the poll
+   task or AP-message task. See [[dread-delivery-protocol]].
 
 2. **Lua-eval poll latency (2s floor).** Acceptable for v0.1; revisit only if AP async features (deathlink) need it.
 

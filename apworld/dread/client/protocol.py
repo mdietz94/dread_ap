@@ -65,59 +65,49 @@ class CollectedLocationEvent:
 def build_receive_pickup_lua(
     *,
     message: str,
-    parent_ref: int,
     progression: list[list[dict]],
-    num_pickups: int,
+    received_pickup_index: int,
     inventory_index: int,
+    cls: str = "RandomizerPowerup",
 ) -> str:
-    """Construct the Lua snippet that grants one received item.
+    """Construct the Lua call that delivers one received item via the
+    bootstrap's ``RL.ReceivePickup`` — the idempotent, cutscene-safe path.
 
-    Calls ``RandomizerPowerup.OnPickedUp(nil, <resources>)`` against the
-    deployed patcher Lua — that handles the full ``HandlePickupResources``
-    + post-grant flow (energy/ammo/artifact recompute, weapon update,
-    inventory index bump, RL.UpdateRDVClient tick that triggers our
-    telemetry heartbeat). Passing ``nil`` for the actor skips the
-    ``MarkLocationCollected`` branch — we did NOT visit a pickup pedestal,
-    so we shouldn't fake a location-collected blackboard prop.
+    ``RL.ReceivePickup(msg, cls, progression_string, receivedPickupIndex,
+    inventoryIndex)`` (bootstrap_part_2.lua) only acts when no pickup is
+    pending AND ``receivedPickupIndex == RL.ReceivedPickups()`` and
+    ``inventoryIndex == RL.InventoryIndex()`` — the exact-index match dedups
+    duplicate/out-of-order sends. It then defers the grant through any cutscene
+    (``RL.GivePendingPickup`` reschedules until ``Scenario.IsUserInteractionEnabled``)
+    and, on confirm, calls ``cls.OnPickedUp`` then bumps ``ReceivedPickups``.
 
-    Why not ``RL.ReceivePickup``? Older Randovania bootstrap Lua exposed
-    that function, but current upstream ``open-dread-rando-exlaunch``
-    doesn't define it — only Send* push primitives plus
-    ``RandomizerPowerup`` itself. CLAUDE.md's wire-protocol notes
-    documented the old API; this is the corrected path.
+    So the caller delivers the AP item at position ``received_pickup_index ==
+    game's ReceivedPickups`` tagged with the game's current ``inventory_index``;
+    the counter advancing (next push) clocks the next delivery. This replaces
+    the old ``OnPickedUp``-direct path, which moved ``InventoryIndex`` but never
+    ``ReceivedPickups`` (so it was non-idempotent and could drop a mid-cutscene
+    grant). See CLAUDE.md risk #1 and [[dread-delivery-protocol]].
 
-    ``progression`` is a list of stages; each stage is a list of resource
-    dicts ``{"item_id": "ITEM_X", "quantity": N}``. For a non-progressive
-    item, ``[[{"item_id": "...", "quantity": 1}]]``.
-
-    ``message``, ``parent_ref``, ``num_pickups``, ``inventory_index`` are
-    no-ops in the current implementation — kept in the signature so the
-    context.py call site doesn't need to change every time we revise the
-    Lua contract. The ``message`` is surfaced via ``Game.LogWarn`` (which
-    routes back to PC as a PACKET_LOG_MESSAGE push for client visibility);
-    the inventory index gets bumped by RandomizerPowerup itself.
-
-    NOT IDEMPOTENT. Because ``inventory_index`` is ignored, calling this twice
-    for the same item grants it twice — and for additive items (Missile /
-    Energy / Power Bomb tanks) that means inflated capacity, not a no-op. Do
-    NOT build a reconnect/post-cutscene replay on top of this as-is. A safe
-    replay first needs index-gated delivery: have the caller consult the
-    Switch's real ``Blackboard.ReceivedPickups`` count (the
-    ``PACKET_RECEIVED_PICKUPS`` push, currently ignored in context.py) and skip
-    any item the game has already applied — matching Randovania's
-    ``dread_remote_connector``. See CLAUDE.md risk #1 and client/state.py.
+    ``progression`` is a list of stages; each stage a list of resource dicts
+    ``{"item_id": "ITEM_X", "quantity": N}``. ``cls`` is the Lua pickup class
+    (bareword); ``RandomizerPowerup`` is the generic path that grants additive
+    resources — per-item classes (input-toggle for Speed Booster / Phantom
+    Cloak, progressive beam/missile models) are a follow-up.
     """
-    import json
-    progression_lua = _to_lua_table(progression)
-    # Lua block: log the "received from" message (PC will see it as a log
-    # push), then run the full pickup flow. Wrap in a do-end so the
-    # statement can be sent as a single Lua-exec call.
-    return (
-        f"do "
-        f"Game.LogWarn(0, {json.dumps(message)}); "
-        f"RandomizerPowerup.OnPickedUp(nil, {progression_lua}); "
-        f"end"
+    progression_src = _to_lua_table(progression)
+    return "RL.ReceivePickup({msg}, {cls}, {prog}, {ri}, {ii})".format(
+        msg=_lua_string(message),
+        cls=cls,
+        prog=_lua_string(progression_src),
+        ri=int(received_pickup_index),
+        ii=int(inventory_index),
     )
+
+
+def _lua_string(value: str) -> str:
+    """Render a Python string as a double-quoted Lua string literal (escaping
+    backslashes and quotes — same convention as ``_to_lua_table``)."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _to_lua_table(obj) -> str:

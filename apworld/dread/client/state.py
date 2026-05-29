@@ -5,20 +5,12 @@ Dread doesn't have kingdoms, captures, talkatoo, or multi-Switch routing.
 
 State model:
 
-  * ``received_items`` — append-only log of every AP item we've delivered
-    to the Switch (via ``RandomizerPowerup.OnPickedUp``). Its length is the
-    PC-side delivery cursor: ``_on_received_items`` only delivers items at
-    positions >= this length.
-
-    CAUTION: delivery is NOT idempotent today — ``build_receive_pickup_lua``
-    calls ``OnPickedUp`` directly and the ``inventory_index`` arg is a no-op,
-    so re-sending an item RE-GRANTS it (additive items like Missile/Energy/
-    Power Bomb tanks would double). The cursor advances on SEND, not on the
-    Switch confirming receipt, so an item dropped mid-cutscene is lost rather
-    than retried. A cutscene-safe replay requires first making delivery
-    idempotent — gate sends on the Switch's real ``Blackboard.ReceivedPickups``
-    count (consume ``PACKET_RECEIVED_PICKUPS``, currently ignored) — and a
-    hardware test. See the risk note in CLAUDE.md.
+  * ``received_items`` — diagnostics-only log of confirmed deliveries (appended
+    when the game's ``ReceivedPickups`` count advances). NOT a delivery cursor:
+    the game's ``ReceivedPickups`` (``game_received_pickups`` below) is the
+    authoritative cursor. Delivery goes through ``RL.ReceivePickup``, which is
+    idempotent + cutscene-safe by construction (index match + single pending +
+    cutscene deferral on the Switch side). See [[dread-delivery-protocol]].
 
   * ``collected_locations`` — set of AP location_ids the Switch has told
     us were collected. Dedup'd; reconnect snapshot replay re-emits checks
@@ -65,6 +57,20 @@ class BridgeState:
         self.collected_locations: list[CollectedLocationEvent] = []
         self._collected_keys: set[int] = set()
 
+        # The game's two authoritative counters, mirrored from pushes. These
+        # ARE the delivery protocol: RL.ReceivePickup only grants a pickup when
+        # the (receivedPickupIndex, inventoryIndex) we send match the game's
+        # live values, then bumps ReceivedPickups on confirm. So we deliver the
+        # AP item at position == game_received_pickups, tagged with the game's
+        # current inventory_index, and let the counter advancing (next push)
+        # clock the next delivery. Idempotent + cutscene-safe by construction —
+        # a client restart reads the real counts and never re-grants. Both kept
+        # monotonic; they only climb within a slot. See [[dread-delivery-protocol]].
+        #   game_received_pickups: Blackboard.ReceivedPickups (PACKET_RECEIVED_PICKUPS)
+        #   game_inventory_index : Blackboard.InventoryIndex   (NEW_INVENTORY "index")
+        self._game_received_pickups: int = 0
+        self._game_inventory_index: int = 0
+
         self.inventory: dict[str, int] = {}
         self.game_state: DreadGameState = DreadGameState()
 
@@ -94,6 +100,26 @@ class BridgeState:
         with self._lock:
             return list(self.received_items)
 
+    def set_game_received_pickups(self, count: int) -> None:
+        """Record the game's ReceivedPickups count (monotonic within a slot)."""
+        with self._lock:
+            if count > self._game_received_pickups:
+                self._game_received_pickups = count
+
+    def game_received_pickups(self) -> int:
+        with self._lock:
+            return self._game_received_pickups
+
+    def set_game_inventory_index(self, index: int) -> None:
+        """Record the game's InventoryIndex (monotonic within a slot)."""
+        with self._lock:
+            if index > self._game_inventory_index:
+                self._game_inventory_index = index
+
+    def game_inventory_index(self) -> int:
+        with self._lock:
+            return self._game_inventory_index
+
     def clear_received(self) -> None:
         """Reset the per-slot received-item state.
 
@@ -107,6 +133,8 @@ class BridgeState:
             self.inventory = {}
             self.collected_locations = []
             self._collected_keys = set()
+            self._game_received_pickups = 0
+            self._game_inventory_index = 0
 
     # ---- Collected locations (Switch → PC via RL.GetCollectedIndicesAndSend) ----
 
@@ -175,6 +203,8 @@ class BridgeState:
                 "seed": self.seed,
                 "slot": self.slot,
                 "received_count": len(self.received_items),
+                "game_received_pickups": self._game_received_pickups,
+                "game_inventory_index": self._game_inventory_index,
                 "collected_count": len(self.collected_locations),
                 "inventory": dict(self.inventory),
                 "scenario": self.game_state.scenario_id,

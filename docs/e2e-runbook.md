@@ -207,17 +207,22 @@ python -m worlds.dread.client.main `
 The headless client logs to stdout. It will:
 
 1. Connect to AP server at `localhost:38281` as slot `Samus`.
-2. Dial the Switch at `<switch-ip>:6969`.
-3. Pull initial state.
-4. Start a 2-second poll loop.
+2. Dial the Switch at `<switch-ip>:6969`, handshake + API probe.
+3. **Send the `RL.*` bootstrap** (chunked Lua — `Sending RL bootstrap: 13
+   blocks in N chunk(s)` in the log). This defines the query/delivery functions
+   the ROM only stubs; if a chunk errors the client logs `bootstrap chunk i/N
+   failed: …` and aborts the Switch connection — that's the first thing to check
+   if nothing works.
+4. Start a 2-second poll loop (`RL.GetInventoryAndSend` /
+   `GetCollectedIndicesAndSend` / `GetReceivedPickupsAndSend` + goal flag).
 
 ## Step 9 — Play
 
 Boot Dread on the Switch. Once you're in-game, the client should:
 
-- Forward AP-received items by calling `RandomizerPowerup.OnPickedUp`
-  directly (the bootstrap no longer defines `RL.ReceivePickup`), popping
-  the vanilla Dread "Item acquired" UI.
+- Deliver AP-received items via `RL.ReceivePickup` (idempotent + cutscene-safe;
+  the bootstrap defers the grant through cinematics and bumps `ReceivedPickups`
+  on confirm), popping the vanilla Dread "Item acquired" UI.
 - Watch the Switch's `PACKET_COLLECTED_INDICES` push and forward each
   newly-set pickup_index as a `LocationChecks` to the AP server.
 - Report `ClientStatus.CLIENT_GOAL` when `Init.bBeatenSinceLastReboot`
@@ -235,15 +240,22 @@ Quick proof the wire is actually working:
       popup with the AP-forwarded item.
 - [ ] If you generated `dread_clique.yaml`, have ButtonPusher click
       their button. The Dread player should get the corresponding popup.
-- [ ] **Cutscene-delivery probe (validates the risk #1 fix).** While a
-      cinematic is playing, have the other slot send the Dread player an
-      *additive* item (Missile Tank). After the cutscene: did the count go
-      up by exactly one, by two, or not at all? Then trigger a client
-      reconnect and watch whether already-granted items re-apply. Record
-      whether `Blackboard.ReceivedPickups` bumps once per grant and whether
-      a cutscene-dropped grant still bumps it. These answers are the
-      prerequisite for making delivery idempotent + cutscene-safe (CLAUDE.md
-      risk #1); today delivery is non-idempotent so do NOT enable any replay.
+- [ ] **Delivery is idempotent + cutscene-safe by construction** (we use the
+      bootstrap's `RL.ReceivePickup`; the counter/cutscene semantics are settled
+      from upstream source, not this probe). These checks just *confirm the
+      mechanism runs on real 2.1.0*, they aren't discovering unknowns:
+      1. *Ordered, exactly-once.* Receive a few additive items (Missile Tanks).
+         Capacity should rise by exactly one tank each; with `--log-level DEBUG`
+         watch `game ReceivedPickups advanced N -> N+1` step by one.
+      2. *Cutscene deferral.* While a cinematic plays (the first boss intro,
+         Corpius in Artaria, is the clean early one), have the other slot send a
+         Missile Tank. The popup should appear only after you regain control,
+         and capacity rise by exactly one — never two, never zero.
+      3. *Restart, no double-grant.* Kill and relaunch the client mid-session.
+         It re-reads `ReceivedPickups` and grants nothing already applied.
+      If any of these misbehaves, it's an integration bug (e.g. a stale `actor`
+      key in `locations.json` so the bootstrap props don't match), not a
+      semantics surprise — file it against the bootstrap/data, not the protocol.
 
 ## Common failure modes
 
