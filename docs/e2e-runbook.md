@@ -83,19 +83,30 @@ table below. The rest of the pipeline depends on this working.
 
 ## Step 2 — Generate the AP seed
 
+`--player_files_path` is a **directory** of player YAMLs (Generate.py iterates
+it), NOT a single file — and the `seeds/` folder holds several yamls, so point
+it at the whole folder and you'd get a multiworld of all of them. Stage the one
+yaml you want in its own directory first.
+
 For a Dread-only smoke seed:
 
 ```pwsh
+$players = "build\players-smoke"
+New-Item -ItemType Directory -Force $players | Out-Null
+Copy-Item apworld\dread\tests\seeds\dread_smoke.yaml $players\ -Force
 python scripts\ap_generate.py `
-  --player_files_path apworld\dread\tests\seeds\dread_smoke.yaml `
+  --player_files_path $players `
   --outputpath apworld\dread\tests\seeds\out
 ```
 
 For the 2-slot Dread + Clique multiworld smoke:
 
 ```pwsh
+$players = "build\players-clique"
+New-Item -ItemType Directory -Force $players | Out-Null
+Copy-Item apworld\dread\tests\seeds\dread_clique.yaml $players\ -Force
 python scripts\ap_generate.py `
-  --player_files_path apworld\dread\tests\seeds\dread_clique.yaml `
+  --player_files_path $players `
   --outputpath apworld\dread\tests\seeds\out
 ```
 
@@ -294,7 +305,9 @@ python -m pytest apworld/dread/tests/ scripts/tests/ -q
 python scripts/install_apworld.py
 # Skip steps 1, 6, 8, 9 if no Switch — generation + conversion can be
 # verified without hardware.
-python scripts/ap_generate.py --player_files_path apworld/dread/tests/seeds/dread_clique.yaml --outputpath apworld/dread/tests/seeds/out
+mkdir -Force build/players-clique; Copy-Item apworld/dread/tests/seeds/dread_clique.yaml build/players-clique/ -Force
+python scripts/ap_generate.py --player_files_path build/players-clique --outputpath apworld/dread/tests/seeds/out
 python scripts/seed_to_patcher_overrides.py apworld/dread/tests/seeds/out/AP_*.zip --slot Samus --output build/test_overrides.json
-python scripts/build_patcher_json.py --template vendor/open-dread-rando/tests/test_files/patcher_files/starter_preset_patcher.json --ap-overrides build/test_overrides.json --output build/test_input.json
+# Template is bundled in the apworld (the vendor checkout's fixtures aren't shipped):
+python scripts/build_patcher_json.py --template apworld/dread/data/starter_preset_patcher.json --ap-overrides build/test_overrides.json --output build/test_input.json
 ```

@@ -144,6 +144,13 @@ def placements_to_overrides(
             pickup_resources[key] = [[
                 {"item_id": patcher_item_id, "quantity": quantity}
             ]]
+            # Overwrite the template's stale caption so the in-game popup names
+            # the AP-placed item, not the starter-preset's vanilla one (e.g. a
+            # pedestal now holding a Missile Tank shouldn't still say "Flash
+            # Shift acquired."). Matches the template's "<item> acquired." form.
+            ap_item_name = p.get("ap_item_name", "")
+            if ap_item_name:
+                pickup_captions[key] = f"{ap_item_name} acquired."
         else:
             ap_item_name = p.get("ap_item_name", "Item")
             pickup_resources[key] = [[dict(CROSS_SLOT_PLACEHOLDER)]]

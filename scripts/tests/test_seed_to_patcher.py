@@ -96,7 +96,8 @@ def test_own_slot_item_becomes_pickup_resource():
     assert key in out["pickup_resources"]
     res = out["pickup_resources"][key]
     assert res == [[{"item_id": "ITEM_WEAPON_CHARGE_BEAM", "quantity": 1}]]
-    assert key not in out["pickup_captions"]
+    # Own-item captions are overwritten to name the AP item (was: stale template).
+    assert out["pickup_captions"][key] == "Charge Beam acquired."
 
 
 def test_cross_slot_item_becomes_placeholder_with_caption():

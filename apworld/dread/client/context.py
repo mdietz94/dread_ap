@@ -156,7 +156,14 @@ class DreadContext(CommonContext):
 
     command_processor = DreadClientCommandProcessor
     game = GAME_NAME
-    items_handling = 0b111  # full remote items
+    # Receive ONLY items found in OTHER players' worlds (bit 0). Dread's own
+    # items and the starting inventory are baked into the patched ROM by
+    # open-dread-rando (real resources per pedestal + starting_items), so the
+    # game grants them locally. Setting bit 1 (own-world items) or bit 2
+    # (starting inventory) would make the server re-send those too, double-
+    # granting them — exactly the "starting Charge Beam re-delivered as a popup"
+    # symptom. Only cross-world items flow through RL.ReceivePickup.
+    items_handling = 0b001
 
     def __init__(
         self,
