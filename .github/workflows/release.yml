@@ -103,16 +103,25 @@ jobs:
             1. Download `dread.apworld` (below) and drop it into your
                Archipelago install's `custom_worlds/` directory.
             2. Generate a multiworld using `Metroid Dread` as the game.
-            3. Connect with the Dread Client:
+            3. Launch the **Dread Client** from Archipelago's Launcher (or
+               open a `.dreadap` file). The window includes an AP server address
+               bar, a **"Dread"** tab (live status + log), and a top-bar
+               **Switch-status pill** for pointing the client at your Switch or
+               Ryujinx. Click the pill → edit the IP → **Reconnect** (or use
+               `/dread_connect <ip>` in the command bar).
+
+               Headless alternative (no display server / CI):
                ```
-               python -m worlds.dread.client.main \
+               DREAD_NOGUI=1 python -m worlds.dread.client.main \
                  --connect <server>:<port> --name <slot> --switch-host <switch-ip>
                ```
-            4. From the client, run `/patch <dreadvania-install-dir> <vanilla-romfs-dir>`
-               to build and deploy your mod.
+            4. Build and deploy the patched RomFS — see the
+               [e2e runbook](https://github.com/${{ github.repository }}/blob/main/docs/e2e-runbook.md)
+               (steps 3–6) for the `seed_to_patcher_overrides` → `build_patcher_json`
+               → `open_dread_rando` → SD-card deploy pipeline.
 
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md)
-            for prerequisites (Dreadvania install, vanilla Dread 2.1.0 romfs, etc.).
+            for prerequisites (Switch hardware, Atmosphere CFW, Dread 2.1.0 RomFS, etc.).
 
       # Manual dispatch path: upload as a workflow artifact so we can
       # download + test without cutting a release tag.
