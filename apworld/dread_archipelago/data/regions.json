@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Artaria",
+    "scenario_ids": [
+      "s010_cave"
+    ]
+  },
+  {
+    "name": "Cataris",
+    "scenario_ids": [
+      "s020_magma"
+    ]
+  },
+  {
+    "name": "Dairon",
+    "scenario_ids": [
+      "s030_baselab"
+    ]
+  },
+  {
+    "name": "Burenia",
+    "scenario_ids": [
+      "s040_aqua"
+    ]
+  },
+  {
+    "name": "Ghavoran",
+    "scenario_ids": [
+      "s050_forest"
+    ]
+  },
+  {
+    "name": "Elun",
+    "scenario_ids": [
+      "s060_quarantine"
+    ]
+  },
+  {
+    "name": "Ferenia",
+    "scenario_ids": [
+      "s070_basesanc"
+    ]
+  },
+  {
+    "name": "Hanubia",
+    "scenario_ids": [
+      "s080_shipyard"
+    ]
+  }
+]

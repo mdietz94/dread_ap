@@ -1,0 +1,1500 @@
+[
+  {
+    "name": "Morph Ball",
+    "ap_id": 21524,
+    "patcher_item_id": "ITEM_MORPH_BALL",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Bomb",
+    "ap_id": 21525,
+    "patcher_item_id": "ITEM_WEAPON_BOMB",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Cross Bomb",
+    "ap_id": 21526,
+    "patcher_item_id": "ITEM_WEAPON_LINE_BOMB",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Power Bomb",
+    "ap_id": 21527,
+    "patcher_item_id": "ITEM_WEAPON_POWER_BOMB",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Charge Beam",
+    "ap_id": 21528,
+    "patcher_item_id": "ITEM_WEAPON_CHARGE_BEAM",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Wide Beam",
+    "ap_id": 21529,
+    "patcher_item_id": "ITEM_WEAPON_WIDE_BEAM",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Plasma Beam",
+    "ap_id": 21530,
+    "patcher_item_id": "ITEM_WEAPON_PLASMA_BEAM",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Wave Beam",
+    "ap_id": 21531,
+    "patcher_item_id": "ITEM_WEAPON_WAVE_BEAM",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Diffusion Beam",
+    "ap_id": 21532,
+    "patcher_item_id": "ITEM_WEAPON_DIFFUSION_BEAM",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Grapple Beam",
+    "ap_id": 21533,
+    "patcher_item_id": "ITEM_WEAPON_GRAPPLE_BEAM",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Ice Missile",
+    "ap_id": 21534,
+    "patcher_item_id": "ITEM_WEAPON_ICE_MISSILE",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Storm Missile",
+    "ap_id": 21535,
+    "patcher_item_id": "ITEM_MULTILOCKON",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Varia Suit",
+    "ap_id": 21536,
+    "patcher_item_id": "ITEM_VARIA_SUIT",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Gravity Suit",
+    "ap_id": 21537,
+    "patcher_item_id": "ITEM_GRAVITY_SUIT",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Phantom Cloak",
+    "ap_id": 21538,
+    "patcher_item_id": "ITEM_OPTIC_CAMOUFLAGE",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Flash Shift",
+    "ap_id": 21539,
+    "patcher_item_id": "ITEM_GHOST_AURA",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Pulse Radar",
+    "ap_id": 21540,
+    "patcher_item_id": "ITEM_SONAR",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Speed Booster",
+    "ap_id": 21541,
+    "patcher_item_id": "ITEM_SPEED_BOOSTER",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Spider Magnet",
+    "ap_id": 21542,
+    "patcher_item_id": "ITEM_MAGNET_GLOVE",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Spin Boost",
+    "ap_id": 21543,
+    "patcher_item_id": "ITEM_DOUBLE_JUMP",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Space Jump",
+    "ap_id": 21544,
+    "patcher_item_id": "ITEM_SPACE_JUMP",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Screw Attack",
+    "ap_id": 21545,
+    "patcher_item_id": "ITEM_SCREW_ATTACK",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Slide",
+    "ap_id": 21546,
+    "patcher_item_id": "ITEM_FLOOR_SLIDE",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Energy Tank",
+    "ap_id": 21547,
+    "patcher_item_id": "ITEM_ENERGY_TANKS",
+    "quantity": 1,
+    "classification": "useful"
+  },
+  {
+    "name": "Missile+ Tank",
+    "ap_id": 21548,
+    "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
+    "quantity": 10,
+    "classification": "useful"
+  },
+  {
+    "name": "Flash Shift Upgrade",
+    "ap_id": 21549,
+    "patcher_item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN",
+    "quantity": 1,
+    "classification": "useful"
+  },
+  {
+    "name": "Speed Booster Upgrade",
+    "ap_id": 21550,
+    "patcher_item_id": "ITEM_UPGRADE_SPEED_BOOST_CHARGE",
+    "quantity": 1,
+    "classification": "useful"
+  },
+  {
+    "name": "Missile Tank",
+    "ap_id": 21551,
+    "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
+    "quantity": 2,
+    "classification": "filler"
+  },
+  {
+    "name": "Power Bomb Tank",
+    "ap_id": 21552,
+    "patcher_item_id": "ITEM_WEAPON_POWER_BOMB_MAX",
+    "quantity": 2,
+    "classification": "filler"
+  },
+  {
+    "name": "Energy Part",
+    "ap_id": 21553,
+    "patcher_item_id": "ITEM_LIFE_SHARDS",
+    "quantity": 1,
+    "classification": "filler"
+  },
+  {
+    "name": "Event: ArtariaCU",
+    "ap_id": 21554,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiMagnetDoorLock",
+    "ap_id": 21555,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiMagnetPlatformLowered",
+    "ap_id": 21556,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiSingleUseSlide",
+    "ap_id": 21557,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiSpinnerPulled",
+    "ap_id": 21558,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiSpinnerRotated",
+    "ap_id": 21559,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiSpinnerRotatedAgain",
+    "ap_id": 21560,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaEmmiWideBeamBlock",
+    "ap_id": 21561,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaMapSpeed",
+    "ap_id": 21562,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaProtoCU",
+    "ap_id": 21563,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ArtariaSARotatable",
+    "ap_id": 21564,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaDaironSpeedBlocks",
+    "ap_id": 21565,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaDestroyGravitySuitFloor",
+    "ap_id": 21566,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaEPart",
+    "ap_id": 21567,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaEarlyGravSpeedBlocks",
+    "ap_id": 21568,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaGhavoranTeleportEnky",
+    "ap_id": 21569,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaGravitySuitRoomStoreSpeed",
+    "ap_id": 21570,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaGreenSpeedBlocks",
+    "ap_id": 21571,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaHubMagnetPlatform",
+    "ap_id": 21572,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaPrepareSpeedSave",
+    "ap_id": 21573,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaRobots",
+    "ap_id": 21574,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaStormMissileGateEtank",
+    "ap_id": 21575,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: BureniaStormMissileGateTeleport",
+    "ap_id": 21576,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisCU",
+    "ap_id": 21577,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisHeatedWideBeamBlock",
+    "ap_id": 21578,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisLedgeWarpSetupOutsideDiffusionRoom",
+    "ap_id": 21579,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisLowerPowerBombTankCeiling",
+    "ap_id": 21580,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisMoveMagnetWallsButton",
+    "ap_id": 21581,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisThermalLowerLava",
+    "ap_id": 21582,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisThermalMagnetPlatformLowered",
+    "ap_id": 21583,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisTransportDaironWideBeamBlock",
+    "ap_id": 21584,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: CatarisUnderlavaSpeedBlocks",
+    "ap_id": 21585,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ChainReactionEnd",
+    "ap_id": 21586,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Corpius",
+    "ap_id": 21587,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironCU",
+    "ap_id": 21588,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironFereniaTransportSpeedBlocks",
+    "ap_id": 21589,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironFreezerSpeedBlocks",
+    "ap_id": 21590,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironGrappleBlockElevatorFerenia",
+    "ap_id": 21591,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironStormMissileGate",
+    "ap_id": 21592,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironStormSpeedBlocks",
+    "ap_id": 21593,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironTeleportToArtariaSpeedBlocksDestroyed",
+    "ap_id": 21594,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockCataris",
+    "ap_id": 21595,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockFerenia",
+    "ap_id": 21596,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockHub",
+    "ap_id": 21597,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockSave",
+    "ap_id": 21598,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: DaironYellowSpeedBlocks",
+    "ap_id": 21599,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Drogyga",
+    "ap_id": 21600,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ElunReleaseX",
+    "ap_id": 21601,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: ElunSoldier",
+    "ap_id": 21602,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Escue",
+    "ap_id": 21603,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: FereniaCU",
+    "ap_id": 21604,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: FereniaRobots",
+    "ap_id": 21605,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateCold",
+    "ap_id": 21606,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateRobotFight",
+    "ap_id": 21607,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateSJ",
+    "ap_id": 21608,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateTutorial",
+    "ap_id": 21609,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoraSupersMagnetPlatformLowered",
+    "ap_id": 21610,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranAmmoRechargeEnkyAbove",
+    "ap_id": 21611,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranAmmoRechargeEnkyBelow",
+    "ap_id": 21612,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranBureniaTransportGrappleBox",
+    "ap_id": 21613,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranCU",
+    "ap_id": 21614,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranChozoX",
+    "ap_id": 21615,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranChozoXTrigger",
+    "ap_id": 21616,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranEyedoor",
+    "ap_id": 21617,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranFereniaTransportEnkyLeft",
+    "ap_id": 21618,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranFereniaTransportEnkyRight",
+    "ap_id": 21619,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranFereniaTransportGrappleBox",
+    "ap_id": 21620,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranPulseRadarEnky",
+    "ap_id": 21621,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranRobotFight",
+    "ap_id": 21622,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranStormMissileGate",
+    "ap_id": 21623,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranSuperRotatableEnky",
+    "ap_id": 21624,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranSupersAreaAccess",
+    "ap_id": 21625,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GhavoranSupersRotatable",
+    "ap_id": 21626,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: GoldChozoFight",
+    "ap_id": 21627,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Golzuna",
+    "ap_id": 21628,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: HanubiaEMMISpeed",
+    "ap_id": 21629,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: HanubiaRedChozo",
+    "ap_id": 21630,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Kraid",
+    "ap_id": 21631,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Quiet Robe",
+    "ap_id": 21632,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: Ship",
+    "ap_id": 21633,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_CV_PlatformCaveWater_B",
+    "ap_id": 21634,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_CV_ThermalDevice",
+    "ap_id": 21635,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_000",
+    "ap_id": 21636,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_002",
+    "ap_id": 21637,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_003",
+    "ap_id": 21638,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_006",
+    "ap_id": 21639,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_007",
+    "ap_id": 21640,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_008",
+    "ap_id": 21641,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_010",
+    "ap_id": 21642,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_014",
+    "ap_id": 21643,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_020",
+    "ap_id": 21644,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:breakablecave017",
+    "ap_id": 21645,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:breakablecave019",
+    "ap_id": 21646,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:db_dif_cv_002",
+    "ap_id": 21647,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:db_reg_cv_021",
+    "ap_id": 21648,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:db_reg_cv_022",
+    "ap_id": 21649,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:db_reg_cv_023",
+    "ap_id": 21650,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:ev_chainreaction_deviceheat",
+    "ap_id": 21651,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:grapplepulloff1x2_001",
+    "ap_id": 21652,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s010_cave:default:grapplepulloff1x2_002",
+    "ap_id": 21653,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag001",
+    "ap_id": 21654,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag002",
+    "ap_id": 21655,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag003",
+    "ap_id": 21656,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag004",
+    "ap_id": 21657,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag005",
+    "ap_id": 21658,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag007",
+    "ap_id": 21659,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag008",
+    "ap_id": 21660,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag009",
+    "ap_id": 21661,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag010",
+    "ap_id": 21662,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag012",
+    "ap_id": 21663,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag013",
+    "ap_id": 21664,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag014",
+    "ap_id": 21665,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dif_mg_001",
+    "ap_id": 21666,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dif_mg_002",
+    "ap_id": 21667,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dside_mg_002",
+    "ap_id": 21668,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dside_mg_003",
+    "ap_id": 21669,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dside_mg_004",
+    "ap_id": 21670,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_hdoor_mg_001",
+    "ap_id": 21671,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_hdoor_mg_002",
+    "ap_id": 21672,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_017",
+    "ap_id": 21673,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_019",
+    "ap_id": 21674,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_020",
+    "ap_id": 21675,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_021",
+    "ap_id": 21676,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat",
+    "ap_id": 21677,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat_001",
+    "ap_id": 21678,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat_002",
+    "ap_id": 21679,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat_camerafar_000",
+    "ap_id": 21680,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:grapplepulloff1x2",
+    "ap_id": 21681,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:grapplepulloff1x2_000",
+    "ap_id": 21682,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s020_magma:default:grapplepulloff1x2_001",
+    "ap_id": 21683,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_dif_b1_001",
+    "ap_id": 21684,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_dif_b1_002",
+    "ap_id": 21685,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_hdoor_b1_001",
+    "ap_id": 21686,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_001",
+    "ap_id": 21687,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_002",
+    "ap_id": 21688,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_003",
+    "ap_id": 21689,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_005",
+    "ap_id": 21690,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2",
+    "ap_id": 21691,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_000",
+    "ap_id": 21692,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_001",
+    "ap_id": 21693,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_002",
+    "ap_id": 21694,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_003",
+    "ap_id": 21695,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_005",
+    "ap_id": 21696,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_006",
+    "ap_id": 21697,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_007",
+    "ap_id": 21698,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:powergenerator_001",
+    "ap_id": 21699,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s030_baselab:default:powergenerator_002",
+    "ap_id": 21700,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_001",
+    "ap_id": 21701,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_002",
+    "ap_id": 21702,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_003",
+    "ap_id": 21703,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_004",
+    "ap_id": 21704,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_005",
+    "ap_id": 21705,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_007",
+    "ap_id": 21706,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_008",
+    "ap_id": 21707,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_009",
+    "ap_id": 21708,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_011",
+    "ap_id": 21709,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_012",
+    "ap_id": 21710,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:ev_demolition_db_001",
+    "ap_id": 21711,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:ev_demolition_db_002",
+    "ap_id": 21712,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:ev_demolition_db_003",
+    "ap_id": 21713,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_000",
+    "ap_id": 21714,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_001",
+    "ap_id": 21715,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_003",
+    "ap_id": 21716,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_004",
+    "ap_id": 21717,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_005",
+    "ap_id": 21718,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_006",
+    "ap_id": 21719,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s050_forest:default:grapplepulloff1x2_000",
+    "ap_id": 21720,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s050_forest:default:grapplepulloff1x2_002",
+    "ap_id": 21721,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s060_quarantine:default:db_reg_qt_001",
+    "ap_id": 21722,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s060_quarantine:default:grapplepulloff1x2_000",
+    "ap_id": 21723,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_001",
+    "ap_id": 21724,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_003",
+    "ap_id": 21725,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_004",
+    "ap_id": 21726,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_005",
+    "ap_id": 21727,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_006",
+    "ap_id": 21728,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:grapplepulloff1x2_000",
+    "ap_id": 21729,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:grapplepulloff1x2_002",
+    "ap_id": 21730,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s070_basesanc:default:grapplepulloff1x2_003",
+    "ap_id": 21731,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s080_shipyard:default:block_pbtube",
+    "ap_id": 21732,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s080_shipyard:default:block_pbtube_2",
+    "ap_id": 21733,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s080_shipyard:default:grapplepulloff1x2",
+    "ap_id": 21734,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s080_shipyard:default:grapplepulloff1x2_000",
+    "ap_id": 21735,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s080_shipyard:default:grapplepulloff1x2_001",
+    "ap_id": 21736,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  },
+  {
+    "name": "Event: s090_skybase:default:block_pbcolumn_000",
+    "ap_id": 21737,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "classification": "progression"
+  }
+]

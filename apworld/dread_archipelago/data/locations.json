@@ -1,0 +1,3148 @@
+[
+  {
+    "name": "Artaria: ChargeBeam",
+    "ap_id": 31154,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "ItemSphere_ChargeBeam",
+    "pickup_type": "actor",
+    "vanilla_item": "Morph Ball",
+    "pickup_index": 0
+  },
+  {
+    "name": "Artaria: MissileTank011",
+    "ap_id": 31155,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank011",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 1
+  },
+  {
+    "name": "Artaria: MissileTank012",
+    "ap_id": 31156,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank012",
+    "pickup_type": "actor",
+    "vanilla_item": "Spider Magnet",
+    "pickup_index": 2
+  },
+  {
+    "name": "Artaria: EnergyTank001",
+    "ap_id": 31157,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_EnergyTank001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 3
+  },
+  {
+    "name": "Artaria: MissileTank001",
+    "ap_id": 31158,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 4
+  },
+  {
+    "name": "Artaria: MissileTank002",
+    "ap_id": 31159,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 5
+  },
+  {
+    "name": "Artaria: missiletank_000",
+    "ap_id": 31160,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 6
+  },
+  {
+    "name": "Artaria: MissileTank003",
+    "ap_id": 31161,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank003",
+    "pickup_type": "actor",
+    "vanilla_item": "Varia Suit",
+    "pickup_index": 7
+  },
+  {
+    "name": "Artaria: MissileTank004",
+    "ap_id": 31162,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank004",
+    "pickup_type": "actor",
+    "vanilla_item": "Charge Beam",
+    "pickup_index": 8
+  },
+  {
+    "name": "Artaria: MissileTank005",
+    "ap_id": 31163,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank005",
+    "pickup_type": "actor",
+    "vanilla_item": "Phantom Cloak",
+    "pickup_index": 9
+  },
+  {
+    "name": "Artaria: MissileTank006",
+    "ap_id": 31164,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank006",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 10
+  },
+  {
+    "name": "Artaria: MissileTank007",
+    "ap_id": 31165,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank007",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 11
+  },
+  {
+    "name": "Artaria: MissileTank003_1",
+    "ap_id": 31166,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank003_1",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 12
+  },
+  {
+    "name": "Artaria: MissileTank009",
+    "ap_id": 31167,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank009",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 13
+  },
+  {
+    "name": "Artaria: energytank_000",
+    "ap_id": 31168,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_energytank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 14
+  },
+  {
+    "name": "Artaria: missiletankplus_000",
+    "ap_id": 31169,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletankplus_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 15
+  },
+  {
+    "name": "Artaria: energyfragment_001",
+    "ap_id": 31170,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_energyfragment_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Wide Beam",
+    "pickup_index": 16
+  },
+  {
+    "name": "Artaria: missiletank_001",
+    "ap_id": 31171,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 17
+  },
+  {
+    "name": "Artaria: energyfragment_000",
+    "ap_id": 31172,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_energyfragment_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 18
+  },
+  {
+    "name": "Artaria: powerbombtank_000",
+    "ap_id": 31173,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Bomb",
+    "pickup_index": 19
+  },
+  {
+    "name": "Artaria: missiletank_003",
+    "ap_id": 31174,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 20
+  },
+  {
+    "name": "Artaria: missiletank_004",
+    "ap_id": 31175,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_004",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 21
+  },
+  {
+    "name": "Artaria: MissileTank010",
+    "ap_id": 31176,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank010",
+    "pickup_type": "actor",
+    "vanilla_item": "Wide Beam",
+    "pickup_index": 22
+  },
+  {
+    "name": "Artaria: VARIA_GEN_001",
+    "ap_id": 31177,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "IT_VARIA_GEN_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 23
+  },
+  {
+    "name": "Artaria: missiletank_002",
+    "ap_id": 31178,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 24
+  },
+  {
+    "name": "Artaria: GrappleBeam",
+    "ap_id": 31179,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "ItemSphere_GrappleBeam",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 25
+  },
+  {
+    "name": "Artaria: MissileTank014",
+    "ap_id": 31180,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank014",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 26
+  },
+  {
+    "name": "Artaria: ScrewAttack",
+    "ap_id": 31181,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "ItemSphere_ScrewAttack",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 27
+  },
+  {
+    "name": "Artaria: MissileTank015",
+    "ap_id": 31182,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank015",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 28
+  },
+  {
+    "name": "Artaria: MissileTank016",
+    "ap_id": 31183,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "Item_MissileTank016",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 29
+  },
+  {
+    "name": "Artaria: missiletankplus_001",
+    "ap_id": 31184,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletankplus_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 30
+  },
+  {
+    "name": "Artaria: missiletank_005",
+    "ap_id": 31185,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_005",
+    "pickup_type": "actor",
+    "vanilla_item": "Charge Beam",
+    "pickup_index": 31
+  },
+  {
+    "name": "Artaria: missiletank_006",
+    "ap_id": 31186,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "item_missiletank_006",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 32
+  },
+  {
+    "name": "Cataris: powerbombtank_002",
+    "ap_id": 31187,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_powerbombtank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 33
+  },
+  {
+    "name": "Cataris: missiletank_012",
+    "ap_id": 31188,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_012",
+    "pickup_type": "actor",
+    "vanilla_item": "Storm Missile",
+    "pickup_index": 34
+  },
+  {
+    "name": "Cataris: diffusionbeam",
+    "ap_id": 31189,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "itemsphere_diffusionbeam",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 35
+  },
+  {
+    "name": "Cataris: missiletank",
+    "ap_id": 31190,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 36
+  },
+  {
+    "name": "Cataris: missiletank_008",
+    "ap_id": 31191,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_008",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 37
+  },
+  {
+    "name": "Cataris: missiletank_001",
+    "ap_id": 31192,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 38
+  },
+  {
+    "name": "Cataris: missiletank_003",
+    "ap_id": 31193,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 39
+  },
+  {
+    "name": "Cataris: missiletank_004",
+    "ap_id": 31194,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_004",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 40
+  },
+  {
+    "name": "Cataris: missiletank_005",
+    "ap_id": 31195,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_005",
+    "pickup_type": "actor",
+    "vanilla_item": "Spin Boost",
+    "pickup_index": 41
+  },
+  {
+    "name": "Cataris: energyfragment_001",
+    "ap_id": 31196,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_energyfragment_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 42
+  },
+  {
+    "name": "Cataris: missiletank_007",
+    "ap_id": 31197,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_007",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 43
+  },
+  {
+    "name": "Cataris: energyfragment_000",
+    "ap_id": 31198,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_energyfragment_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 44
+  },
+  {
+    "name": "Cataris: missiletank_009",
+    "ap_id": 31199,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_009",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 45
+  },
+  {
+    "name": "Cataris: missiletank_010",
+    "ap_id": 31200,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_010",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 46
+  },
+  {
+    "name": "Cataris: missiletank_011",
+    "ap_id": 31201,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_011",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 47
+  },
+  {
+    "name": "Cataris: powerbombtank_000",
+    "ap_id": 31202,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 48
+  },
+  {
+    "name": "Cataris: energytank_000",
+    "ap_id": 31203,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_energytank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 49
+  },
+  {
+    "name": "Cataris: missiletankplus_000",
+    "ap_id": 31204,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletankplus_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Wide Beam",
+    "pickup_index": 50
+  },
+  {
+    "name": "Cataris: powerbombtank_001",
+    "ap_id": 31205,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_powerbombtank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 51
+  },
+  {
+    "name": "Cataris: missiletank_002",
+    "ap_id": 31206,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 52
+  },
+  {
+    "name": "Cataris: missiletank_006",
+    "ap_id": 31207,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_006",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 53
+  },
+  {
+    "name": "Cataris: missiletank_000",
+    "ap_id": 31208,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 54
+  },
+  {
+    "name": "Dairon: missiletank_004",
+    "ap_id": 31209,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_004",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 55
+  },
+  {
+    "name": "Dairon: missiletank_002",
+    "ap_id": 31210,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 56
+  },
+  {
+    "name": "Dairon: widebeam",
+    "ap_id": 31211,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "itemsphere_widebeam",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 57
+  },
+  {
+    "name": "Dairon: bomb",
+    "ap_id": 31212,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "itemsphere_bomb",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 58
+  },
+  {
+    "name": "Dairon: missiletank",
+    "ap_id": 31213,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank",
+    "pickup_type": "actor",
+    "vanilla_item": "Bomb",
+    "pickup_index": 59
+  },
+  {
+    "name": "Dairon: missiletank_000",
+    "ap_id": 31214,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 60
+  },
+  {
+    "name": "Dairon: powerbombtank_000",
+    "ap_id": 31215,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 61
+  },
+  {
+    "name": "Dairon: missiletank_003",
+    "ap_id": 31216,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 62
+  },
+  {
+    "name": "Dairon: energyfragment_000",
+    "ap_id": 31217,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_energyfragment_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 63
+  },
+  {
+    "name": "Dairon: energyfragment_001",
+    "ap_id": 31218,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_energyfragment_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 64
+  },
+  {
+    "name": "Dairon: powerbombtank_001",
+    "ap_id": 31219,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_powerbombtank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 65
+  },
+  {
+    "name": "Dairon: missiletank_007",
+    "ap_id": 31220,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_007",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 66
+  },
+  {
+    "name": "Dairon: missiletank_008",
+    "ap_id": 31221,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_008",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 67
+  },
+  {
+    "name": "Dairon: missiletankplus_000",
+    "ap_id": 31222,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletankplus_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 68
+  },
+  {
+    "name": "Dairon: missiletank_010",
+    "ap_id": 31223,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_010",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 69
+  },
+  {
+    "name": "Dairon: energyfragment_002",
+    "ap_id": 31224,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_energyfragment_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 70
+  },
+  {
+    "name": "Dairon: energytank",
+    "ap_id": 31225,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_energytank",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 71
+  },
+  {
+    "name": "Dairon: energyfragment_003",
+    "ap_id": 31226,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_energyfragment_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 72
+  },
+  {
+    "name": "Dairon: powerbombtank_002",
+    "ap_id": 31227,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_powerbombtank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 73
+  },
+  {
+    "name": "Dairon: missiletank_001",
+    "ap_id": 31228,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb",
+    "pickup_index": 74
+  },
+  {
+    "name": "Dairon: missiletank_005",
+    "ap_id": 31229,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_005",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 75
+  },
+  {
+    "name": "Dairon: missiletank_006",
+    "ap_id": 31230,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "item_missiletank_006",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 76
+  },
+  {
+    "name": "Burenia: missiletank",
+    "ap_id": 31231,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 77
+  },
+  {
+    "name": "Burenia: powerup_ghostaura",
+    "ap_id": 31232,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "powerup_ghostaura",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 78
+  },
+  {
+    "name": "Burenia: gravitysuit",
+    "ap_id": 31233,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "itemsphere_gravitysuit",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 79
+  },
+  {
+    "name": "Burenia: missiletank_000",
+    "ap_id": 31234,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 80
+  },
+  {
+    "name": "Burenia: missiletank_001",
+    "ap_id": 31235,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 81
+  },
+  {
+    "name": "Burenia: energytank_000",
+    "ap_id": 31236,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_energytank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 82
+  },
+  {
+    "name": "Burenia: missiletank_003",
+    "ap_id": 31237,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 83
+  },
+  {
+    "name": "Burenia: missiletank_005",
+    "ap_id": 31238,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_005",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 84
+  },
+  {
+    "name": "Burenia: powerbombtank_000",
+    "ap_id": 31239,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 85
+  },
+  {
+    "name": "Burenia: energyfragment_002",
+    "ap_id": 31240,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_energyfragment_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 86
+  },
+  {
+    "name": "Burenia: missiletankplus_002",
+    "ap_id": 31241,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletankplus_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 87
+  },
+  {
+    "name": "Burenia: missiletankplus",
+    "ap_id": 31242,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletankplus",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 88
+  },
+  {
+    "name": "Burenia: missiletankplus_001",
+    "ap_id": 31243,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletankplus_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Spin Boost",
+    "pickup_index": 89
+  },
+  {
+    "name": "Burenia: energyfragment_000",
+    "ap_id": 31244,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_energyfragment_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 90
+  },
+  {
+    "name": "Burenia: missiletankplus_000",
+    "ap_id": 31245,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletankplus_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Grapple Beam",
+    "pickup_index": 91
+  },
+  {
+    "name": "Burenia: missiletank_006",
+    "ap_id": 31246,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_006",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 92
+  },
+  {
+    "name": "Burenia: missiletank_004",
+    "ap_id": 31247,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_004",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 93
+  },
+  {
+    "name": "Burenia: missiletank_007",
+    "ap_id": 31248,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_missiletank_007",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 94
+  },
+  {
+    "name": "Burenia: energytank",
+    "ap_id": 31249,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "item_energytank",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 95
+  },
+  {
+    "name": "Ghavoran: powerbombtank_000",
+    "ap_id": 31250,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 96
+  },
+  {
+    "name": "Ghavoran: missiletank_000",
+    "ap_id": 31251,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 97
+  },
+  {
+    "name": "Ghavoran: missiletank_005",
+    "ap_id": 31252,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_005",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 98
+  },
+  {
+    "name": "Ghavoran: missiletank_001",
+    "ap_id": 31253,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 99
+  },
+  {
+    "name": "Ghavoran: supermissile",
+    "ap_id": 31254,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "itemsphere_supermissile",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 100
+  },
+  {
+    "name": "Ghavoran: missiletank_002",
+    "ap_id": 31255,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 101
+  },
+  {
+    "name": "Ghavoran: missiletankplus_000",
+    "ap_id": 31256,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletankplus_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 102
+  },
+  {
+    "name": "Ghavoran: missiletank_004",
+    "ap_id": 31257,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_004",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 103
+  },
+  {
+    "name": "Ghavoran: doublejump",
+    "ap_id": 31258,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "itemsphere_doublejump",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 104
+  },
+  {
+    "name": "Ghavoran: energyfragment_000",
+    "ap_id": 31259,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_energyfragment_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 105
+  },
+  {
+    "name": "Ghavoran: missiletank_006",
+    "ap_id": 31260,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_006",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 106
+  },
+  {
+    "name": "Ghavoran: missiletank_007",
+    "ap_id": 31261,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_007",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 107
+  },
+  {
+    "name": "Ghavoran: missiletank_003",
+    "ap_id": 31262,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 108
+  },
+  {
+    "name": "Ghavoran: energytank_000",
+    "ap_id": 31263,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_energytank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 109
+  },
+  {
+    "name": "Ghavoran: powerup_sonar",
+    "ap_id": 31264,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "powerup_sonar",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 110
+  },
+  {
+    "name": "Ghavoran: missiletank_009",
+    "ap_id": 31265,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank_009",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 111
+  },
+  {
+    "name": "Ghavoran: energyfragment",
+    "ap_id": 31266,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_energyfragment",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 112
+  },
+  {
+    "name": "Ghavoran: missiletank",
+    "ap_id": 31267,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "item_missiletank",
+    "pickup_type": "actor",
+    "vanilla_item": "Varia Suit",
+    "pickup_index": 113
+  },
+  {
+    "name": "Elun: energytank_000",
+    "ap_id": 31268,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "item_energytank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 114
+  },
+  {
+    "name": "Elun: plasmabeam_000",
+    "ap_id": 31269,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "itemsphere_plasmabeam_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 115
+  },
+  {
+    "name": "Elun: powerbombtank_000",
+    "ap_id": 31270,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 116
+  },
+  {
+    "name": "Elun: missiletank_002",
+    "ap_id": 31271,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "item_missiletank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 117
+  },
+  {
+    "name": "Elun: missiletank_000",
+    "ap_id": 31272,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 118
+  },
+  {
+    "name": "Ferenia: spacejump",
+    "ap_id": 31273,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "itemsphere_spacejump",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 119
+  },
+  {
+    "name": "Ferenia: missiletank_001",
+    "ap_id": 31274,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 120
+  },
+  {
+    "name": "Ferenia: missiletank_000",
+    "ap_id": 31275,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Speed Booster",
+    "pickup_index": 121
+  },
+  {
+    "name": "Ferenia: missiletank_004",
+    "ap_id": 31276,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletank_004",
+    "pickup_type": "actor",
+    "vanilla_item": "Screw Attack",
+    "pickup_index": 122
+  },
+  {
+    "name": "Ferenia: energyfragment_002",
+    "ap_id": 31277,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_energyfragment_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 123
+  },
+  {
+    "name": "Ferenia: energyfragment_001",
+    "ap_id": 31278,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_energyfragment_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 124
+  },
+  {
+    "name": "Ferenia: missiletank_003",
+    "ap_id": 31279,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletank_003",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 125
+  },
+  {
+    "name": "Ferenia: powerbombtank_001",
+    "ap_id": 31280,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_powerbombtank_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 126
+  },
+  {
+    "name": "Ferenia: powerbombtank_000",
+    "ap_id": 31281,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 127
+  },
+  {
+    "name": "Ferenia: missiletankplus_001",
+    "ap_id": 31282,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletankplus_001",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 128
+  },
+  {
+    "name": "Ferenia: missiletank_002",
+    "ap_id": 31283,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletank_002",
+    "pickup_type": "actor",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 129
+  },
+  {
+    "name": "Ferenia: missiletankplus_000",
+    "ap_id": 31284,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletankplus_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 130
+  },
+  {
+    "name": "Ferenia: energyfragment_000",
+    "ap_id": 31285,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_energyfragment_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 131
+  },
+  {
+    "name": "Ferenia: missiletank_005",
+    "ap_id": 31286,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_missiletank_005",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 132
+  },
+  {
+    "name": "Ferenia: energyfragment",
+    "ap_id": 31287,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "item_energyfragment",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 133
+  },
+  {
+    "name": "Hanubia: missiletank_000",
+    "ap_id": 31288,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "item_missiletank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 134
+  },
+  {
+    "name": "Hanubia: powerbombtank_000",
+    "ap_id": 31289,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "item_powerbombtank_000",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 135
+  },
+  {
+    "name": "Hanubia: missiletank",
+    "ap_id": 31290,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "item_missiletank",
+    "pickup_type": "actor",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 136
+  },
+  {
+    "name": "Hanubia: OnEmmyShipyardAbilityObtained (emmi)",
+    "ap_id": 31291,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "OnEmmyShipyardAbilityObtained",
+    "pickup_type": "emmi",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 137
+  },
+  {
+    "name": "Artaria: OnCorpiusDeath_CUSTOM (corpius)",
+    "ap_id": 31292,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "OnCorpiusDeath_CUSTOM",
+    "pickup_type": "corpius",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 138
+  },
+  {
+    "name": "Artaria: OnEmmyCaveDead (emmi)",
+    "ap_id": 31293,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "OnEmmyCaveDead",
+    "pickup_type": "emmi",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 139
+  },
+  {
+    "name": "Burenia: OnHydrogigaDead_CUSTOM (cutscene)",
+    "ap_id": 31294,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "OnHydrogigaDead_CUSTOM",
+    "pickup_type": "cutscene",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 140
+  },
+  {
+    "name": "Cataris: OnExperimentDeath_CUSTOM (cutscene)",
+    "ap_id": 31295,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "OnExperimentDeath_CUSTOM",
+    "pickup_type": "cutscene",
+    "vanilla_item": "Missile+ Tank",
+    "pickup_index": 141
+  },
+  {
+    "name": "Ferenia: escue (corex)",
+    "ap_id": 31296,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "escue",
+    "pickup_type": "corex",
+    "vanilla_item": "Power Bomb Tank",
+    "pickup_index": 142
+  },
+  {
+    "name": "Ferenia: OnEmmySancDead (emmi)",
+    "ap_id": 31297,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "OnEmmySancDead",
+    "pickup_type": "emmi",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 143
+  },
+  {
+    "name": "Cataris: OnEmmyMagmaDead (emmi)",
+    "ap_id": 31298,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "OnEmmyMagmaDead",
+    "pickup_type": "emmi",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 144
+  },
+  {
+    "name": "Ghavoran: golzuna (corex)",
+    "ap_id": 31299,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "golzuna",
+    "pickup_type": "corex",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 145
+  },
+  {
+    "name": "Ghavoran: OnEmmyForestDead (emmi)",
+    "ap_id": 31300,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "OnEmmyForestDead",
+    "pickup_type": "emmi",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 146
+  },
+  {
+    "name": "Dairon: OnEmmyBaseLabDead (emmi)",
+    "ap_id": 31301,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "OnEmmyBaseLabDead",
+    "pickup_type": "emmi",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 147
+  },
+  {
+    "name": "Cataris: OnKraidDeath_CUSTOM (cutscene)",
+    "ap_id": 31302,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "OnKraidDeath_CUSTOM",
+    "pickup_type": "cutscene",
+    "vanilla_item": "Missile Tank",
+    "pickup_index": 148
+  },
+  {
+    "name": "Event: ArtariaCU",
+    "ap_id": 31303,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaCU"
+  },
+  {
+    "name": "Event: ArtariaEmmiMagnetDoorLock",
+    "ap_id": 31304,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiMagnetDoorLock"
+  },
+  {
+    "name": "Event: ArtariaEmmiMagnetPlatformLowered",
+    "ap_id": 31305,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiMagnetPlatformLowered"
+  },
+  {
+    "name": "Event: ArtariaEmmiSingleUseSlide",
+    "ap_id": 31306,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiSingleUseSlide"
+  },
+  {
+    "name": "Event: ArtariaEmmiSpinnerPulled",
+    "ap_id": 31307,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiSpinnerPulled"
+  },
+  {
+    "name": "Event: ArtariaEmmiSpinnerRotated",
+    "ap_id": 31308,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiSpinnerRotated"
+  },
+  {
+    "name": "Event: ArtariaEmmiSpinnerRotatedAgain",
+    "ap_id": 31309,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiSpinnerRotatedAgain"
+  },
+  {
+    "name": "Event: ArtariaEmmiWideBeamBlock",
+    "ap_id": 31310,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaEmmiWideBeamBlock"
+  },
+  {
+    "name": "Event: ArtariaMapSpeed",
+    "ap_id": 31311,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaMapSpeed"
+  },
+  {
+    "name": "Event: ArtariaProtoCU",
+    "ap_id": 31312,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaProtoCU"
+  },
+  {
+    "name": "Event: ArtariaSARotatable",
+    "ap_id": 31313,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ArtariaSARotatable"
+  },
+  {
+    "name": "Event: BureniaDaironSpeedBlocks",
+    "ap_id": 31314,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaDaironSpeedBlocks"
+  },
+  {
+    "name": "Event: BureniaDestroyGravitySuitFloor",
+    "ap_id": 31315,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaDestroyGravitySuitFloor"
+  },
+  {
+    "name": "Event: BureniaEPart",
+    "ap_id": 31316,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaEPart"
+  },
+  {
+    "name": "Event: BureniaEarlyGravSpeedBlocks",
+    "ap_id": 31317,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaEarlyGravSpeedBlocks"
+  },
+  {
+    "name": "Event: BureniaGhavoranTeleportEnky",
+    "ap_id": 31318,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaGhavoranTeleportEnky"
+  },
+  {
+    "name": "Event: BureniaGravitySuitRoomStoreSpeed",
+    "ap_id": 31319,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaGravitySuitRoomStoreSpeed"
+  },
+  {
+    "name": "Event: BureniaGreenSpeedBlocks",
+    "ap_id": 31320,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaGreenSpeedBlocks"
+  },
+  {
+    "name": "Event: BureniaHubMagnetPlatform",
+    "ap_id": 31321,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaHubMagnetPlatform"
+  },
+  {
+    "name": "Event: BureniaPrepareSpeedSave",
+    "ap_id": 31322,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaPrepareSpeedSave"
+  },
+  {
+    "name": "Event: BureniaRobots",
+    "ap_id": 31323,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaRobots"
+  },
+  {
+    "name": "Event: BureniaStormMissileGateEtank",
+    "ap_id": 31324,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaStormMissileGateEtank"
+  },
+  {
+    "name": "Event: BureniaStormMissileGateTeleport",
+    "ap_id": 31325,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: BureniaStormMissileGateTeleport"
+  },
+  {
+    "name": "Event: CatarisCU",
+    "ap_id": 31326,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisCU"
+  },
+  {
+    "name": "Event: CatarisHeatedWideBeamBlock",
+    "ap_id": 31327,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisHeatedWideBeamBlock"
+  },
+  {
+    "name": "Event: CatarisLedgeWarpSetupOutsideDiffusionRoom",
+    "ap_id": 31328,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisLedgeWarpSetupOutsideDiffusionRoom"
+  },
+  {
+    "name": "Event: CatarisLowerPowerBombTankCeiling",
+    "ap_id": 31329,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisLowerPowerBombTankCeiling"
+  },
+  {
+    "name": "Event: CatarisMoveMagnetWallsButton",
+    "ap_id": 31330,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisMoveMagnetWallsButton"
+  },
+  {
+    "name": "Event: CatarisThermalLowerLava",
+    "ap_id": 31331,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisThermalLowerLava"
+  },
+  {
+    "name": "Event: CatarisThermalMagnetPlatformLowered",
+    "ap_id": 31332,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisThermalMagnetPlatformLowered"
+  },
+  {
+    "name": "Event: CatarisTransportDaironWideBeamBlock",
+    "ap_id": 31333,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisTransportDaironWideBeamBlock"
+  },
+  {
+    "name": "Event: CatarisUnderlavaSpeedBlocks",
+    "ap_id": 31334,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: CatarisUnderlavaSpeedBlocks"
+  },
+  {
+    "name": "Event: ChainReactionEnd",
+    "ap_id": 31335,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ChainReactionEnd"
+  },
+  {
+    "name": "Event: Corpius",
+    "ap_id": 31336,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Corpius"
+  },
+  {
+    "name": "Event: DaironCU",
+    "ap_id": 31337,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironCU"
+  },
+  {
+    "name": "Event: DaironFereniaTransportSpeedBlocks",
+    "ap_id": 31338,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironFereniaTransportSpeedBlocks"
+  },
+  {
+    "name": "Event: DaironFreezerSpeedBlocks",
+    "ap_id": 31339,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironFreezerSpeedBlocks"
+  },
+  {
+    "name": "Event: DaironGrappleBlockElevatorFerenia",
+    "ap_id": 31340,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironGrappleBlockElevatorFerenia"
+  },
+  {
+    "name": "Event: DaironStormMissileGate",
+    "ap_id": 31341,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironStormMissileGate"
+  },
+  {
+    "name": "Event: DaironStormSpeedBlocks",
+    "ap_id": 31342,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironStormSpeedBlocks"
+  },
+  {
+    "name": "Event: DaironTeleportToArtariaSpeedBlocksDestroyed",
+    "ap_id": 31343,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironTeleportToArtariaSpeedBlocksDestroyed"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockCataris",
+    "ap_id": 31344,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironWideBeamBlockCataris"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockFerenia",
+    "ap_id": 31345,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironWideBeamBlockFerenia"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockHub",
+    "ap_id": 31346,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironWideBeamBlockHub"
+  },
+  {
+    "name": "Event: DaironWideBeamBlockSave",
+    "ap_id": 31347,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironWideBeamBlockSave"
+  },
+  {
+    "name": "Event: DaironYellowSpeedBlocks",
+    "ap_id": 31348,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: DaironYellowSpeedBlocks"
+  },
+  {
+    "name": "Event: Drogyga",
+    "ap_id": 31349,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Drogyga"
+  },
+  {
+    "name": "Event: ElunReleaseX",
+    "ap_id": 31350,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ElunReleaseX"
+  },
+  {
+    "name": "Event: ElunSoldier",
+    "ap_id": 31351,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: ElunSoldier"
+  },
+  {
+    "name": "Event: Escue",
+    "ap_id": 31352,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Escue"
+  },
+  {
+    "name": "Event: FereniaCU",
+    "ap_id": 31353,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: FereniaCU"
+  },
+  {
+    "name": "Event: FereniaRobots",
+    "ap_id": 31354,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: FereniaRobots"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateCold",
+    "ap_id": 31355,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: FereniaStormMissileGateCold"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateRobotFight",
+    "ap_id": 31356,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: FereniaStormMissileGateRobotFight"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateSJ",
+    "ap_id": 31357,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: FereniaStormMissileGateSJ"
+  },
+  {
+    "name": "Event: FereniaStormMissileGateTutorial",
+    "ap_id": 31358,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: FereniaStormMissileGateTutorial"
+  },
+  {
+    "name": "Event: GhavoraSupersMagnetPlatformLowered",
+    "ap_id": 31359,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoraSupersMagnetPlatformLowered"
+  },
+  {
+    "name": "Event: GhavoranAmmoRechargeEnkyAbove",
+    "ap_id": 31360,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranAmmoRechargeEnkyAbove"
+  },
+  {
+    "name": "Event: GhavoranAmmoRechargeEnkyBelow",
+    "ap_id": 31361,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranAmmoRechargeEnkyBelow"
+  },
+  {
+    "name": "Event: GhavoranBureniaTransportGrappleBox",
+    "ap_id": 31362,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranBureniaTransportGrappleBox"
+  },
+  {
+    "name": "Event: GhavoranCU",
+    "ap_id": 31363,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranCU"
+  },
+  {
+    "name": "Event: GhavoranChozoX",
+    "ap_id": 31364,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranChozoX"
+  },
+  {
+    "name": "Event: GhavoranChozoXTrigger",
+    "ap_id": 31365,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranChozoXTrigger"
+  },
+  {
+    "name": "Event: GhavoranEyedoor",
+    "ap_id": 31366,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranEyedoor"
+  },
+  {
+    "name": "Event: GhavoranFereniaTransportEnkyLeft",
+    "ap_id": 31367,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranFereniaTransportEnkyLeft"
+  },
+  {
+    "name": "Event: GhavoranFereniaTransportEnkyRight",
+    "ap_id": 31368,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranFereniaTransportEnkyRight"
+  },
+  {
+    "name": "Event: GhavoranFereniaTransportGrappleBox",
+    "ap_id": 31369,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranFereniaTransportGrappleBox"
+  },
+  {
+    "name": "Event: GhavoranPulseRadarEnky",
+    "ap_id": 31370,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranPulseRadarEnky"
+  },
+  {
+    "name": "Event: GhavoranRobotFight",
+    "ap_id": 31371,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranRobotFight"
+  },
+  {
+    "name": "Event: GhavoranStormMissileGate",
+    "ap_id": 31372,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranStormMissileGate"
+  },
+  {
+    "name": "Event: GhavoranSuperRotatableEnky",
+    "ap_id": 31373,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranSuperRotatableEnky"
+  },
+  {
+    "name": "Event: GhavoranSupersAreaAccess",
+    "ap_id": 31374,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranSupersAreaAccess"
+  },
+  {
+    "name": "Event: GhavoranSupersRotatable",
+    "ap_id": 31375,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GhavoranSupersRotatable"
+  },
+  {
+    "name": "Event: GoldChozoFight",
+    "ap_id": 31376,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: GoldChozoFight"
+  },
+  {
+    "name": "Event: Golzuna",
+    "ap_id": 31377,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Golzuna"
+  },
+  {
+    "name": "Event: HanubiaEMMISpeed",
+    "ap_id": 31378,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: HanubiaEMMISpeed"
+  },
+  {
+    "name": "Event: HanubiaRedChozo",
+    "ap_id": 31379,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: HanubiaRedChozo"
+  },
+  {
+    "name": "Event: Kraid",
+    "ap_id": 31380,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Kraid"
+  },
+  {
+    "name": "Event: Quiet Robe",
+    "ap_id": 31381,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Quiet Robe"
+  },
+  {
+    "name": "Event: Ship",
+    "ap_id": 31382,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: Ship"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_CV_PlatformCaveWater_B",
+    "ap_id": 31383,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_CV_PlatformCaveWater_B"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_CV_ThermalDevice",
+    "ap_id": 31384,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_CV_ThermalDevice"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_000",
+    "ap_id": 31385,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_000"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_002",
+    "ap_id": 31386,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_002"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_003",
+    "ap_id": 31387,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_003"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_006",
+    "ap_id": 31388,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_006"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_007",
+    "ap_id": 31389,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_007"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_008",
+    "ap_id": 31390,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_008"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_010",
+    "ap_id": 31391,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_010"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_014",
+    "ap_id": 31392,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_014"
+  },
+  {
+    "name": "Event: s010_cave:default:PRP_DB_CV_020",
+    "ap_id": 31393,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:PRP_DB_CV_020"
+  },
+  {
+    "name": "Event: s010_cave:default:breakablecave017",
+    "ap_id": 31394,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:breakablecave017"
+  },
+  {
+    "name": "Event: s010_cave:default:breakablecave019",
+    "ap_id": 31395,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:breakablecave019"
+  },
+  {
+    "name": "Event: s010_cave:default:db_dif_cv_002",
+    "ap_id": 31396,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:db_dif_cv_002"
+  },
+  {
+    "name": "Event: s010_cave:default:db_reg_cv_021",
+    "ap_id": 31397,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:db_reg_cv_021"
+  },
+  {
+    "name": "Event: s010_cave:default:db_reg_cv_022",
+    "ap_id": 31398,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:db_reg_cv_022"
+  },
+  {
+    "name": "Event: s010_cave:default:db_reg_cv_023",
+    "ap_id": 31399,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:db_reg_cv_023"
+  },
+  {
+    "name": "Event: s010_cave:default:ev_chainreaction_deviceheat",
+    "ap_id": 31400,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:ev_chainreaction_deviceheat"
+  },
+  {
+    "name": "Event: s010_cave:default:grapplepulloff1x2_001",
+    "ap_id": 31401,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:grapplepulloff1x2_001"
+  },
+  {
+    "name": "Event: s010_cave:default:grapplepulloff1x2_002",
+    "ap_id": 31402,
+    "region": "Artaria",
+    "scenario": "s010_cave",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s010_cave:default:grapplepulloff1x2_002"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag001",
+    "ap_id": 31403,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag001"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag002",
+    "ap_id": 31404,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag002"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag003",
+    "ap_id": 31405,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag003"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag004",
+    "ap_id": 31406,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag004"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag005",
+    "ap_id": 31407,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag005"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag007",
+    "ap_id": 31408,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag007"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag008",
+    "ap_id": 31409,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag008"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag009",
+    "ap_id": 31410,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag009"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag010",
+    "ap_id": 31411,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag010"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag012",
+    "ap_id": 31412,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag012"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag013",
+    "ap_id": 31413,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag013"
+  },
+  {
+    "name": "Event: s020_magma:default:breakablemag014",
+    "ap_id": 31414,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:breakablemag014"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dif_mg_001",
+    "ap_id": 31415,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_dif_mg_001"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dif_mg_002",
+    "ap_id": 31416,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_dif_mg_002"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dside_mg_002",
+    "ap_id": 31417,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_dside_mg_002"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dside_mg_003",
+    "ap_id": 31418,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_dside_mg_003"
+  },
+  {
+    "name": "Event: s020_magma:default:db_dside_mg_004",
+    "ap_id": 31419,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_dside_mg_004"
+  },
+  {
+    "name": "Event: s020_magma:default:db_hdoor_mg_001",
+    "ap_id": 31420,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_hdoor_mg_001"
+  },
+  {
+    "name": "Event: s020_magma:default:db_hdoor_mg_002",
+    "ap_id": 31421,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_hdoor_mg_002"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_017",
+    "ap_id": 31422,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_reg_mg_017"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_019",
+    "ap_id": 31423,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_reg_mg_019"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_020",
+    "ap_id": 31424,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_reg_mg_020"
+  },
+  {
+    "name": "Event: s020_magma:default:db_reg_mg_021",
+    "ap_id": 31425,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:db_reg_mg_021"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat",
+    "ap_id": 31426,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:deviceheat"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat_001",
+    "ap_id": 31427,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:deviceheat_001"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat_002",
+    "ap_id": 31428,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:deviceheat_002"
+  },
+  {
+    "name": "Event: s020_magma:default:deviceheat_camerafar_000",
+    "ap_id": 31429,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:deviceheat_camerafar_000"
+  },
+  {
+    "name": "Event: s020_magma:default:grapplepulloff1x2",
+    "ap_id": 31430,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:grapplepulloff1x2"
+  },
+  {
+    "name": "Event: s020_magma:default:grapplepulloff1x2_000",
+    "ap_id": 31431,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s020_magma:default:grapplepulloff1x2_001",
+    "ap_id": 31432,
+    "region": "Cataris",
+    "scenario": "s020_magma",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s020_magma:default:grapplepulloff1x2_001"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_dif_b1_001",
+    "ap_id": 31433,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_dif_b1_001"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_dif_b1_002",
+    "ap_id": 31434,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_dif_b1_002"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_hdoor_b1_001",
+    "ap_id": 31435,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_hdoor_b1_001"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_001",
+    "ap_id": 31436,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_reg_b1_001"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_002",
+    "ap_id": 31437,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_reg_b1_002"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_003",
+    "ap_id": 31438,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_reg_b1_003"
+  },
+  {
+    "name": "Event: s030_baselab:default:db_reg_b1_005",
+    "ap_id": 31439,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:db_reg_b1_005"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2",
+    "ap_id": 31440,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_000",
+    "ap_id": 31441,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_001",
+    "ap_id": 31442,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_001"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_002",
+    "ap_id": 31443,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_002"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_003",
+    "ap_id": 31444,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_003"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_005",
+    "ap_id": 31445,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_005"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_006",
+    "ap_id": 31446,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_006"
+  },
+  {
+    "name": "Event: s030_baselab:default:grapplepulloff1x2_007",
+    "ap_id": 31447,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:grapplepulloff1x2_007"
+  },
+  {
+    "name": "Event: s030_baselab:default:powergenerator_001",
+    "ap_id": 31448,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:powergenerator_001"
+  },
+  {
+    "name": "Event: s030_baselab:default:powergenerator_002",
+    "ap_id": 31449,
+    "region": "Dairon",
+    "scenario": "s030_baselab",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s030_baselab:default:powergenerator_002"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_001",
+    "ap_id": 31450,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_001"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_002",
+    "ap_id": 31451,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_002"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_003",
+    "ap_id": 31452,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_003"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_004",
+    "ap_id": 31453,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_004"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_005",
+    "ap_id": 31454,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_005"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_007",
+    "ap_id": 31455,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_007"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_008",
+    "ap_id": 31456,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_008"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_009",
+    "ap_id": 31457,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_009"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_011",
+    "ap_id": 31458,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_011"
+  },
+  {
+    "name": "Event: s040_aqua:default:db_reg_aq_012",
+    "ap_id": 31459,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:db_reg_aq_012"
+  },
+  {
+    "name": "Event: s040_aqua:default:ev_demolition_db_001",
+    "ap_id": 31460,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:ev_demolition_db_001"
+  },
+  {
+    "name": "Event: s040_aqua:default:ev_demolition_db_002",
+    "ap_id": 31461,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:ev_demolition_db_002"
+  },
+  {
+    "name": "Event: s040_aqua:default:ev_demolition_db_003",
+    "ap_id": 31462,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:ev_demolition_db_003"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_000",
+    "ap_id": 31463,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_001",
+    "ap_id": 31464,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:grapplepulloff1x2_001"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_003",
+    "ap_id": 31465,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:grapplepulloff1x2_003"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_004",
+    "ap_id": 31466,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:grapplepulloff1x2_004"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_005",
+    "ap_id": 31467,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:grapplepulloff1x2_005"
+  },
+  {
+    "name": "Event: s040_aqua:default:grapplepulloff1x2_006",
+    "ap_id": 31468,
+    "region": "Burenia",
+    "scenario": "s040_aqua",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s040_aqua:default:grapplepulloff1x2_006"
+  },
+  {
+    "name": "Event: s050_forest:default:grapplepulloff1x2_000",
+    "ap_id": 31469,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s050_forest:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s050_forest:default:grapplepulloff1x2_002",
+    "ap_id": 31470,
+    "region": "Ghavoran",
+    "scenario": "s050_forest",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s050_forest:default:grapplepulloff1x2_002"
+  },
+  {
+    "name": "Event: s060_quarantine:default:db_reg_qt_001",
+    "ap_id": 31471,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s060_quarantine:default:db_reg_qt_001"
+  },
+  {
+    "name": "Event: s060_quarantine:default:grapplepulloff1x2_000",
+    "ap_id": 31472,
+    "region": "Elun",
+    "scenario": "s060_quarantine",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s060_quarantine:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_001",
+    "ap_id": 31473,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:db_reg_b2_001"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_003",
+    "ap_id": 31474,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:db_reg_b2_003"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_004",
+    "ap_id": 31475,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:db_reg_b2_004"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_005",
+    "ap_id": 31476,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:db_reg_b2_005"
+  },
+  {
+    "name": "Event: s070_basesanc:default:db_reg_b2_006",
+    "ap_id": 31477,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:db_reg_b2_006"
+  },
+  {
+    "name": "Event: s070_basesanc:default:grapplepulloff1x2_000",
+    "ap_id": 31478,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s070_basesanc:default:grapplepulloff1x2_002",
+    "ap_id": 31479,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:grapplepulloff1x2_002"
+  },
+  {
+    "name": "Event: s070_basesanc:default:grapplepulloff1x2_003",
+    "ap_id": 31480,
+    "region": "Ferenia",
+    "scenario": "s070_basesanc",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s070_basesanc:default:grapplepulloff1x2_003"
+  },
+  {
+    "name": "Event: s080_shipyard:default:block_pbtube",
+    "ap_id": 31481,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s080_shipyard:default:block_pbtube"
+  },
+  {
+    "name": "Event: s080_shipyard:default:block_pbtube_2",
+    "ap_id": 31482,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s080_shipyard:default:block_pbtube_2"
+  },
+  {
+    "name": "Event: s080_shipyard:default:grapplepulloff1x2",
+    "ap_id": 31483,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s080_shipyard:default:grapplepulloff1x2"
+  },
+  {
+    "name": "Event: s080_shipyard:default:grapplepulloff1x2_000",
+    "ap_id": 31484,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s080_shipyard:default:grapplepulloff1x2_000"
+  },
+  {
+    "name": "Event: s080_shipyard:default:grapplepulloff1x2_001",
+    "ap_id": 31485,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s080_shipyard:default:grapplepulloff1x2_001"
+  },
+  {
+    "name": "Event: s090_skybase:default:block_pbcolumn_000",
+    "ap_id": 31486,
+    "region": "Hanubia",
+    "scenario": "s080_shipyard",
+    "actor": "",
+    "pickup_type": "event",
+    "vanilla_item": "Event: s090_skybase:default:block_pbcolumn_000"
+  }
+]

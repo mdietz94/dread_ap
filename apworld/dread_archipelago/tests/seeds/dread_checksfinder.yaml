@@ -1,0 +1,24 @@
+# Dread + ChecksFinder 2-slot multiworld smoke test.
+#
+# ChecksFinder is an in-tree AP world with no game-specific options.
+# Used to exercise the cross-slot wire path:
+#   - Dread player's pickups can land items destined for ChecksFinder
+#   - ChecksFinder player's "checks" can land items destined for Dread
+# Substitute for the missing Clique fixture (dread_clique.yaml).
+
+name: Samus
+game: Metroid Dread
+description: Dread slot for cross-slot multiworld smoke test
+
+Metroid Dread:
+  accessibility: minimal
+  starting_area: artaria
+  include_boss_pickups: true
+
+---
+
+name: ChecksBot
+game: ChecksFinder
+description: ChecksFinder slot — random-checks game with no options
+
+ChecksFinder: {}

@@ -1,0 +1,37 @@
+# Dread + Clique 2-slot multiworld smoke test.
+#
+# Clique is AP's built-in "click the button" filler game — the simplest
+# possible second slot. Exercises the cross-slot item flow without
+# needing a real game on the other end, so we can prove that:
+#
+#   - Both worlds generate without errors.
+#   - Some Dread items end up at Clique locations (their item appears
+#     in Clique's pool / spoiler).
+#   - Some Clique items end up at Dread locations (visible as cross-slot
+#     captions in the Dread overrides JSON after seed_to_patcher_overrides
+#     runs).
+#
+# This is the v0.1 multiworld smoke. Future fixtures (e.g. Dread + Dread,
+# Dread + larger game) live alongside this file as separate YAMLs.
+
+name: Samus
+game: Metroid Dread
+description: Dread + Clique 2-slot E2E smoke
+
+Metroid Dread:
+  # accessibility: items is the strict mode (every location reachable).
+  # Currently fails because Regions.py is a star — that's M2 Gate B.
+  # For the wire-wiring milestone we use minimal until cross-region
+  # rules land.
+  accessibility: minimal
+  starting_area: artaria
+  include_boss_pickups: true
+
+---
+
+name: ButtonPusher
+game: Clique
+description: Clique slot for cross-slot item exchange
+
+Clique:
+  hard_mode: false
