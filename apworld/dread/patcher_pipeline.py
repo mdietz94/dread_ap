@@ -279,15 +279,73 @@ class PatchResult:
     notes: list[str] = field(default_factory=list)
 
 
-def check_dependencies() -> Optional[str]:
-    """Return None if the patcher's Python deps are importable; else a
-    user-readable message naming what's missing and how to fix it."""
+# Sentinel printed by the external-Python dep probe to distinguish
+# "deps imported cleanly" from "Python ran but had nothing to say"
+# (e.g. site-customize banners on stdout).
+_PROBE_OK_TOKEN = "DREAD_AP_DEPS_OK"
+
+
+def describe_python(python_executable: Optional[str] = None) -> str:
+    """Human-readable description of the Python that would be used for
+    the patcher subprocess. Flags the frozen Archipelago launcher because
+    that case is the #1 reason ``check_dependencies()`` reports a missing
+    install when the user definitely ``pip install``ed open-dread-rando
+    into a real Python."""
+    py = python_executable or sys.executable
+    base = Path(py).name.lower()
+    if "archipelagolauncher" in base or base in {"archipelago.exe", "archipelago"}:
+        return f"{py}  (frozen Archipelago launcher — won't have open-dread-rando)"
+    if python_executable:
+        return f"{py}  (override; set via /patch_python)"
+    return f"{py}  (sys.executable)"
+
+
+def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]:
+    """Return None if the patcher's Python deps are importable from the
+    target interpreter; else a user-readable message naming what's
+    missing and how to fix it.
+
+    When ``python_executable`` is provided (and isn't the current
+    process), probe by subprocess so the answer reflects what the
+    patcher CLI will actually see. The in-process import path is wrong
+    inside the frozen Archipelago launcher — that Python ships its own
+    bundled site-packages and never sees a user's ``pip install``."""
+    if python_executable and python_executable != sys.executable:
+        try:
+            proc = subprocess.run(
+                [python_executable, "-c",
+                 f"import open_dread_rando, mercury_engine_data_structures; "
+                 f"print('{_PROBE_OK_TOKEN}')"],
+                capture_output=True, text=True, timeout=30,
+            )
+        except FileNotFoundError:
+            return (
+                f"configured Python not found: {python_executable}\n"
+                "Set a valid interpreter with:  /patch_python <path-to-python.exe>"
+            )
+        except subprocess.TimeoutExpired:
+            return f"dep probe timed out launching {python_executable}"
+        if proc.returncode == 0 and _PROBE_OK_TOKEN in (proc.stdout or ""):
+            return None
+        # Surface the actual ImportError for actionable diagnostics.
+        err = (proc.stderr or proc.stdout or "").strip()
+        last = err.splitlines()[-1] if err else f"exit {proc.returncode}"
+        return (
+            f"open_dread_rando / mercury_engine_data_structures not importable "
+            f"from {python_executable}\n"
+            f"    {last}\n"
+            f"Install with:  {python_executable} -m pip install open-dread-rando"
+        )
+
     try:
         import open_dread_rando  # noqa: F401
     except ImportError:
         return (
-            "open_dread_rando is not installed. Install it with:\n"
-            "    pip install open-dread-rando"
+            f"open_dread_rando is not installed in {describe_python()}.\n"
+            "Install with:\n"
+            "    pip install open-dread-rando\n"
+            "Or, if running from the frozen Archipelago launcher, point at a real Python:\n"
+            "    /patch_python <path-to-python.exe>"
         )
     try:
         import mercury_engine_data_structures  # noqa: F401
@@ -321,7 +379,7 @@ def patch(
     The Switch→PC collected-checks wiring lives in the client-sent
     Randovania bootstrap, so no post-patch init.lc edit is needed.
     """
-    dep_err = check_dependencies()
+    dep_err = check_dependencies(python_executable)
     if dep_err:
         return PatchResult(ok=False, message=dep_err)
 

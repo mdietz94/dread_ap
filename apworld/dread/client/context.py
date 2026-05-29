@@ -20,8 +20,10 @@ add Kivy once the wire flow is proven end-to-end.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -62,6 +64,45 @@ def _expand(path: str) -> str:
     same whether the user typed the env reference verbatim or shell-
     expanded it."""
     return os.path.expandvars(os.path.expanduser(path))
+
+
+def _user_config_path() -> Path:
+    """Per-user config location for the Dread client. Survives across
+    Archipelago launcher restarts so users don't have to repaste
+    /patch_python every session.
+
+    Windows: ``%APPDATA%\\dread_ap\\config.json``.
+    Other:   ``~/.config/dread_ap/config.json`` (XDG-ish; this client is
+    Windows-targeted in practice but the AP launcher is cross-platform)."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "dread_ap" / "config.json"
+
+
+def _load_user_config() -> dict:
+    """Best-effort load. Missing/corrupt file → empty dict; we never want
+    a bad config to block client startup."""
+    path = _user_config_path()
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log.warning("ignoring unreadable %s: %s", path, exc)
+        return {}
+
+
+def _save_user_config(cfg: dict) -> None:
+    """Best-effort save. Logs and swallows OS errors — persistence is a
+    convenience, never a correctness requirement."""
+    path = _user_config_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except OSError as exc:
+        log.warning("could not persist %s: %s", path, exc)
 
 
 def _field(obj: Any, name: str, idx: int) -> Any:
@@ -148,6 +189,43 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         asyncio.ensure_future(self.ctx._poke_lua(source))
         return True
 
+    def _cmd_patch_python(self, path: str = "") -> bool:
+        """``/patch_python [<path-to-python.exe>]`` — show or set which
+        Python the ``/patch`` subprocess invokes.
+
+        With no argument, prints the current effective Python and whether
+        ``open_dread_rando`` is importable from it. This is the diagnostic
+        for the "open-dread-rando is not installed" error from the frozen
+        Archipelago launcher: that launcher's ``sys.executable`` is
+        ``ArchipelagoLauncher.exe``, which has its own bundled
+        site-packages and will never see ``pip install``ed packages.
+
+        With a path, sets a per-session override. Point it at the Python
+        in the venv where you installed ``open-dread-rando``.
+        """
+        from ..patcher_pipeline import check_dependencies, describe_python
+
+        ctx = self.ctx
+        if path:
+            expanded = _expand(path)
+            if not Path(expanded).is_file():
+                self.output(f"err: not a file: {expanded}")
+                return True
+            ctx.dreadvania_python = expanded
+            cfg = _load_user_config()
+            cfg["dreadvania_python"] = expanded
+            _save_user_config(cfg)
+            self.output(f"dreadvania_python set to {expanded!r}")
+            self.output(f"  persisted to {_user_config_path()}")
+        self.output(f"patcher Python: {describe_python(ctx.dreadvania_python)}")
+        dep_err = check_dependencies(ctx.dreadvania_python)
+        if dep_err is None:
+            self.output("  open_dread_rando + mercury_engine_data_structures: OK")
+        else:
+            for line in dep_err.splitlines():
+                self.output(f"  {line}")
+        return True
+
     def _cmd_patch(self, dreadvania_dir: str = "", vanilla_romfs_dir: str = "") -> bool:
         """``/patch <dreadvania-install-dir> <vanilla-romfs-dir>`` — build
         the AP-shaped mod from this session's slot_data and write it on
@@ -229,6 +307,15 @@ class DreadContext(CommonContext):
         # /patch command reads from here so users don't need a local seed
         # zip to run the patcher.
         self.slot_data: dict = {}
+        # Override for the Python the patcher subprocess invokes. Default
+        # (None) means use sys.executable, which is correct from a real
+        # Python but WRONG inside the frozen Archipelago launcher — that
+        # binary's bundled site-packages never sees `pip install`. Set via
+        # the /patch_python command; persisted in _user_config_path() so
+        # the setting survives Archipelago launcher restarts.
+        self.dreadvania_python: Optional[str] = _load_user_config().get(
+            "dreadvania_python"
+        )
 
     # ---- CommonContext overrides --------------------------------------
 
@@ -445,6 +532,7 @@ class DreadContext(CommonContext):
                 placements=self.slot_data,
                 dreadvania_install_dir=Path(_expand(dreadvania_dir)),
                 vanilla_romfs_dir=Path(_expand(vanilla_romfs_dir)),
+                python_executable=self.dreadvania_python,
             )
 
         try:
