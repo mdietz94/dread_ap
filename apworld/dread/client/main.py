@@ -84,10 +84,12 @@ async def main(args: argparse.Namespace) -> None:
     if args.connect:
         asyncio.create_task(ctx.connect(), name="initial-ap-connect")
 
+    # Kivy GUI when a display server is available (gui_enabled is False on
+    # headless hosts); DREAD_NOGUI=1 forces CLI-only (used by the e2e smoke
+    # test). run_gui lazy-imports gui.py so Kivy is never pulled headless.
     use_gui = gui_enabled and not os.environ.get("DREAD_NOGUI")
     if use_gui:
-        # gui.py is not implemented yet (Phase 3 deferred); fall back to CLI.
-        log.info("GUI not implemented in this build; running headless")
+        ctx.run_gui()
     ctx.run_cli()
 
     try:
