@@ -442,6 +442,13 @@ class DreadContext(CommonContext):
             log.warning("Switch reported MALFORMED for our request (payload=%r)", resp.payload)
             return
         # RECEIVED_PICKUPS or unknown: log and skip.
+        #
+        # RECEIVED_PICKUPS carries the game's authoritative confirmed count
+        # (Blackboard.ReceivedPickups). v0.1 ignores it and dedups purely on
+        # the PC-side cursor. Consuming it here is the prerequisite for
+        # idempotent, cutscene-safe delivery: only send items beyond the
+        # game's confirmed count, then replaying on reconnect/post-cutscene is
+        # safe. See CLAUDE.md risk #1 and client/protocol.py.
         log.debug("push %s payload (%d bytes): %r",
                   packet_type.name, len(resp.payload), resp.payload[:80])
 

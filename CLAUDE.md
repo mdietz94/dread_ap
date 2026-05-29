@@ -236,15 +236,37 @@ and ride the normal item paths; non-actor (boss/EMMI) pickups are keyed by
 vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged
 `0.0.1-phase4-logic-m2-gateB-options` (world_version 0.2.0).
 
-Outstanding (non-blocking for v0.1): `accessibility: items` (~13 events with
-impossible area-relative rules — compiler fidelity, see the notes retro);
-inlining event/damage cost into region_access; per-trick-category granularity;
-door/elevator randomization. Real-hardware end-to-end run on a Switch is the
-next manual gate. Kivy GUI is a separate later milestone.
+`accessibility: items`/`full` now GENERATE (forward resolver + classification
+fix + Charge Beam forced start — see above and the notes retro); the smoke seed
+runs under `items`.
+
+Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
+collapse ammo to >=1 and damage to suit ownership); per-trick-category
+granularity; door/elevator randomization; cutscene-safe item delivery (risk #1
+below — needs idempotent delivery first). Real-hardware end-to-end run on a
+Switch is the next manual gate. Kivy GUI is a separate later milestone.
 
 ## Known unknowns / risks for new work
 
-1. **Cutscene-blocked item delivery.** `RL.GivePendingPickup` no-ops during cinematics. Lift the pending-queue + post-HELLO replay pattern from `smo_archipelago/apworld/smo_archipelago/client/state.py`.
+1. **Cutscene-blocked item delivery — NOT yet safe to fix by naive replay.**
+   An item delivered mid-cinematic can be dropped by the game. The tempting fix
+   (lift the pending-queue + post-HELLO replay from smo_archipelago) is **unsafe
+   as-is** because Dread delivery is currently **non-idempotent**:
+   `client/protocol.py::build_receive_pickup_lua` calls
+   `RandomizerPowerup.OnPickedUp(nil, resources)` directly, the `inventory_index`
+   arg is a no-op, and `PACKET_RECEIVED_PICKUPS` (the game's own confirmed count)
+   is ignored ("log and skip" in `context.py`). The only dedup is the PC-side
+   `received_count` cursor, which advances on SEND. So replaying received items
+   on reconnect would **double-grant additive items** (Missile/Energy/Power Bomb
+   tanks → inflated capacity) on any reconnect where the game kept its inventory.
+   A safe fix is a two-step: (a) make delivery idempotent — gate sends on the
+   game's real `Blackboard.ReceivedPickups` count (consume the existing
+   `PACKET_RECEIVED_PICKUPS` push and only send items beyond the confirmed
+   count), matching Randovania's `dread_remote_connector`; THEN (b) add the
+   replay. Step (a) hinges on hardware-validated counter semantics (does a
+   cutscene-dropped grant still bump the counter? does OnPickedUp bump it
+   exactly once?) that are **untested on real hardware** — so this is gated on
+   the manual Switch end-to-end run, not implementable blind.
 
 2. **Lua-eval poll latency (2s floor).** Acceptable for v0.1; revisit only if AP async features (deathlink) need it.
 

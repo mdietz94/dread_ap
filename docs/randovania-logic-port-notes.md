@@ -412,13 +412,24 @@ Inherited from M1 (still true):
 - Real ammo counting (Missile Tank count ≥ N rather than ≥ 1).
 - Damage / E-Tank thresholding for non-suit-gated rooms.
 
-Newly visible after M2:
-- The cross-region star is now the dominant remaining over-permissive
-  approximation. Gate B will close it; v0.3 should already plan
-  around the assumption that cross-region edges land before then.
-- The `accessibility: items` failure mode (cross-region-induced) is a
-  clear next-task signal. The smoke yaml flips to `items` the moment
-  Gate B lands.
+Newly visible after M2 — NOW RESOLVED (see "Gate B + options retrospective"
+and "Forward resolver + items/full accessibility" below; kept here for the
+trail):
+- The cross-region star *was* the dominant over-permissive approximation.
+  The forward resolver replaced it: cross-region cost is now inlined into
+  each per-pickup item-only rule, so `region_access` is a deliberate star
+  (cost lives in the rules, not the edges) rather than an unmodeled gap.
+- The `accessibility: items` failure mode is GONE. `items`/`full` generate
+  8/8 across seeds and trick levels; the smoke yaml runs under `items`.
+
+Still open for v0.3 (delivery layer, not logic):
+- Cutscene-safe item delivery is NOT yet implementable. Delivery is
+  non-idempotent (`build_receive_pickup_lua` → `OnPickedUp` directly,
+  `inventory_index` a no-op, `PACKET_RECEIVED_PICKUPS` ignored), so a naive
+  post-HELLO replay would double-grant additive items on reconnect. A safe
+  fix gates sends on the game's real `ReceivedPickups` count first, then adds
+  the replay — and that hinges on hardware-validated counter semantics. See
+  CLAUDE.md risk #1 and client/state.py.
 
 ## Gate B + options retrospective
 

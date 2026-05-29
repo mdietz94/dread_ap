@@ -215,8 +215,9 @@ The headless client logs to stdout. It will:
 
 Boot Dread on the Switch. Once you're in-game, the client should:
 
-- Forward AP-received items as `RL.ReceivePickup` calls, popping the
-  vanilla Dread "Item acquired" UI.
+- Forward AP-received items by calling `RandomizerPowerup.OnPickedUp`
+  directly (the bootstrap no longer defines `RL.ReceivePickup`), popping
+  the vanilla Dread "Item acquired" UI.
 - Watch the Switch's `PACKET_COLLECTED_INDICES` push and forward each
   newly-set pickup_index as a `LocationChecks` to the AP server.
 - Report `ClientStatus.CLIENT_GOAL` when `Init.bBeatenSinceLastReboot`
@@ -234,6 +235,15 @@ Quick proof the wire is actually working:
       popup with the AP-forwarded item.
 - [ ] If you generated `dread_clique.yaml`, have ButtonPusher click
       their button. The Dread player should get the corresponding popup.
+- [ ] **Cutscene-delivery probe (validates the risk #1 fix).** While a
+      cinematic is playing, have the other slot send the Dread player an
+      *additive* item (Missile Tank). After the cutscene: did the count go
+      up by exactly one, by two, or not at all? Then trigger a client
+      reconnect and watch whether already-granted items re-apply. Record
+      whether `Blackboard.ReceivedPickups` bumps once per grant and whether
+      a cutscene-dropped grant still bumps it. These answers are the
+      prerequisite for making delivery idempotent + cutscene-safe (CLAUDE.md
+      risk #1); today delivery is non-idempotent so do NOT enable any replay.
 
 ## Common failure modes
 

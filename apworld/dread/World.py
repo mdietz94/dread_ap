@@ -5,20 +5,26 @@ item-pool entry, and writes a small slot_data so the client can derive
 its mapping at connect time.
 
 Logic status (see docs/randovania-logic-port-notes.md):
-  * M2 plumbing shipped: 137 actor pickup rules + ~184 event reach rules
-    consumed end-to-end. Events are real AP items locked to event locations.
-  * Gate B shipped: cross-region access is modeled (Regions.py gates
-    Menu→region on the item-only region_access map), and Trick Level is a
-    user option backed by three pre-baked rule files.
-  * DNA-collection goal: RequiredArtifacts (0-12) + ArtifactPlacement.
-    Metroid DNA k → ITEM_RANDO_ARTIFACT_k; goal = ship AND has N DNA.
+  * Forward resolver: a whole-game sphere expansion (scripts/extract_dread_
+    rules.py::compile_forward) emits ITEM-ONLY rules — events are INLINED
+    (each event atom replaced by its item-only reach cost), so they are no
+    longer AP items/locations (we skip them in create_items / create_regions /
+    set_rules; the data tables keep them only for AP-ID stability).
+    region_access is a plain star — cross-region cost is inlined per rule.
+  * accessibility=items/full WORK: item-only rules bootstrap in AP's monotonic
+    sweep. This needed (a) classifying logic-required items as progression
+    (Missile Tank etc.), and (b) forcing Charge Beam as a starting item
+    (EXTRA_STARTING_ITEMS) to clear the early-prerequisite fill bottleneck.
+  * Trick Level option (3 pre-baked rule files); DNA-collection goal
+    (RequiredArtifacts 0-12 + ArtifactPlacement; goal = reach-ship AND N DNA).
 
-Skipped for now (lands in later phases):
-  * Progressive items (Progressive Beam, Progressive Suit)
-  * Per-area starting-location randomization
-  * Hint distribution / filler-item rebalancing
-  * Full damage/E-tank counting (v0.3) — keeps accessibility=items blocked
-    for ~13 events whose area-relative reach rules collapse to impossible.
+Skipped for now (later phases):
+  * Progressive items; per-area starting-location randomization; hint
+    distribution; per-trick-category granularity; door/elevator randomization.
+  * Ammo / damage / E-tank counting (v0.3) — rules collapse ammo to >=1 and
+    damage to suit ownership (over/under-permissive, not blocking).
+  * Cutscene-safe item delivery — see client/protocol.py + the risk note in
+    CLAUDE.md. Needs idempotent (ReceivedPickups-gated) delivery first.
 """
 from __future__ import annotations
 

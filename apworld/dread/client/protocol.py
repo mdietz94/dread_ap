@@ -96,6 +96,16 @@ def build_receive_pickup_lua(
     Lua contract. The ``message`` is surfaced via ``Game.LogWarn`` (which
     routes back to PC as a PACKET_LOG_MESSAGE push for client visibility);
     the inventory index gets bumped by RandomizerPowerup itself.
+
+    NOT IDEMPOTENT. Because ``inventory_index`` is ignored, calling this twice
+    for the same item grants it twice — and for additive items (Missile /
+    Energy / Power Bomb tanks) that means inflated capacity, not a no-op. Do
+    NOT build a reconnect/post-cutscene replay on top of this as-is. A safe
+    replay first needs index-gated delivery: have the caller consult the
+    Switch's real ``Blackboard.ReceivedPickups`` count (the
+    ``PACKET_RECEIVED_PICKUPS`` push, currently ignored in context.py) and skip
+    any item the game has already applied — matching Randovania's
+    ``dread_remote_connector``. See CLAUDE.md risk #1 and client/state.py.
     """
     import json
     progression_lua = _to_lua_table(progression)

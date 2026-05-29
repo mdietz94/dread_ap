@@ -164,24 +164,32 @@ variant nibbles forced. Stable across re-runs, unique per slot.
 - **Kivy GUI** is still a separate milestone. The headless client works
   but the user-facing dev experience needs the in-app status pane,
   command bar, item history view. Lift from `smo_archipelago/client/gui.py`.
-- **Cross-region access rules** — Regions.py is still a star.
-  `accessibility: items` fails. M2 Gate B punch list in
-  [randovania-logic-port-m2plumbing.md](randovania-logic-port-m2plumbing.md).
-- **Trick-level UI Choice** — currently no logic-difficulty option.
+- ~~**Cross-region access rules** — Regions.py is still a star.~~ DONE
+  (differently than planned): the forward resolver inlines cross-region cost
+  into each item-only per-pickup rule, so `region_access` is a deliberate
+  star and `accessibility: items`/`full` now generate. See the
+  "Forward resolver" section in
+  [randovania-logic-port-notes.md](randovania-logic-port-notes.md).
+- ~~**Trick-level UI Choice**~~ DONE — `TrickLevel` Choice backed by three
+  pre-baked rule files (`compiled_rules_l{1,2,3}.json`).
 - **Progressive items** — Progressive Beam / Progressive Suit not yet
   modeled.
-- **Non-actor pickup overrides** in the patcher converter. EMMI/boss/
-  cutscene rewards currently stay vanilla. To AP-ify them we need
-  `build_patcher_json.py` to handle lua_callback-keyed pickups.
+- ~~**Non-actor pickup overrides** in the patcher converter.~~ DONE in the
+  DNA-goal work — `patcher_pipeline.py::_pickup_key` now keys EMMI/boss/
+  cutscene rewards by `pickup_lua_callback`, so they can be AP-ified.
 - **Real-hardware E2E run.** The dev machine for this milestone didn't
   have a Switch. The runbook documents the manual steps; an actual
   human session on hardware is the next gate.
 - **Better cross-slot placeholder.** Right now cross-slot Dread locations
   always get a Missile Tank. Vanilla Randovania uses a "Multiworld Marker"
   with a dedicated icon. Pick that up when the patcher exposes the IDs.
-- **`RL.ReceivePickup` during cinematics** — `RL.GivePendingPickup`
-  no-ops while a cutscene is playing. The smo_archipelago pattern of a
-  pending queue + post-HELLO replay needs lifting.
+- **Cutscene-safe item delivery** — an item delivered mid-cinematic can be
+  dropped. The smo_archipelago pending-queue + post-HELLO replay pattern
+  CANNOT be lifted as-is: our delivery (`OnPickedUp` direct, `inventory_index`
+  a no-op, `PACKET_RECEIVED_PICKUPS` ignored) is non-idempotent, so a replay
+  would double-grant additive items on reconnect. Safe fix = make delivery
+  idempotent first (gate on `Blackboard.ReceivedPickups`), then replay — and
+  validate the counter semantics on hardware. See CLAUDE.md risk #1.
 
 ## Test count
 

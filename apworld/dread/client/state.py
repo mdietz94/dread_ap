@@ -6,9 +6,19 @@ Dread doesn't have kingdoms, captures, talkatoo, or multi-Switch routing.
 State model:
 
   * ``received_items`` — append-only log of every AP item we've delivered
-    to the Switch via ``RL.ReceivePickup``. The position in this list is
-    the ``inventory_index`` we send to the Lua (also used as idempotence
-    key against Dread's own ``Blackboard.ReceivedPickups`` counter).
+    to the Switch (via ``RandomizerPowerup.OnPickedUp``). Its length is the
+    PC-side delivery cursor: ``_on_received_items`` only delivers items at
+    positions >= this length.
+
+    CAUTION: delivery is NOT idempotent today — ``build_receive_pickup_lua``
+    calls ``OnPickedUp`` directly and the ``inventory_index`` arg is a no-op,
+    so re-sending an item RE-GRANTS it (additive items like Missile/Energy/
+    Power Bomb tanks would double). The cursor advances on SEND, not on the
+    Switch confirming receipt, so an item dropped mid-cutscene is lost rather
+    than retried. A cutscene-safe replay requires first making delivery
+    idempotent — gate sends on the Switch's real ``Blackboard.ReceivedPickups``
+    count (consume ``PACKET_RECEIVED_PICKUPS``, currently ignored) — and a
+    hardware test. See the risk note in CLAUDE.md.
 
   * ``collected_locations`` — set of AP location_ids the Switch has told
     us were collected. Dedup'd; reconnect snapshot replay re-emits checks
