@@ -118,12 +118,16 @@ def test_every_event_has_a_pool_location(compiled, locations):
 
 # ---- victory condition ----
 
-def test_victory_condition_is_event_ship(compiled):
-    """The canonical Dread goal is reaching the ship event. If this
-    changes, generation will accept incomplete seeds — surface loudly."""
-    vc = compiled["victory_condition"]
-    assert vc.get("type") == "event"
-    assert vc.get("name") == "Ship"
+def test_victory_condition_is_item_only(compiled):
+    """The goal is reaching the ship. Events are inlined into item-only rules,
+    so victory_condition is now an item-only reach rule (the Ship event's cost
+    folded into items) — no event atoms. That's what lets AP's item sweep
+    verify the goal under accessibility=items/full."""
+    def has_event(ast):
+        if ast.get("type") == "event":
+            return True
+        return any(has_event(c) for c in ast.get("items", []))
+    assert not has_event(compiled["victory_condition"])
 
 
 def test_victory_condition_predicate_requires_event_ship_item():
@@ -135,37 +139,23 @@ def test_victory_condition_predicate_requires_event_ship_item():
     assert pred(State({"Event: Ship": 1})) is True
 
 
-# ---- M1 under-constraint regression ----
+# ---- item-only inlined rules ----
 
-def test_burenia_event_gated_rule_still_requires_speed_booster():
-    """Under M1, a rule like Burenia: missiletankplus_001 had a
-    disjunct ``[BureniaHubMagnetPlatform AND BureniaPrepareSpeedSave
-    AND ... AND Speed Booster]`` that always passed because events
-    were trivial. The disjunct then over-permissively suggested the
-    pickup was reachable without Speed Booster, as long as *some*
-    other disjunct's items were absent too. Under M2 the event items
-    are real, so even with the events held, removing Speed Booster
-    from that disjunct prevents it from satisfying.
-
-    This locks the M2 wire: a state holding every event item but
-    missing Speed Booster (and the items used by every other disjunct)
-    must NOT satisfy the rule. If it does, the event branch silently
-    short-circuited to True somewhere."""
+def test_burenia_pickup_is_item_only_and_gated():
+    """Events are inlined, so Burenia: missiletankplus_001 is an item-only rule
+    (no event atoms), gated (not trivially reachable), and satisfied by a full
+    loadout. (Pre-inlining this pickup had an event-gated disjunct; that cost is
+    now folded into its item requirements.)"""
     raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
     ast = raw["rules"]["Burenia: missiletankplus_001"]
-    pred = compile_to_lambda(ast, player=1)
 
-    # Pull in every event item so only the "remove Speed Booster"
-    # constraint is what blocks satisfaction.
-    only_events = {f"Event: {e['name']}": 1 for e in raw["events"]}
-    # Plasma + every event but NOT the other singletons (Grapple,
-    # Gravity, Space Jump, Spider Magnet, Spin Boost) and NOT
-    # Bomb+Morph (the alternate disjunct), and NOT Speed Booster.
-    state = State({**only_events, "Plasma Beam": 1})
-    assert not pred(state), \
-        ("rule must require Speed Booster on the event-gated branch "
-         "after M2 — events alone shouldn't suffice")
-    # Adding Speed Booster lets the event-gated disjunct satisfy.
-    state_with_speed = State({**only_events, "Plasma Beam": 1, "Speed Booster": 1})
-    assert pred(state_with_speed), \
-        "event-gated disjunct should satisfy with all events + Plasma + Speed"
+    def has_event(a):
+        if a.get("type") == "event":
+            return True
+        return any(has_event(c) for c in a.get("items", []))
+    assert not has_event(ast), "rule must be item-only after inlining"
+
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(State({})) is False, "pickup must not be trivially reachable"
+    full = {i["name"]: 99 for i in json.loads((ROOT / "data" / "items.json").read_text())}
+    assert pred(State(full)) is True, "pickup must be reachable with a full loadout"

@@ -124,6 +124,23 @@ _AMMO_OR_TANK_ITEMS = {
 }
 
 
+# Randovania 'misc' resources are static per-seed CONFIG booleans (door-lock
+# rando, transport rando, "highly dangerous logic", power-bomb limits, etc.) —
+# NOT collectible state. We resolve them at compile time against our patcher
+# config so a negated misc requirement is exact ("config flag is off → NOT-flag
+# holds") instead of the old conservative "negation is impossible". Values mirror
+# the bundled starter preset: no door/transport rando, no highly-dangerous
+# logic, power bombs nerfed, beams/missiles as separate items.
+MISC_RESOURCE_VALUES: dict[str, bool] = {
+    "DoorLocks": False,
+    "Teleporters": False,
+    "HighDanger": False,
+    "NerfPowerBombs": True,
+    "SeparateBeams": True,
+    "SeparateMissiles": True,
+}
+
+
 # ---------------------------------------------------------------------------
 # AST helpers
 # ---------------------------------------------------------------------------
@@ -234,6 +251,11 @@ class Header:
     templates: dict[str, dict]          # template_name -> requirement tree
     dock_weakness: dict[str, dict]      # (dock_type, weakness_name) -> {open, lock}
     starting_location: dict
+    # Highest trick tier the solver may assume (1=Beginner, 2=Intermediate,
+    # 3=Advanced). A TrickReq of level N translates to Trivial when
+    # N <= trick_level, else Impossible. Default 1 keeps existing callers
+    # (and the M1/Gate-A behavior) unchanged.
+    trick_level: int = 1
 
     @classmethod
     def from_json(cls, hdr: dict) -> "Header":
@@ -318,12 +340,25 @@ def translate_requirement(
         amount = int(data.get("amount", 1))
         negate = bool(data.get("negate", False))
 
+        # misc = static per-seed config flag. Resolve against our config
+        # (negation is exact here — it's not collectible state).
+        if rtype == "misc":
+            val = MISC_RESOURCE_VALUES.get(rname)
+            if val is None:
+                print(f"  WARN: unknown misc resource {rname!r}; assuming present",
+                      file=sys.stderr)
+                val = True
+            holds = (not val) if negate else bool(val)
+            return TRIVIAL if holds else IMPOSSIBLE
+
         if negate:
-            # Rare; means "must NOT have this resource". For v0.1 we don't
-            # model negation in state.has predicates. Conservative choice:
-            # treat as impossible (the path requires not having something,
-            # so we don't claim it's reachable).
-            return IMPOSSIBLE
+            # Negated item/event = TEMPORAL ("don't have / haven't triggered it
+            # yet"). Dread's major progression (Ship, bosses, X-release, chain
+            # reaction) is gated SOLELY by negated state, so Impossible breaks
+            # completion. Treat as Trivial (satisfiable in the early state); the
+            # forward resolver inlines events into item-only rules so AP's
+            # monotonic item sweep stays consistent.
+            return TRIVIAL
 
         if rtype == "items":
             if rname not in header.items_by_short:
@@ -350,22 +385,18 @@ def translate_requirement(
             return {"type": "event", "name": rname}
 
         if rtype == "tricks":
-            # v0.1: enable level-1 ("Beginner") tricks; treat anything
-            # higher as impossible. Most vanilla pickups marked as
-            # trick-1 ARE expected of a normal Dread playthrough
-            # (basic shinesparks, bomb jumps from clear ledges, etc.).
-            # Real trick-level UI option lands in Milestone 2.
-            if amount <= 1:
+            # A TrickReq of level N (amount) is assumed satisfiable when the
+            # configured trick_level is at least N — i.e. the seed ASSUMES the
+            # player can perform every trick up through `header.trick_level`.
+            # Level 1 ("Beginner") covers basic shinesparks / bomb jumps from
+            # clear ledges; higher tiers unlock progressively harder tech.
+            # Baked per level into compiled_rules_l{1,2,3}.json.
+            if amount <= header.trick_level:
                 return TRIVIAL
             return IMPOSSIBLE
 
         if rtype == "damage":
             return translate_damage(rname, amount)
-
-        if rtype == "misc":
-            # 'Combat', 'Final Boss', etc. — generally story flags.
-            # For v0.1 treat as trivial except a known-impossible set.
-            return TRIVIAL
 
         if rtype == "versions":
             # Game version requirement; we target one version, so trivial.
@@ -550,6 +581,14 @@ EMPTY_DNF: DNF = frozenset()
 TRIVIAL_DNF: DNF = frozenset({frozenset()})
 
 
+def _disjunct_sort_key(disjunct: Disjunct) -> tuple:
+    """Stable total order for the disjunct cap. Primary key = length, so
+    truncation keeps the shortest (easiest) paths and drops the longest;
+    the secondary key (sorted atoms) replaces frozenset iteration order,
+    which is hash-seed-dependent, so repeated bakes are byte-reproducible."""
+    return (len(disjunct), tuple(sorted(disjunct)))
+
+
 def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
     """Convert an AST to DNF, with a hard cap on disjunct count.
 
@@ -587,7 +626,7 @@ def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
             result = frozenset({a | b for a in result for b in child_dnf})
             result = _absorb_dnf(result)
             if len(result) > max_disjuncts:
-                result = frozenset(sorted(result, key=len)[:max_disjuncts])
+                result = frozenset(sorted(result, key=_disjunct_sort_key)[:max_disjuncts])
         return result
     if t == "or":
         result: DNF = EMPTY_DNF
@@ -595,7 +634,7 @@ def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
             result = result | ast_to_dnf(child, max_disjuncts)
             result = _absorb_dnf(result)
             if len(result) > max_disjuncts:
-                result = frozenset(sorted(result, key=len)[:max_disjuncts])
+                result = frozenset(sorted(result, key=_disjunct_sort_key)[:max_disjuncts])
         return result
     raise ValueError(f"unknown AST type in ast_to_dnf: {t!r}")
 
@@ -703,7 +742,7 @@ def enumerate_paths(
             combined = reach[v] | new_paths
             combined = _absorb_dnf(combined)
             if len(combined) > max_disjuncts_per_node:
-                combined = frozenset(sorted(combined, key=len)[:max_disjuncts_per_node])
+                combined = frozenset(sorted(combined, key=_disjunct_sort_key)[:max_disjuncts_per_node])
             if combined != reach[v]:
                 reach[v] = combined
                 if v not in in_queue:
@@ -821,6 +860,239 @@ def load_ap_locations() -> tuple[dict[tuple[str, str], dict], dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Global cross-region reachability (Gate B)
+# ---------------------------------------------------------------------------
+#
+# compile_area treats every cross-region dock as a FREE entry node, so an
+# area-local pickup rule answers "what's needed to reach this pickup from the
+# nearest area boundary". That deliberately omits the cost of reaching the
+# boundary — fine for per-pickup gating, but it makes the area-local
+# cross-region exits all Trivial, so they cannot gate region access.
+#
+# To gate region entry faithfully we run ONE reachability pass over the whole
+# 9-area graph (region-qualified node keys) from the single global start.
+# region_access[R] is the easiest global requirement to set foot in region R
+# (the OR of the reach rules of R's inbound cross-region docks). The start
+# region is Trivial. The AP side gates Menu -> R on this, leaving the
+# per-pickup rules untouched. Itorash has no AP region (its events fold into
+# Hanubia, carrying their own area-local reach rules), so it is not emitted.
+
+GlobalKey = tuple                  # (region, sub_area, node)
+
+
+def build_global_graph(
+    areas: dict[str, dict],
+    header: Header,
+) -> tuple[dict, dict]:
+    """Merge every area into one graph with region-qualified node keys and
+    real (not sentinel) cross-region dock edges."""
+    nodes: dict = {}
+    edges: dict = {}
+
+    for region, area_data in areas.items():
+        for sub_name, sub in area_data["areas"].items():
+            for n_name, n in sub["nodes"].items():
+                key = (region, sub_name, n_name)
+                nodes[key] = n
+                for tgt_name, req in n.get("connections", {}).items():
+                    edges.setdefault(key, []).append(
+                        ((region, sub_name, tgt_name),
+                         translate_requirement(req, header))
+                    )
+
+    # Dock edges connect to the real target node, possibly in another region.
+    for key, n in list(nodes.items()):
+        if n.get("node_type") != "dock":
+            continue
+        dc = n.get("default_connection")
+        if not dc:
+            continue
+        dock_req = dock_open_requirement(
+            header, n.get("dock_type"), n.get("default_dock_weakness")
+        )
+        override_open = n.get("override_default_open_requirement")
+        if override_open is not None:
+            dock_req = translate_requirement(override_open, header)
+        edges.setdefault(key, []).append(
+            ((dc["region"], dc["area"], dc["node"]), dock_req)
+        )
+
+    return edges, nodes
+
+
+def _strip_events(ast: dict) -> dict:
+    """Return the AST with all event requirements treated as satisfied.
+
+    region_access gates Menu→region on the AP side, so it MUST stay
+    bootstrappable from items alone: events are themselves locked progression
+    whose area-relative reach rules assume free area entry, and coupling region
+    entry to them deadlocks the goal (Ship becomes unreachable). Dropping event
+    atoms keeps the real ITEM gating (e.g. Cataris needs Charge + Cross Bomb)
+    while staying over-permissive about event-gated traversal — the safe
+    direction (never makes a region falsely unreachable)."""
+    t = ast.get("type")
+    if t == "event":
+        return TRIVIAL
+    if t == "and":
+        return mk_and([_strip_events(c) for c in ast["items"]])
+    if t == "or":
+        return mk_or([_strip_events(c) for c in ast["items"]])
+    return ast
+
+
+def _strip_self_event(ast: dict, name: str) -> dict:
+    """Remove self-references from an event's own reach rule. A disjunct that
+    requires event E in order to reach E is circular (un-bootstrappable in a
+    monotonic solver), so replace the self-reference with Impossible and
+    simplify. If every path self-references, the event is only reachable
+    post-trigger → Impossible (a back-path the area BFS picked up)."""
+    t = ast.get("type")
+    if t == "event" and ast.get("name") == name:
+        return IMPOSSIBLE
+    if t == "and":
+        return mk_and([_strip_self_event(c, name) for c in ast["items"]])
+    if t == "or":
+        return mk_or([_strip_self_event(c, name) for c in ast["items"]])
+    return ast
+
+
+def compute_region_access(
+    areas: dict[str, dict],
+    header: Header,
+    regions: list[str],
+) -> dict[str, dict]:
+    """Global reachability → per-region entry rule AST (item-only), for the
+    given AP region names."""
+    edges, nodes = build_global_graph(areas, header)
+    start = header.starting_location
+    entry = (start["region"], start["area"], start["node"])
+    if entry not in nodes:
+        print(f"  WARN: global start {entry!r} not in node set", file=sys.stderr)
+
+    # Inbound cross-region docks: a dock node in region R whose default
+    # connection leaves R. Reaching one == being able to enter R.
+    inbound_by_region: dict[str, list] = {}
+    targets: set = set()
+    for key, n in nodes.items():
+        if n.get("node_type") != "dock":
+            continue
+        region = key[0]
+        dc = n.get("default_connection") or {}
+        if dc.get("region") and dc["region"] != region:
+            targets.add(key)
+            inbound_by_region.setdefault(region, []).append(key)
+
+    reach = enumerate_paths([entry], edges, targets)
+
+    region_access: dict[str, dict] = {}
+    for R in regions:
+        if R == start["region"]:
+            region_access[R] = TRIVIAL
+            continue
+        rules = [reach.get(k, IMPOSSIBLE) for k in inbound_by_region.get(R, [])]
+        region_access[R] = _strip_events(mk_or(rules)) if rules else IMPOSSIBLE
+    return region_access
+
+
+def _substitute_events(ast: dict, event_cost: dict) -> dict:
+    """Inline each event's ITEM-ONLY reach cost in place of its atom. Events not
+    yet collected (absent from event_cost) → Impossible (their edge is blocked
+    this round). The result is item-only — no event atoms remain — which is what
+    lets AP's monotonic item sweep bootstrap everything (the event-as-locked-
+    item model created item↔event cycles AP couldn't unwind)."""
+    t = ast.get("type")
+    if t == "event":
+        return event_cost.get(ast["name"], IMPOSSIBLE)
+    if t == "and":
+        return mk_and([_substitute_events(c, event_cost) for c in ast["items"]])
+    if t == "or":
+        return mk_or([_substitute_events(c, event_cost) for c in ast["items"]])
+    return ast
+
+
+def compile_forward(
+    areas: dict[str, dict],
+    header: Header,
+    ap_loc_by_actor: dict,
+    ap_loc_by_pickup_index: dict,
+    *,
+    max_rounds: int = 40,
+    cap: int = 32,
+) -> tuple[dict, dict, dict]:
+    """Randovania-style forward resolver over the global graph, emitting
+    ITEM-ONLY rules.
+
+    Collects events in dependency SPHERES: each round, every event atom in an
+    edge is replaced by the ITEM-ONLY reach cost of events collected in EARLIER
+    rounds (uncollected events block that edge), reachability is recomputed, and
+    newly-reachable events record their own item-only cost for the next round.
+
+    Inlining is the crux: the old event-as-locked-item model created item↔event
+    bootstrap cycles (an event needs an item whose location needs that event)
+    that AP's monotonic, precollected-only sweep could not unwind, so
+    accessibility=items/full failed. Folding each event's cost into pure item
+    requirements removes events from the dependency graph entirely, so the rules
+    bootstrap like ordinary AP item logic. Returns
+    (rules_by_loc, event_rule_by_name, event_region_by_name); all rules are
+    item-only and global (region_access becomes a star, boss/EMMI gated
+    directly). Requires translate_requirement's negated temporal → Trivial."""
+    edges, nodes = build_global_graph(areas, header)
+    start = header.starting_location
+    entry = (start["region"], start["area"], start["node"])
+    ev_name_by_node = {k: n.get("event_name") for k, n in nodes.items()
+                       if n.get("node_type") == "event"}
+    ev_nodes_by_name: dict[str, list] = {}
+    for k, nm in ev_name_by_node.items():
+        ev_nodes_by_name.setdefault(nm, []).append(k)
+
+    # event_cost[E] = item-only reach DNF, captured the round E is collected
+    # (so it references only earlier events' costs → already inlined → acyclic).
+    event_cost: dict[str, dict] = {}
+    node_reach: dict = {}
+    for _ in range(max_rounds):
+        round_edges = {
+            u: [(v, _substitute_events(req, event_cost)) for v, req in adj]
+            for u, adj in edges.items()
+        }
+        node_reach = enumerate_paths(
+            [entry], round_edges, set(nodes.keys()),
+            max_disjuncts_per_node=cap, max_disjuncts_per_edge=cap,
+        )
+        newly = {nm for k, nm in ev_name_by_node.items()
+                 if nm not in event_cost
+                 and node_reach.get(k, IMPOSSIBLE).get("type") != "impossible"}
+        if not newly:
+            break
+        for nm in newly:
+            event_cost[nm] = mk_or([node_reach.get(k, IMPOSSIBLE)
+                                    for k in ev_nodes_by_name[nm]])
+    event_rule_by_name = event_cost
+
+    # Map pickup nodes (actor + boss/EMMI/cutscene) to AP locations.
+    rules_by_loc: dict[str, dict] = {}
+    for key, n in nodes.items():
+        if n.get("node_type") != "pickup":
+            continue
+        region = key[0]
+        ast = node_reach.get(key, IMPOSSIBLE)
+        actor_name = (n.get("extra") or {}).get("actor_name")
+        loc_name = None
+        if actor_name and (region, actor_name) in ap_loc_by_actor:
+            loc_name = ap_loc_by_actor[(region, actor_name)]
+        elif n.get("pickup_index") is not None and n["pickup_index"] in ap_loc_by_pickup_index:
+            loc_name = ap_loc_by_pickup_index[n["pickup_index"]]
+        if loc_name is not None:
+            rules_by_loc[loc_name] = ast
+
+    # event_rule_by_name was captured per-round above (acyclic). Region tag =
+    # first contributing area (deterministic).
+    event_region_by_name: dict[str, str] = {
+        nm: sorted(k[0] for k in ks)[0] for nm, ks in ev_nodes_by_name.items()
+    }
+    return rules_by_loc, event_rule_by_name, event_region_by_name
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -848,6 +1120,14 @@ def main(argv: list[str] | None = None) -> int:
         default=DATA_DIR / "compiled_rules.json",
         help="output path for compiled_rules.json",
     )
+    parser.add_argument(
+        "--trick-level",
+        type=int,
+        default=1,
+        choices=(1, 2, 3),
+        help="highest trick tier the solver may assume "
+             "(1=Beginner, 2=Intermediate, 3=Advanced). Bake one file per level.",
+    )
     args = parser.parse_args(argv)
 
     if args.all:
@@ -860,96 +1140,85 @@ def main(argv: list[str] | None = None) -> int:
     pinned = (CACHE_DIR / "PINNED_COMMIT.txt").read_text().strip()
     header_data = json.loads((CACHE_DIR / "header.json").read_text())
     header = Header.from_json(header_data)
+    header.trick_level = args.trick_level
 
     ap_loc_by_key, ap_region_scenario = load_ap_locations()
     ap_items = json.loads((DATA_DIR / "items.json").read_text())
     ap_locations = json.loads((DATA_DIR / "locations.json").read_text())
-    existing_item_max = max(it["ap_id"] for it in ap_items)
+    # The event ID base must stay anchored to the BASE-item max so re-running
+    # the compiler never renumbers events out from under existing seeds. Exclude
+    # both the event items this script previously appended (else each re-run
+    # shifts the base by len(events)) and the "Metroid DNA" goal item appended
+    # after events. The result is stable across repeated bakes.
+    existing_item_max = max(
+        it["ap_id"] for it in ap_items
+        if not it["name"].startswith("Event: ")
+        and not it["name"].startswith("Metroid DNA")
+    )
     existing_loc_max = max(l["ap_id"] for l in ap_locations)
 
-    out_rules: dict[str, dict] = {}
-    all_events: set[str] = set()
-    unmapped: list[str] = []
-    cross_exits: list[dict] = []
-    # event_name -> list of (region, reach_ast) — one entry per area that
-    # contains an event node with this name. Aggregated below.
-    event_rules_by_name: dict[str, list[tuple[str, dict]]] = {}
+    # AP location maps: actor pickups by (region, actor); non-actor
+    # (boss/EMMI/cutscene/corex) by pickup_index.
+    ap_loc_by_actor = {
+        (l["region"], l["actor"]): l["name"]
+        for l in ap_locations
+        if l.get("pickup_type") == "actor" and l.get("actor")
+    }
+    ap_loc_by_pickup_index = {
+        l["pickup_index"]: l["name"]
+        for l in ap_locations
+        if l.get("pickup_type") not in ("actor", "event")
+        and l.get("pickup_index") is not None
+    }
 
-    for area_name in areas:
-        path = CACHE_DIR / f"{area_name}.json"
-        if not path.exists():
-            print(f"missing cache file: {path}", file=sys.stderr)
+    all_area_data: dict[str, dict] = {}
+    for area_name in ALL_AREAS:
+        p = CACHE_DIR / f"{area_name}.json"
+        if not p.exists():
+            print(f"missing cache file: {p}", file=sys.stderr)
             return 2
-        area = json.loads(path.read_text())
-        print(f"compiling {area_name} ...")
-        compiled = compile_area(area, header)
-        all_events |= compiled.events_used
-        cross_exits.extend(compiled.cross_region_exits)
+        all_area_data[area_name] = json.loads(p.read_text())
 
-        for ename, ast in compiled.event_rules.items():
-            event_rules_by_name.setdefault(ename, []).append((compiled.name, ast))
+    print("running forward resolver (item-only inlining) over all areas ...")
+    out_rules, event_rule_by_name, event_region_by_name = compile_forward(
+        all_area_data, header, ap_loc_by_actor, ap_loc_by_pickup_index)
 
-        for actor_name, ast in compiled.rules.items():
-            key = (compiled.name, actor_name)
-            loc = ap_loc_by_key.get(key)
-            if loc is None:
-                msg = f"  no AP location for actor {actor_name!r} in {compiled.name}"
-                if args.strict:
-                    unmapped.append(msg)
-                else:
-                    print(msg, file=sys.stderr)
-                continue
-            out_rules[loc["name"]] = ast
+    # Victory: inline the goal event's item-only cost (no event atoms remain).
+    victory_ast = _substitute_events(
+        translate_requirement(header_data["victory_condition"], header),
+        event_rule_by_name,
+    )
 
-    if unmapped and args.strict:
-        for m in unmapped:
-            print(m, file=sys.stderr)
-        return 3
-
-    # Translate victory_condition + collect its events too
-    victory_ast = translate_requirement(header_data["victory_condition"], header)
-    collect_events_used(victory_ast, all_events)
-
-    # ---- Build the events list -----------------------------------------------
-    # Union the set of event NAMES referenced from any rule (all_events)
-    # plus the names we observed as event NODES while compiling. Some
-    # events show up only as node defs (no rule references them); some
-    # show up only as references (the node lives in an uncompiled area).
-    # An event with no node we ever saw gets IMPOSSIBLE — the only safe
-    # default since we can't prove reachability.
-    event_names = sorted(set(all_events) | set(event_rules_by_name.keys()))
+    # ---- Build the events list ------------------------------------------------
+    # event_region_by_name covers every event NODE (stable across bakes), so the
+    # sorted order — and thus the append-only IDs — match items.json. Item-only
+    # event rules (IMPOSSIBLE if an event was never reached) gate the (now
+    # vestigial) event locations; nothing in the pickup rules references them.
+    event_names = sorted(event_region_by_name.keys())
     event_item_base = existing_item_max + 1
     event_loc_base = existing_loc_max + 1
 
     events_out: list[dict] = []
     for i, ename in enumerate(event_names):
-        per_area = event_rules_by_name.get(ename, [])
-        if not per_area:
-            # Referenced from rules but no node found — defensive default.
-            print(f"  WARN: event {ename!r} referenced but no event node "
-                  f"found in any compiled area; defaulting to IMPOSSIBLE",
-                  file=sys.stderr)
-            rule = IMPOSSIBLE
-            region = ""
-        else:
-            # OR across areas — player triggers the event from any
-            # reachable node. Region tag = first contributing area
-            # (alphabetical for determinism).
-            per_area_sorted = sorted(per_area, key=lambda x: x[0])
-            rule = mk_or([ast for _, ast in per_area_sorted])
-            region = per_area_sorted[0][0]
         events_out.append({
             "name": ename,
-            "region": region,
-            "rule": rule,
+            "region": event_region_by_name.get(ename, ""),
+            "rule": event_rule_by_name.get(ename, IMPOSSIBLE),
             "item_ap_id": event_item_base + i,
             "location_ap_id": event_loc_base + i,
         })
 
+    # Rules are item-only and global (cross-region cost already inlined), so
+    # region_access is a plain star.
+    ap_region_names = [e["name"] for e in json.loads((DATA_DIR / "regions.json").read_text())]
+    region_access = {r: dict(TRIVIAL) for r in ap_region_names}
+
     output = {
         "pinned_commit": pinned,
-        "areas_compiled": areas,
+        "areas_compiled": sorted(all_area_data.keys()),
+        "trick_level": args.trick_level,
         "victory_condition": victory_ast,
+        "region_access": region_access,
         "events": events_out,
         "rules": out_rules,
     }

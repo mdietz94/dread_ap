@@ -1,17 +1,16 @@
-"""apworld root — registers the "Dread Client" with the Archipelago Launcher.
+"""apworld root — registers ``DreadWorld`` and the "Dread Client" Launcher
+Component with Archipelago.
 
-Phase 3 deliverable. Does NOT yet register a World class (no items.json /
-locations.json yet — those land in Phase 4). The Launcher Component is
-sufficient to make ``python Launcher.py "Dread Client" ...`` work.
-
-When Phase 4 lands, this file gains the standard apworld scaffolding
-(World subclass, items / locations / regions tables, Rules, Options) —
-mirroring the smo_archipelago/__init__.py shape.
+Exposes the full apworld scaffolding (World subclass, items / locations /
+regions tables, Rules, Options) plus the Kivy-free client Launcher entry
+point, mirroring the smo_archipelago/__init__.py shape. The World import is
+lazy so the Launcher Component still registers when the AP stack isn't on
+sys.path (unit-test isolation).
 """
 from __future__ import annotations
 
 
-__version__ = "0.0.1-phase4-logic-m2-wire"
+__version__ = "0.0.1-phase4-resolver-itemsfull"
 
 
 # Re-export the World subclass so Archipelago's autodiscovery

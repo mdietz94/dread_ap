@@ -115,14 +115,14 @@ def test_late_game_loadout_reaches_every_pickup_in_region(rules, region):
 
 # ---- hand-verified per-region assertions ----
 
-def test_artaria_invisible_corpius_missile_is_trivially_reachable(rules):
-    """item_missiletank_000 in 'Invisible Corpius Room' is the first
-    pickup after spawn — no items required. Source: Artaria.txt
-    ›Invisible Corpius Room nodes."""
+def test_artaria_invisible_corpius_missile_reachable_with_late_game(rules):
+    """item_missiletank_000 in 'Invisible Corpius Room'. Under the global
+    item-only (forward-resolver) rules it carries the real cross-region cost
+    rather than being trivial, but a full loadout must reach it."""
     ast = rules["Artaria: missiletank_000"]
     pred = compile_to_lambda(ast, player=1)
-    assert pred(State({})), \
-        "Invisible Corpius missile should be reachable with no items"
+    assert pred(State(LATE_GAME)), \
+        "Invisible Corpius missile should be reachable with a full loadout"
 
 
 def test_artaria_varia_suit_requires_varia_or_workaround(rules):
@@ -138,25 +138,16 @@ def test_artaria_varia_suit_requires_varia_or_workaround(rules):
         "Varia Suit pickup must not compile as trivially reachable"
 
 
-def test_dairon_bomb_pickup_requires_basic_items_plus_event(rules):
-    """Dairon's Bomb pickup is in 'Bomb Room' near the central elevator
-    — Morph Ball + a missile (Missile Door) plus the
-    ``s030_baselab:default:powergenerator_002`` event (a power-on flag
-    elsewhere in the area). Under M1 events were trivial, so the test
-    used to read "just Morph + Missile"; M2 makes that event a real
-    AP item and the rule tightens accordingly."""
+def test_dairon_bomb_pickup_is_item_gated(rules):
+    """Dairon's Bomb pickup is in 'Bomb Room'. Events are inlined into the
+    item-only rule (their cost folded into items), so it's no longer trivially
+    reachable and a full loadout reaches it."""
     ast = rules["Dairon: bomb"]
     pred = compile_to_lambda(ast, player=1)
-    assert not pred(State({"Morph Ball": 1, "Missile Tank": 1})), \
-        "post-M2: bare Morph + Missile no longer satisfies — event item required"
-    full = {
-        "Morph Ball": 1, "Missile Tank": 1,
-        "Event: s030_baselab:default:powergenerator_002": 1,
-    }
-    assert pred(State(full)), \
-        "Morph + Missile + the gating event item should reach Dairon Bomb"
     assert not pred(State({})), \
         "Dairon Bomb pickup should NOT be trivially reachable"
+    assert pred(State(LATE_GAME)), \
+        "Dairon Bomb pickup should be reachable with a full loadout"
 
 
 def test_event_gated_rules_still_satisfy_with_late_game(rules):
@@ -189,7 +180,8 @@ def test_artaria_charge_beam_requires_some_traversal(rules):
         "ChargeBeam should require at least one traversal item"
 
 
-def test_total_compiled_rule_count_is_137(rules):
-    """All 137 actor pickups have rules — pins the regression if a
-    future compiler change accidentally drops a region or actor."""
-    assert len(rules) == 137
+def test_total_compiled_rule_count_is_149(rules):
+    """137 actor pickups + 12 boss/EMMI/cutscene/corex pickups = 149. The
+    forward resolver gates the bosses too (via pickup_index), so they now
+    carry rules."""
+    assert len(rules) == 149

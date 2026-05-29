@@ -142,9 +142,11 @@ def test_event_placements_are_skipped():
     assert out["pickup_captions"] == {}
 
 
-def test_non_actor_pickups_are_skipped_for_v01():
-    """For v0.1 we leave EMMI / corex / corpius / cutscene rewards at
-    their vanilla resources (per the wire-wiring plan §Gate B / B1)."""
+def test_non_actor_pickups_are_overridden():
+    """Gate B: EMMI / corex / corpius / cutscene rewards ARE overridden now.
+    Their (scenario, actor) keys the template's pickup_lua_callback, so an
+    AP-placed item (e.g. a Metroid DNA → ITEM_RANDO_ARTIFACT_k) lands on the
+    boss instead of leaving its vanilla drop."""
     placements = {
         "slot_name": "Samus",
         "seed_id": "x",
@@ -157,7 +159,11 @@ def test_non_actor_pickups_are_skipped_for_v01():
         ],
     }
     out = placements_to_overrides(placements)
-    assert out["pickup_resources"] == {}
+    assert out["pickup_resources"] == {
+        "s010_cave/OnCorpiusDeath_CUSTOM": [
+            [{"item_id": "ITEM_RANDO_ARTIFACT_1", "quantity": 1}]
+        ]
+    }
 
 
 def test_configuration_identifier_includes_slot_and_seed_prefix():

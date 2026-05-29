@@ -178,13 +178,37 @@ Run with `python scripts/phase1_validate.py <switch-ip>` after installing
 upstream exlaunch on the Switch. Exit status 0 means the wire is up and
 the rest of the plan can proceed. Non-zero status means stop and triage.
 
-Logic: M2 plumbing Gate A shipped. All 137 actor pickups have
+Logic: M2 plumbing Gate A + Gate B shipped. All 137 actor pickups have
 non-trivial rules; 184 events are real AP items locked to synthetic
 event locations; the lambda compiler's event branch consults
 `state.has("Event: <name>", player)`; completion_condition reads
-`victory_condition` from compiled output (currently `Event: Ship`).
-Generation smoke test produces a solvable seed under
-`accessibility: minimal`.
+`victory_condition` from compiled output. Gate B: cross-region access is
+modeled via a global-reachability `region_access` map (item-only — see the
+notes retro for why) that gates `Menu→region`, so boss/EMMI locations are no
+longer trivially reachable; Trick Level is a user option backed by three
+pre-baked `compiled_rules{,_l2,_l3}.json`. The compiler is now deterministic
+(stable disjunct-cap tie-break). Generation smoke produces a solvable seed
+under `accessibility: minimal` across trick levels and DNA configs.
+Negation handling was made faithful (config-`misc` flags resolved against our
+config; temporal negated item/event → drop-the-transient = impossible, relying
+on the stable post-event path; self-referential event rules stripped). Starting
+items (Slide, Pulse Radar, missile capacity) are now `push_precollected` into AP
+logic. `accessibility: items`/`full` NOW WORK (verified 8/8 across seeds at every trick
+level). The compiler uses a forward resolver (`compile_forward` in
+scripts/extract_dread_rules.py) that INLINES events into ITEM-ONLY rules — each
+event atom is replaced by that event's item-only reach cost, computed in
+dependency-sphere order. This removes events from the dependency graph, so the
+old item↔event bootstrap cycle (which AP's monotonic `fulfills_accessibility`
+sweep couldn't unwind) is gone, and the rules bootstrap like ordinary AP item
+logic. Events are therefore NO LONGER AP items/locations (World/Regions/Rules
+skip them; data tables keep them for ID stability). Two more pieces were
+required: a classification fix (Missile Tank was `filler`, Missile+ Tank /
+Flash Shift Upgrade / Speed Booster Upgrade were `useful` — all logic-required,
+now progression(_skip_balancing)), and ONE forced starting item, Charge Beam
+(`World.EXTRA_STARTING_ITEMS`, precollected + in the patcher starting_items),
+the minimal set that clears the fill bottleneck. region_access is a star (cost
+inlined per-rule). Smoke seed is now `accessibility: items`. See the notes retro
+for the full diagnosis.
 
 Wire wiring: Gate A + B shipped. Every Switch→PC frame is now
 demuxed by leading type byte; the wire format documented previously
@@ -201,17 +225,22 @@ that to the override shape `scripts/build_patcher_json.py` consumes.
 `apworld/dread/tests/seeds/dread_clique.yaml`. End-to-end
 runbook at [docs/e2e-runbook.md](docs/e2e-runbook.md); wire-wiring
 retrospective at [docs/wire-wiring-notes.md](docs/wire-wiring-notes.md).
-186 tests pass. Apworld now slugged `0.0.1-phase4-logic-m2-wire`.
+Options: beyond StartingArea/IncludeBossPickups, the apworld now exposes
+TrickLevel, a Metroid DNA collection goal (RequiredArtifacts 0-12 +
+ArtifactPlacement), and cosmetic/combat passthrough (HUD toggles, room-name
+display, death counter, Raven Beak damage table, nerf power bombs). Energy /
+environmental-damage settings are intentionally NOT exposed (they need the
+v0.3 damage model). DNA `Metroid DNA k` items map to `ITEM_RANDO_ARTIFACT_k`
+and ride the normal item paths; non-actor (boss/EMMI) pickups are keyed by
+`pickup_lua_callback`. 206 tests pass (157 apworld + 49 scripts; 1 pre-existing
+vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged
+`0.0.1-phase4-logic-m2-gateB-options` (world_version 0.2.0).
 
-Outstanding for the rest of M2 (Gate B; non-blocking for v0.1):
-cross-region access graph (Regions.py is still a star, so
-`accessibility: items` fails), trick-level UI Choice option, three
-pre-baked trick-level rule files. See
-[docs/randovania-logic-port-notes.md](docs/randovania-logic-port-notes.md)
-§"M2 plumbing retrospective" and
-[docs/randovania-logic-port-m2plumbing.md](docs/randovania-logic-port-m2plumbing.md)
-for the full Gate B punch list. Real-hardware end-to-end run on a
-Switch is the next manual gate. Kivy GUI is a separate later milestone.
+Outstanding (non-blocking for v0.1): `accessibility: items` (~13 events with
+impossible area-relative rules — compiler fidelity, see the notes retro);
+inlining event/damage cost into region_access; per-trick-category granularity;
+door/elevator randomization. Real-hardware end-to-end run on a Switch is the
+next manual gate. Kivy GUI is a separate later milestone.
 
 ## Known unknowns / risks for new work
 

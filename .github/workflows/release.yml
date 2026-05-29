@@ -67,6 +67,8 @@ jobs:
               "dread/data/locations.json",
               "dread/data/regions.json",
               "dread/data/compiled_rules.json",
+              "dread/data/compiled_rules_l2.json",
+              "dread/data/compiled_rules_l3.json",
               "dread/data/starter_preset_patcher.json",
               "dread/client/main.py",
               "dread/client/context.py",

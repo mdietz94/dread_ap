@@ -1,0 +1,18 @@
+name: Samus
+game: Metroid Dread
+description: DNA-goal smoke — exercises the Metroid DNA collection goal across edge cases. Each generation run picks one of the weighted required_artifacts / placement combos below, so re-rolling the seed covers N=0 (bare ship goal), N=3 prefer_bosses, N=12 prefer_bosses (all bosses), and N=3 anywhere. accessibility=items (works now via the inlined forward resolver — see dread_smoke.yaml).
+
+Metroid Dread:
+  accessibility: items
+  starting_area: artaria
+  include_boss_pickups: true
+  trick_level:
+    beginner: 1
+    advanced: 1
+  required_artifacts:
+    0: 1
+    3: 2
+    12: 1
+  artifact_placement:
+    prefer_bosses: 2
+    anywhere: 1

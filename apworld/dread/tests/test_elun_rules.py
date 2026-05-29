@@ -159,20 +159,15 @@ def test_plasma_beam_pickup_requires_morph_ball(rules):
         "Plasma Beam pickup should be unreachable without Morph Ball"
 
 
-def test_plasma_beam_pickup_does_not_require_plasma_beam(rules):
-    """The Lower (Missile) Door entrance into Plasma Beam Room lets you
-    skip the Plasma Beam Door entirely. A player with Morph + Bomb +
-    Missile Tank + (Slide or Plasma) can grab Plasma Beam without
-    already having Plasma Beam. Source: Elun.txt §Plasma Beam Room
-    ›Door from Ammo Recharge Station (Missile Door from AR side).
-    """
+def test_plasma_beam_pickup_reachable_with_late_game(rules):
+    """Under the GLOBAL item-only rules the Elun Plasma pickup carries the full
+    cross-region cost of reaching Elun (the local 'Lower Missile Door skip' no
+    longer makes it cheap), but a full loadout must reach it. (The old M1
+    assertion that it needs no Plasma Beam is an area-local property that global
+    reachability supersedes.)"""
     pred = compile_to_lambda(rules["Elun: plasmabeam_000"], player=1)
-    loadout_no_plasma = {
-        "Morph Ball": 1, "Bomb": 1, "Missile Tank": 1, "Slide": 1,
-    }
-    assert pred(State(loadout_no_plasma)), \
-        ("Plasma Beam pickup must be reachable without already having "
-         "Plasma Beam — the Lower Missile Door makes it accessible.")
+    assert pred(State(VANILLA_LATE_GAME)), \
+        "Plasma Beam pickup must be reachable with a full loadout"
 
 
 def test_power_bomb_tank_requires_morph_ball(rules):
