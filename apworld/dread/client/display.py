@@ -78,10 +78,19 @@ def format_status_panel(snap: dict) -> str:
     goal = (_colored("BEATEN — goal reported", _GREEN)
             if beaten else _colored("not yet", _GRAY))
 
+    patcher = snap.get("patcher_python") or "—"
+    if patcher == "—":
+        patcher_color = _GRAY
+    elif patcher.startswith("ready"):
+        patcher_color = _GREEN
+    else:
+        patcher_color = _ORANGE
+
     lines = [
         "[b]Connections[/b]",
         f"  AP server : {_colored(ap_conn, _conn_color(ap_conn))}",
         f"  Switch    : {_colored(switch_conn, _conn_color(switch_conn))}",
+        f"  Patcher   : {_colored(patcher, patcher_color)}",
         "",
         "[b]Session[/b]",
         f"  Slot      : {slot}",

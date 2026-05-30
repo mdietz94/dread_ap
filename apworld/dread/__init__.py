@@ -26,13 +26,32 @@ except ImportError:
 def launch_dread_client(*args: str) -> None:
     """Archipelago Launcher entry point for the Dread Client.
 
-    Triggered by clicking the "Dread Client" button in the Launcher, or
-    (eventually) by double-clicking a ``.dreadap`` file once we define
-    that file format. For now only the button path is wired.
+    Triggered by clicking the "Dread Client" button in the Launcher, or by
+    double-clicking a ``.dreadap`` file (the Component's
+    ``SuffixIdentifier('.dreadap')`` registers the extension). When a
+    ``.dreadap`` is passed, its slot_name (+ optional server/password) are
+    expanded into CLI args so the client lands pre-filled; the ``.dreadap``
+    arg itself is dropped (the client's argparser doesn't know it). A parse
+    failure never blocks the launch — we log and open the client unfilled.
     """
     from worlds.LauncherComponents import launch as launch_or_subprocess
     from .client.main import launch as dread_client_launch
-    launch_or_subprocess(dread_client_launch, name="DreadClient", args=args)
+
+    final_args = list(args)
+    dreadap_path = next((a for a in final_args if a.endswith(".dreadap")), None)
+    if dreadap_path:
+        final_args = [a for a in final_args if not a.endswith(".dreadap")]
+        try:
+            from .client.dreadap_file import parse_dreadap, dreadap_to_launch_args
+            from pathlib import Path
+            final_args = dreadap_to_launch_args(parse_dreadap(Path(dreadap_path))) + final_args
+        except Exception as e:  # noqa: BLE001 — never block the launch
+            import logging
+            logging.getLogger(__name__).warning(
+                "could not parse %s: %s; launching client without pre-fill",
+                dreadap_path, e)
+
+    launch_or_subprocess(dread_client_launch, name="DreadClient", args=final_args)
 
 
 def add_client_to_launcher() -> None:

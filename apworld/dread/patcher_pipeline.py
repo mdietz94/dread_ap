@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -355,6 +357,83 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
             "Try:  pip install --upgrade open-dread-rando"
         )
     return None
+
+
+def _candidate_pythons() -> list[str]:
+    """Best-effort, ordered list of real Python interpreters to probe for the
+    patcher deps. Deduped by resolved path. The frozen Archipelago launcher is
+    excluded — its bundled site-packages never sees a user's ``pip install``,
+    so it can never be the answer."""
+    candidates: list[str] = []
+
+    def _add(path: Optional[str]) -> None:
+        if not path:
+            return
+        try:
+            resolved = str(Path(path).resolve())
+        except OSError:
+            return
+        if not Path(resolved).is_file():
+            return
+        # describe_python tags the frozen launcher; never offer it.
+        if "frozen Archipelago launcher" in describe_python(resolved):
+            return
+        if resolved not in candidates:
+            candidates.append(resolved)
+
+    # The current interpreter first (correct in dev / a real venv; skipped
+    # automatically when we're running inside the frozen launcher).
+    _add(sys.executable)
+    # PATH lookups.
+    for name in ("py", "python", "python3"):
+        _add(shutil.which(name))
+    # The Windows `py -3` launcher resolves to the default Python 3.
+    if sys.platform == "win32":
+        py = shutil.which("py")
+        if py:
+            try:
+                proc = subprocess.run(
+                    [py, "-3", "-c", "import sys; print(sys.executable)"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if proc.returncode == 0:
+                    _add(proc.stdout.strip())
+            except (OSError, subprocess.SubprocessError):
+                pass
+        # Common per-user CPython install location.
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            base = Path(local) / "Programs" / "Python"
+            if base.is_dir():
+                for child in sorted(base.glob("Python*")):
+                    _add(str(child / "python.exe"))
+    return candidates
+
+
+def autodetect_patcher_python() -> tuple[Optional[str], str]:
+    """Find a Python that can run the ``open-dread-rando`` patcher.
+
+    Returns ``(path, message)``: ``path`` is the first detected interpreter
+    whose deps import cleanly (``None`` if none qualifies), and ``message`` is
+    user-facing — an OK line naming the interpreter, the exact ``pip install``
+    command when a real Python exists but lacks the deps, or an install-Python
+    hint when no interpreter was found at all. Reuses :func:`check_dependencies`
+    so the probe matches exactly what ``/patch`` will see."""
+    candidates = _candidate_pythons()
+    if not candidates:
+        return None, (
+            "No Python interpreter found on PATH. Install Python 3 from "
+            "python.org, then run:  python -m pip install open-dread-rando"
+        )
+    for cand in candidates:
+        if check_dependencies(cand) is None:
+            return cand, f"patcher Python auto-detected: {cand}"
+    best = candidates[0]
+    return None, (
+        "open-dread-rando isn't installed in any detected Python. Run this, "
+        "then restart the client (or use /patch_python <path>):\n"
+        f"    {best} -m pip install open-dread-rando"
+    )
 
 
 def patch(

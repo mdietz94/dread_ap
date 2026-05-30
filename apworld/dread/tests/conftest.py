@@ -13,6 +13,7 @@ on the constructed context as needed.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 from enum import IntEnum
@@ -51,6 +52,8 @@ def _install_common_client_stub() -> None:
             self.auth = None
             self.slot = 0
             self.slot_info: dict = {}
+            # Real CommonContext exposes this; the backoff supervisor checks it.
+            self.exit_event = asyncio.Event()
 
         async def server_auth(self, password_requested: bool = False) -> None:
             pass
