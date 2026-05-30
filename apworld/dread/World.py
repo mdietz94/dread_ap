@@ -127,18 +127,25 @@ class DreadWorld(World):
             "Power Bomb Tank": int(o.power_bomb_tank_count.value),
         }
 
-        # For items where compiled rules need amount=1 but the pool has many
-        # copies, only the FIRST N copies get the row's classification — the
-        # rest fall back to "useful" (logic-irrelevant but still placed in
-        # reachable spots where possible). Missile+ Tank: 336 rule refs all
-        # amount=1, NOT precollected, so the first copy is logic-gating and
-        # the other 11 are pure ammo capacity.
-        # (Missile Tank doesn't need an entry here — Missile Tank is in
-        # BASE_STARTING_ITEMS / precollected, which satisfies its 3634
-        # amount=1 atoms from turn 0, so its row classification is already
-        # "useful" for every findable copy.)
+        # For items where the pool has more copies than compiled rules need
+        # at amount=1, only the FIRST N copies get the row's classification —
+        # the rest fall back to "useful" (logic-irrelevant but still placed in
+        # reachable spots where possible).
+        #   - Missile+ Tank: 336 amount=1 refs, NOT precollected. The first
+        #     copy is logic-gating; the other 11 are ammo capacity.
+        #   - Flash Shift Upgrade / Speed Booster Upgrade: rules reference
+        #     each up to amount=2 (max amount seen). Real Dread ships 2 of
+        #     each, so pool_count=2 matches the game; the FIRST copy is
+        #     logic-gating (any rule disjunct needing the upgrade is
+        #     satisfiable with just one), the second is QoL routing.
+        # (Missile Tank doesn't need an entry — it's in BASE_STARTING_ITEMS
+        # / precollected, which satisfies its 3634 amount=1 atoms from turn
+        # 0, so its row classification is already "useful" for every
+        # findable copy.)
         MIXED_CLASSIFICATION_FIRST_N = {
             "Missile+ Tank": 1,
+            "Flash Shift Upgrade": 1,
+            "Speed Booster Upgrade": 1,
         }
 
         non_event_locations = sum(
