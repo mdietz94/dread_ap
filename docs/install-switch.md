@@ -173,12 +173,37 @@ game restart) clears it. The shipped patch fixes the underlying bug
 (half-open socket handling) so this only matters for users migrating
 from an older build.
 
-## Linux
+## Linux and macOS
 
-The build pipeline has POSIX branches (`bash -lc "cd <path> &&
-./exlaunch.sh build"`) that should work with a system-installed
-`devkitpro` package; `detect_ryujinx_path` and `detect_sd_candidates`
-short-circuit to None/[] so the user uses the Custom folder deploy
-target. End-to-end Linux validation hasn't been done from this repo
-yet - if you run /setup on Linux, please open an issue with the
-wizard.log so we can correct any rough edges.
+The build pipeline has POSIX branches that should work with a
+system-installed `devkitpro` package:
+
+- `run_exlaunch_build` invokes `bash -lc "cd <checkout> &&
+  ./exlaunch.sh build"` directly on non-Windows (no msys2 setup).
+- `_devkitpro_gxx_under` probes both the `.exe` and bare paths under
+  `<root>/devkitA64/bin/`; `_DEVKITPRO_DEFAULT_ROOTS` includes
+  `/opt/devkitpro` and `/usr/local/devkitpro`.
+- `check_python312` probes `python3.12` on PATH as a fallback after
+  the Windows-only `py -3.12` probe.
+- `detect_ryujinx_path` knows the per-platform default Ryujinx data
+  roots (Windows: `%APPDATA%/Ryujinx/`; Linux:
+  `$XDG_CONFIG_HOME/Ryujinx/` or `~/.config/Ryujinx/`; macOS:
+  `~/Library/Application Support/Ryujinx/`).
+- `detect_sd_candidates` is Windows-only (walks drive letters). On
+  Linux/macOS the Custom folder deploy target is the right choice —
+  point it at your SD mount path (e.g. `/media/<user>/SWITCH-SD`).
+
+End-to-end validation on Linux and macOS has not been run from this
+repo yet — if you run /setup on either platform, please open an issue
+with the wizard.log (`~/.local/share/dread_ap/wizard.log`) so we can
+correct any rough edges. The most likely friction points are:
+
+- devkitPro install: pacman repos on Arch, the official installer
+  script on Debian/Ubuntu (`pacman -S switch-dev` after setting up
+  devkitpro-pacman). Confirm `$DEVKITPRO` is set correctly in the
+  environment the AP Launcher inherits.
+- Python 3.12 install: `apt install python3.12` / `brew install
+  python@3.12`; the row's Auto-install button is a Windows-only
+  (winget) path so it stays grey on POSIX.
+- open-dread-rando pip install: same as Windows; the row shows the
+  exact `pip install` command for your Python.

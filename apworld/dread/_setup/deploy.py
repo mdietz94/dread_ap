@@ -75,20 +75,30 @@ def detect_sd_candidates() -> list[Path]:
 
 
 def detect_ryujinx_path() -> Path | None:
-    """Return `%APPDATA%/Ryujinx/` if it exists, else None.
+    """Return the Ryujinx data root if found, else None.
 
-    Matches the location Ryujinx itself defaults to on Windows — the same
-    one our existing `-DRYU_PATH=...` cmake post-build hook targets. The
-    wizard's Deploy page also lets the user browse to a non-default
+    Per-platform defaults Ryujinx itself uses:
+      - Windows: ``%APPDATA%/Ryujinx/``
+      - Linux:   ``$XDG_CONFIG_HOME/Ryujinx/`` (or ``~/.config/Ryujinx/``)
+      - macOS:   ``~/Library/Application Support/Ryujinx/``
+
+    The wizard's Deploy page also lets the user browse to a non-default
     install via "Browse for Ryujinx folder"; this function is just the
     auto-detect hint.
     """
-    if sys.platform != "win32":
-        return None
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        return None
-    p = Path(appdata) / "Ryujinx"
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            return None
+        p = Path(appdata) / "Ryujinx"
+        return p if p.is_dir() else None
+    if sys.platform == "darwin":
+        p = Path.home() / "Library" / "Application Support" / "Ryujinx"
+        return p if p.is_dir() else None
+    # POSIX (Linux + BSD)
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else (Path.home() / ".config")
+    p = base / "Ryujinx"
     return p if p.is_dir() else None
 
 

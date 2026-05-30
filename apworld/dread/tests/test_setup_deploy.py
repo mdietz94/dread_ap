@@ -44,9 +44,50 @@ def test_detect_sd_candidates_returns_empty_on_non_windows(monkeypatch):
     assert deploy.detect_sd_candidates() == []
 
 
-def test_detect_ryujinx_path_returns_none_on_non_windows(monkeypatch):
-    """Same as above — non-Windows returns None; the user browses."""
+def test_detect_ryujinx_path_linux_uses_xdg_config_home(tmp_path, monkeypatch):
+    """On Linux, the detector probes $XDG_CONFIG_HOME/Ryujinx/ first."""
     monkeypatch.setattr(deploy.sys, "platform", "linux")
+    xdg = tmp_path / "xdg"
+    ryu = xdg / "Ryujinx"
+    ryu.mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    p = deploy.detect_ryujinx_path()
+    assert p == ryu
+
+
+def test_detect_ryujinx_path_linux_falls_back_to_home_dot_config(
+    tmp_path, monkeypatch
+):
+    """No XDG_CONFIG_HOME: fall back to ~/.config/Ryujinx/."""
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    home = tmp_path / "home"
+    ryu = home / ".config" / "Ryujinx"
+    ryu.mkdir(parents=True)
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: home))
+    p = deploy.detect_ryujinx_path()
+    assert p == ryu
+
+
+def test_detect_ryujinx_path_macos_uses_application_support(tmp_path, monkeypatch):
+    """On macOS, the detector probes
+    ~/Library/Application Support/Ryujinx/."""
+    monkeypatch.setattr(deploy.sys, "platform", "darwin")
+    home = tmp_path / "home"
+    ryu = home / "Library" / "Application Support" / "Ryujinx"
+    ryu.mkdir(parents=True)
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: home))
+    p = deploy.detect_ryujinx_path()
+    assert p == ryu
+
+
+def test_detect_ryujinx_path_linux_none_when_missing(tmp_path, monkeypatch):
+    """Linux + no Ryujinx dir under either probe path: returns None."""
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: home))
     assert deploy.detect_ryujinx_path() is None
 
 
