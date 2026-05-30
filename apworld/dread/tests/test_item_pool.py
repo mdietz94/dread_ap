@@ -290,17 +290,29 @@ def test_default_pool_has_randovania_counts():
 
 
 @pytestmark_runtime
-def test_missile_tank_copies_all_useful():
-    """Missile Tank is in BASE_STARTING_ITEMS (precollected), so the row
-    classification is "useful" — every findable copy is useful (no logic
-    role, since the atom is satisfied from turn 0 by the precollected copy)."""
+def test_missile_tank_copies_are_advancement():
+    """Missile Tank MUST be advancement (progression_skip_balancing).
+
+    Regression guard for the bug fixed here: a prior commit reclassified
+    Missile Tank to "useful" on the premise that "it's precollected in
+    BASE_STARTING_ITEMS, so the atom is satisfied from turn 0." That premise
+    is false — AP's ``World.collect_item`` skips non-advancement items, so a
+    *useful* precollected Missile Tank never enters ``state.prog_items`` and
+    ``state.has("Missile Tank")`` is permanently False. Since ~every compiled
+    location rule (and all victory disjuncts) carries an ``item Missile
+    Tank>=1`` atom, that made 36 locations — including bosses — unreachable
+    with a full inventory, breaking generation under accessibility items/full
+    and (seed-dependently) minimal. The copies must be advancement so
+    ``has``/``count`` see them; skip_balancing keeps the 60 copies from
+    flooding the progression-balancing pass."""
     from BaseClasses import ItemClassification
     world, mw = _build_world()
     world.create_items()
     mt = [it for it in mw.itempool if it.name == "Missile Tank"]
-    assert all(it.classification == ItemClassification.useful for it in mt), (
-        "Missile Tank: not all copies are useful: "
-        f"{[(it.classification.name) for it in mt[:5]]}..."
+    assert mt, "no Missile Tank copies in pool"
+    assert all(it.advancement for it in mt), (
+        "Missile Tank copies must be advancement (else state.has is blind to "
+        f"them): {[it.classification.name for it in mt[:5]]}..."
     )
 
 
