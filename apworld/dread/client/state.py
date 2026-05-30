@@ -25,12 +25,15 @@ State model:
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 from .protocol import ReceivedItemEvent, CollectedLocationEvent
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -64,8 +67,15 @@ class BridgeState:
         # AP item at position == game_received_pickups, tagged with the game's
         # current inventory_index, and let the counter advancing (next push)
         # clock the next delivery. Idempotent + cutscene-safe by construction —
-        # a client restart reads the real counts and never re-grants. Both kept
-        # monotonic; they only climb within a slot. See [[dread-delivery-protocol]].
+        # a client restart reads the real counts and never re-grants.
+        #
+        # The mirrors track the game's live value, not a high-water mark.
+        # Both counters live in Blackboard, which is scenario-scoped: a
+        # restart-without-save reverts them to the last save snapshot. We
+        # accept the regression as truth and re-deliver from the new lower
+        # cursor; the Lua-side index match keeps items the player still has
+        # from being re-granted (they index-mismatch and are dropped).
+        # See [[dread-delivery-protocol]].
         #   game_received_pickups: Blackboard.ReceivedPickups (PACKET_RECEIVED_PICKUPS)
         #   game_inventory_index : Blackboard.InventoryIndex   (NEW_INVENTORY "index")
         self._game_received_pickups: int = 0
@@ -105,20 +115,35 @@ class BridgeState:
             return list(self.received_items)
 
     def set_game_received_pickups(self, count: int) -> None:
-        """Record the game's ReceivedPickups count (monotonic within a slot)."""
+        """Record the game's ReceivedPickups count.
+
+        Tracks the game's live value, not a high-water mark: on a
+        restart-without-save the in-game Blackboard reverts to the last save
+        snapshot and we need to re-deliver the items that got lost. Lua-side
+        index match in RL.ReceivePickup prevents re-granting items the player
+        still has."""
         with self._lock:
-            if count > self._game_received_pickups:
-                self._game_received_pickups = count
+            if count < self._game_received_pickups:
+                log.info(
+                    "game ReceivedPickups regressed %d -> %d "
+                    "(likely restart without save); re-delivering from %d",
+                    self._game_received_pickups, count, count)
+            self._game_received_pickups = count
 
     def game_received_pickups(self) -> int:
         with self._lock:
             return self._game_received_pickups
 
     def set_game_inventory_index(self, index: int) -> None:
-        """Record the game's InventoryIndex (monotonic within a slot)."""
+        """Record the game's InventoryIndex.
+
+        Tracks the game's live value, not a high-water mark — see
+        ``set_game_received_pickups``."""
         with self._lock:
-            if index > self._game_inventory_index:
-                self._game_inventory_index = index
+            if index < self._game_inventory_index:
+                log.debug("game InventoryIndex regressed %d -> %d",
+                          self._game_inventory_index, index)
+            self._game_inventory_index = index
 
     def game_inventory_index(self) -> int:
         with self._lock:
