@@ -267,6 +267,42 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         asyncio.ensure_future(ctx._patch_interactive())
         return True
 
+    def _cmd_setup(self, target: str = "ryujinx") -> bool:
+        """``/setup [ryujinx|sd]`` — build the patched exlaunch sysmodule
+        and deploy it.
+
+        Runs the full pipeline:
+          1. Clone / refresh open-dread-rando-exlaunch at the pinned commit
+             under ``%APPDATA%/dread_ap/build/exlaunch-checkout/``.
+          2. Apply our Ryujinx-fix patch (idempotent — skips if already
+             applied).
+          3. Run ``./exlaunch.sh build`` under devkitPro's msys2 bash.
+          4. Deploy ``subsdk9`` + ``main.npdm`` to the chosen target.
+
+        With no args, deploys to Ryujinx (the dev iteration target).
+        Defensive prerequisite checks (devkitPro, Python 3.12,
+        open-dread-rando) run before the build kicks off — failures surface
+        with a clear install hint instead of a cryptic ``make: command
+        not found`` later.
+
+        This command is the eventual replacement for ``/patch``; the per-
+        seed romfs patcher will auto-run on AP-connect once the wizard
+        page surgery lands.
+        """
+        target = target.strip().lower() or "ryujinx"
+        if target not in ("ryujinx", "sd"):
+            self.output(
+                f"unknown target {target!r}; expected one of: ryujinx, sd"
+            )
+            return True
+        self.output(
+            "setup: starting build pipeline — first run may take "
+            "1-3 minutes (git clone + cross-compile). "
+            "Progress streams to the log box; watch for [setup] entries."
+        )
+        asyncio.ensure_future(self.ctx._run_setup(target))
+        return True
+
 
 class DreadContext(CommonContext):
     """Top-level glue. Connects to AP server (inherited) and to the Switch
@@ -692,6 +728,96 @@ class DreadContext(CommonContext):
         cfg["vanilla_romfs_dir"] = vanilla_romfs_dir
         _save_user_config(cfg)
         await self._run_patch(dreadvania_dir, vanilla_romfs_dir)
+
+    async def _run_setup(self, target: str) -> None:
+        """Drive the sysmodule build + deploy pipeline.
+
+        Worker thread runs the synchronous build (git clone / fetch / apply /
+        msys2 bash make) and the synchronous deploy (file copy). Progress
+        from both steps lands on ``log.info`` so DreadClient's GUI log box
+        renders it live.
+
+        Failure modes surfaced with the smo-baseline defensive-error style:
+          - missing prereqs (devkitPro / Python 3.12 / open-dread-rando)
+            fail at the prereq-check step with an install URL + pip command
+          - git apply mismatch falls back to "bump PINNED_EXLAUNCH_COMMIT"
+          - msys2 bash missing surfaces "re-run devkitPro installer with
+            msys2 component selected"
+        """
+        # Late imports — keeps the apworld load-time work the same on AP
+        # gen hosts (which never run /setup).
+        from .._setup.build import run_build_pipeline
+        from .._setup.deploy import (
+            deploy_to_ryujinx, deploy_to_sd,
+            detect_ryujinx_path, detect_sd_candidates,
+        )
+        from .._setup.prereqs import check_all, all_ok
+
+        log.info("/setup: prereq sweep")
+        results = await asyncio.to_thread(check_all)
+        for r in results:
+            mark = "OK " if r.ok else "MISS"
+            log.info("  %s %-32s %s", mark, r.name, r.detail)
+            if r.note and not r.ok:
+                log.info("       hint: %s", r.note)
+        if not all_ok(results):
+            log.error("/setup: prereqs not satisfied; fix the missing rows "
+                      "above and re-run /setup")
+            return
+
+        def emit(line: str) -> None:
+            log.info("[setup] %s", line)
+
+        try:
+            build_result = await asyncio.to_thread(run_build_pipeline, emit)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("/setup: unhandled exception during build: %s", exc)
+            return
+
+        if not build_result.ok:
+            log.error("/setup: build FAILED — %s", build_result.detail)
+            return
+        log.info("/setup: build OK — %s", build_result.detail)
+
+        if target == "ryujinx":
+            ryu = detect_ryujinx_path()
+            if ryu is None:
+                log.error(
+                    "/setup: Ryujinx not found under %%APPDATA%%/Ryujinx. "
+                    "Install Ryujinx first or re-run with /setup sd."
+                )
+                return
+            deploy_fn = lambda: deploy_to_ryujinx(ryu, build_result.outputs)
+        elif target == "sd":
+            cands = await asyncio.to_thread(detect_sd_candidates)
+            if not cands:
+                log.error(
+                    "/setup: no SD card with atmosphere/ found on any "
+                    "mounted drive. Insert your Switch SD via USB / "
+                    "card reader and re-run /setup sd."
+                )
+                return
+            deploy_fn = lambda: deploy_to_sd(cands[0], build_result.outputs)
+        else:  # defensive — _cmd_setup validates first
+            log.error("/setup: unknown target %r", target)
+            return
+
+        try:
+            dep = await asyncio.to_thread(deploy_fn)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("/setup: unhandled exception during deploy: %s", exc)
+            return
+
+        if dep.ok:
+            log.info("/setup: DONE — copied %d files to %s",
+                     len(dep.files), dep.target)
+            log.info(
+                "/setup: next step — relaunch Dread in Ryujinx so the new "
+                "subsdk9 loads into the game process (exefs mods apply at "
+                "process start, not at title screen)."
+            )
+        else:
+            log.error("/setup: deploy FAILED — %s", dep.error)
 
     # ---- Switch poll loop --------------------------------------------
 

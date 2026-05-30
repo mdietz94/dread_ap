@@ -1,0 +1,281 @@
+diff --git a/source/nn/socket.hpp b/source/nn/socket.hpp
+index 0b67099..debfc1f 100644
+--- a/source/nn/socket.hpp
++++ b/source/nn/socket.hpp
+@@ -2,6 +2,7 @@
+ 
+ #include <nn/nn_common.hpp>
+ #include <sys/socket.h>
++#include <poll.h>
+ 
+ namespace nn::socket {
+ 
+@@ -25,4 +26,5 @@ namespace nn::socket {
+     s32 Listen(s32 socket, s32 backlog);
+     s32 Accept(s32 socket, sockaddr* addrOut, u32* addrLenOut);
+     s32 Shutdown(s32 desc, s32 how);
++    s32 Poll(::pollfd* fds, ulong nfds, s32 timeout_ms);
+ };
+diff --git a/source/program/remote_api.cpp b/source/program/remote_api.cpp
+index b83b2dd..e10e117 100644
+--- a/source/program/remote_api.cpp
++++ b/source/program/remote_api.cpp
+@@ -24,6 +24,15 @@
+  *      That's why a manual keep-alive is implemented
+  * 3. Setting the socket to non-blocking doesn't work (at least not via fcntl)
+  *      Non-blocking works for recv as flag!
++ * 4. nn::socket::Poll DOES work on Ryujinx (confirmed in the field by other
++ *      Switch homebrew projects). We use it both to drive the main loop (so
++ *      idle ticks block in the kernel instead of busy-sleeping for 2 ms) and
++ *      to bound the chunked Recv calls in ParseClientPacket, which previously
++ *      could hang the whole socket subsystem when a Lua-exec payload arrived
++ *      fragmented over a half-open peer. POLLHUP / POLLERR give us instant
++ *      dead-peer detection; the manual keep-alive timer is now a backstop for
++ *      the "TCP is alive but the peer application is wedged" case (Ryujinx
++ *      half-open sockets), which the timer was originally written for.
+ */
+ 
+ struct ClientSubscriptions RemoteApi::clientSubs;
+@@ -44,13 +53,59 @@ namespace {
+     constexpr inline auto SocketPoolSize = SocketAllocatorSize + TransferMemorySize;
+     constexpr inline auto SocketPort = 6969;
+ 
+-    constexpr inline auto ResetValueAliveTimer = 5000; // client should send alive packet every 2 seconds. loops all 2 ms to decrease. invalidate afte 10 s => 10 000 ms / 2 ms = 5000 cycles
++    // Poll cadence and keep-alive backstop. The main loop blocks in
++    // nn::socket::Poll for PollTimeoutMs, then if no readable / hangup event
++    // arrived it decrements keepAlive. Once keepAlive reaches 0 the
++    // connection is torn down. Client sends PACKET_KEEP_ALIVE every 2 s; the
++    // 3 s window here allows ~1 s of jitter. POLLHUP / POLLERR short-circuit
++    // this for the common case where the peer cleanly drops.
++    constexpr inline auto PollTimeoutMs = 50;
++    constexpr inline auto ResetValueAliveTimer = 60; // 60 * 50 ms = 3 s idle window
++
++    // Per-call deadline for ParseClientPacket payload reads. Bounds how long
++    // a single ParseClientPacket invocation may stall when the client sends
++    // the header byte but stalls before the payload arrives in full.
++    constexpr inline auto RecvBodyDeadlineMs = 200;
++
++    // Poll event flags. Hard-coded to match Nintendo's bsd:u service (which
++    // derives from FreeBSD) rather than trusting whatever values the host
++    // <poll.h> happens to define. Matches the smo_archipelago Switch client,
++    // which has been verified on Ryujinx + real HW.
++    constexpr inline s16 PollEvIn  = 0x0001;
++    constexpr inline s16 PollEvErr = 0x0008;
++    constexpr inline s16 PollEvHup = 0x0010;
+ 
+     static shimmer::util::StaticThread<0x4000> SocketSpawnThread;
+     static RemoteApi::CommandBuffer RecvBuffer;
+     static size_t RecvBufferLength = 0;
+     SendBuffer sendBuffer;
+     static int keepAlive;
++
++    // Read exactly `want` bytes into `buf`, or fail (timeout / peer EOF /
++    // error). Uses poll() + MSG_DONTWAIT recv() so no single call blocks the
++    // socket subsystem (per Ryujinx rule #1 above). Returns true iff the
++    // full payload was received within `deadlineMs`.
++    bool RecvFullNonBlocking(s32 fd, void* buf, size_t want, s32 deadlineMs) {
++        u8* p = static_cast<u8*>(buf);
++        size_t got = 0;
++        s32 attempts = deadlineMs / PollTimeoutMs;
++        if (attempts < 1) attempts = 1;
++        while (got < want && attempts-- > 0) {
++            ::pollfd pfd{};
++            pfd.fd = fd;
++            pfd.events = PollEvIn;
++            pfd.revents = 0;
++            s32 n = nn::socket::Poll(&pfd, 1, PollTimeoutMs);
++            if (n < 0) return false;
++            if (n == 0) continue; // timeout this attempt; try again
++            if (pfd.revents & (PollEvErr | PollEvHup)) return false;
++            if (!(pfd.revents & PollEvIn)) continue;
++            ssize_t r = nn::socket::Recv(fd, p + got, want - got, MSG_DONTWAIT);
++            if (r <= 0) return false; // 0 = peer EOF, <0 = error or would-block
++            got += static_cast<size_t>(r);
++        }
++        return got == want;
++    }
+ }; // namespace
+ static nn::os::MutexType sendBufferLock;
+ 
+@@ -101,27 +156,40 @@ void AddPacketToSendBuffer(PacketBuffer& buffer) {
+     nn::os::UnlockMutex(&sendBufferLock);
+ }
+ 
+-void ReceiveLogic() {
++// Returns false when the peer has closed the socket gracefully (recv returned
++// 0). Ryujinx does NOT reliably report POLLHUP on a clean FIN, so the only
++// way to detect disconnect is recv == 0 — without this signal the main loop
++// would spin forever on a closed socket (POLLIN keeps firing with 0 bytes
++// available, recv keeps returning 0, the keepAlive backstop never advances).
++bool ReceiveLogic() {
+     // don't recv new packets while we waiting for game loop otherwise we need to make a copy of our receive buffer
+-    if (readyForGameThread.load()) return;
+-    keepAlive--;
++    if (readyForGameThread.load()) return true;
+     std::fill(RecvBuffer.begin(), RecvBuffer.end(), 0);
+ 
+     ssize_t length = nn::socket::Recv(clientSocket, RecvBuffer.data(), 1, MSG_DONTWAIT);
++    if (length == 0) return false; // peer FIN (graceful close)
+     RecvBufferLength = length;
+     if (length > 0) {
+         // data received
+         RemoteApi::ParseClientPacket();
+     }
++    return true;
+ }
+ 
+ void SendLogic() {
+     nn::os::LockMutex(&sendBufferLock);
+     for (auto& pb : sendBuffer) {
+-        ssize_t ret = nn::socket::Send(clientSocket, pb->data(), pb->size(), 0);
+-        // mark them for removal
+-        if (ret > 0) {
+-            pb->clear();
++        if (pb->empty()) continue;
++        // MSG_DONTWAIT so a stuck peer can't park the whole socket subsystem
++        // (Ryujinx rule #1). On EWOULDBLOCK / error (ret <= 0) we leave the
++        // buffer intact and retry next tick; if the peer is actually dead the
++        // keep-alive backstop will tear the connection down within ~3 s.
++        ssize_t ret = nn::socket::Send(clientSocket, pb->data(), pb->size(), MSG_DONTWAIT);
++        if (ret <= 0) continue;
++        if (static_cast<size_t>(ret) >= pb->size()) {
++            pb->clear(); // fully sent, mark for removal
++        } else {
++            pb->erase(pb->begin(), pb->begin() + ret); // partial: drop sent prefix
+         }
+     }
+     // erase everything with size of 0
+@@ -151,23 +219,65 @@ void SocketSpawn(void *) {
+             clientSocket = nn::socket::Accept(g_TcpSocket, &clientAddr, &addrLen);
+             if (clientSocket < 0) break;
+             keepAlive = ResetValueAliveTimer;
++            bool peer_dead = false;
+             while (looping) {
+-                // poll every 2 ms = 2000000 ns
+-                svcSleepThread(2000000);
+-                ReceiveLogic();
++                // ALWAYS poll. PollEvErr/PollEvHup short-circuit teardown
++                // (works when the peer abruptly drops). For graceful FIN,
++                // Ryujinx doesn't reliably report POLLHUP — POLLIN fires
++                // with 0 bytes available, so we have to detect EOF via
++                // ReceiveLogic returning false (recv == 0).
++                ::pollfd pfd{};
++                pfd.fd = clientSocket;
++                pfd.events = PollEvIn;
++                pfd.revents = 0;
++                s32 n = nn::socket::Poll(&pfd, 1, PollTimeoutMs);
++                if (n < 0) { peer_dead = true; break; }
++                if (n > 0) {
++                    if (pfd.revents & (PollEvErr | PollEvHup)) {
++                        // socket error or hangup — tear down immediately.
++                        peer_dead = true; break;
++                    }
++                    if (pfd.revents & PollEvIn) {
++                        if (readyForGameThread.load()) {
++                            // RecvBuffer in use by game thread; defer the
++                            // read until next tick. Sleep one tick so we
++                            // don't busy-loop on the buffered data, and
++                            // tick the keep-alive backstop — 50 ms has
++                            // elapsed and a sustained game-thread stall
++                            // shouldn't keep the connection alive forever.
++                            svcSleepThread(PollTimeoutMs * 1000000ll);
++                            keepAlive--;
++                        } else {
++                            // Catches recv == 0 (graceful FIN); see
++                            // ReceiveLogic comment.
++                            if (!ReceiveLogic()) { peer_dead = true; break; }
++                        }
++                    }
++                    // n > 0 but no event bit set: spurious wakeup; loop.
++                } else {
++                    // poll timeout = no peer activity this tick.
++                    keepAlive--;
++                }
++
+                 SendLogic();
+ 
+-                if (keepAlive == 0) {
+-                    // clean packet because there is no connection anymore
+-                    nn::os::LockMutex(&sendBufferLock);
+-                    svcSleepThread(100);
+-                    sendBuffer.clear();
+-                    nn::socket::Close(clientSocket);
+-                    clientSocket = -1;
+-                    nn::os::UnlockMutex(&sendBufferLock);
+-                    break;
+-                }
++                if (keepAlive <= 0) break;
+             }
++
++            // Teardown of clientSocket (peer dead OR keep-alive expired).
++            // Matches upstream's teardown EXACTLY: Close only, no Shutdown.
++            // Adding Shutdown(SHUT_RDWR) here wedged Ryujinx's bsd:u — a
++            // second connection attempt would TCP-refuse because the
++            // socket subsystem stalled and the listen backlog filled. The
++            // POLLHUP detection above is what gives us fast teardown;
++            // Close alone is enough to free the fd.
++            nn::os::LockMutex(&sendBufferLock);
++            svcSleepThread(100);
++            sendBuffer.clear();
++            nn::socket::Close(clientSocket);
++            clientSocket = -1;
++            nn::os::UnlockMutex(&sendBufferLock);
++            (void)peer_dead; // currently informational; reserved for future logging
+         }
+ 
+         if (g_TcpSocket != -1) {
+@@ -245,33 +355,39 @@ bool RemoteApi::CheckReceivedBytes(PacketType packet_type, ssize_t receivedBytes
+ 
+ void RemoteApi::ParseClientPacket() {
+     int payloadLength = 0;
+-    int remainingBytes = 0;
+-    ssize_t receivedBytes = -1;
+-    char* placeForNextPart = NULL;
+ 
++    // All Recv() calls below use the non-blocking RecvFullNonBlocking helper
++    // (poll + MSG_DONTWAIT) instead of upstream's blocking Recv(..., 0).
++    // Same end-to-end semantics — CheckReceivedBytes still emits
++    // PACKET_MALFORMED on short reads — except that a stalled peer trips the
++    // RecvBodyDeadlineMs deadline instead of parking the socket subsystem.
+     switch (RecvBuffer.data()[0]) {
+     case PACKET_HANDSHAKE:
+         RecvBufferLength += 1;
+-        receivedBytes = nn::socket::Recv(clientSocket, RecvBuffer.data() + 1, 1, 0);
+-        if (!RemoteApi::CheckReceivedBytes(PACKET_HANDSHAKE, receivedBytes, 1)) return;
++        if (!RecvFullNonBlocking(clientSocket, RecvBuffer.data() + 1, 1, RecvBodyDeadlineMs)) {
++            RemoteApi::CheckReceivedBytes(PACKET_HANDSHAKE, 0, 1);
++            return;
++        }
+         RemoteApi::ParseHandshake();
+         break;
+     case PACKET_REMOTE_LUA_EXEC:
+         // receive the payload length, which is the length of the lua string
+-        receivedBytes = nn::socket::Recv(clientSocket, RecvBuffer.data() + 1, 4, 0);
+-        if (!RemoteApi::CheckReceivedBytes(PACKET_REMOTE_LUA_EXEC, receivedBytes, 4)) return;
++        if (!RecvFullNonBlocking(clientSocket, RecvBuffer.data() + 1, 4, RecvBodyDeadlineMs)) {
++            RemoteApi::CheckReceivedBytes(PACKET_REMOTE_LUA_EXEC, 0, 4);
++            return;
++        }
+         memcpy(&payloadLength, RecvBuffer.data() + 1, 4);
+         RecvBufferLength += 4;
+ 
+         // lua strings can be long, we may receive it in chunks
+-        remainingBytes = payloadLength;
+-        placeForNextPart = RecvBuffer.data() + 5;
+-        while (remainingBytes > 0) {
+-            receivedBytes = nn::socket::Recv(clientSocket, placeForNextPart, remainingBytes, 0);
+-            if (receivedBytes <= 0) break;
+-            remainingBytes -= receivedBytes;
+-            RecvBufferLength += receivedBytes;
+-            placeForNextPart += receivedBytes;
++        if (payloadLength > 0) {
++            if (!RecvFullNonBlocking(clientSocket, RecvBuffer.data() + 5,
++                                      static_cast<size_t>(payloadLength), RecvBodyDeadlineMs)) {
++                RemoteApi::CheckReceivedBytes(PACKET_REMOTE_LUA_EXEC,
++                                              RecvBufferLength - 5, payloadLength);
++                return;
++            }
++            RecvBufferLength += payloadLength;
+         }
+         if (!RemoteApi::CheckReceivedBytes(PACKET_REMOTE_LUA_EXEC, RecvBufferLength - 5, payloadLength)) return;
+         RemoteApi::ParseRemoteLuaExec();
