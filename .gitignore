@@ -67,6 +67,18 @@ Thumbs.db
 .env.local
 
 # ============================================================================
+# Generated rule artifacts — produced by scripts/extract_dread_rules.py from
+# the .dread-cache logic JSON. Each file is ~150-240k lines; committing them
+# bloats every PR. Tests auto-regen via apworld/dread/tests/conftest.py and
+# scripts/install_apworld.py regenerates them before bundling the .apworld
+# zip distribution, so end users still get them.
+# ============================================================================
+apworld/dread/data/compiled_rules.json
+apworld/dread/data/compiled_rules_l2.json
+apworld/dread/data/compiled_rules_l3.json
+apworld/dread/data/events.json
+
+# ============================================================================
 # Test scratch
 # ============================================================================
 apworld/dread/tests/seeds/out/

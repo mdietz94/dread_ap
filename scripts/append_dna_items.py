@@ -7,13 +7,11 @@ client datapackage / receive path with NO special-casing. The
 ``RequiredArtifacts`` option decides how many (the first N) enter the
 pool; the rest of the 12 are granted as starting items by World.py.
 
-Run order matters: this must run AFTER scripts/append_event_data.py so the
-DNA IDs land after the event range. IDs are assigned deterministically as
-``max(non-DNA item ap_id) + k`` and the script is idempotent (an existing
-``Metroid DNA k`` is left untouched), so re-running never shifts IDs.
-
-The compiler (extract_dread_rules.py) excludes ``Metroid DNA*`` from its
-event-ID-base computation, so appending these never renumbers events.
+IDs are assigned deterministically as ``max(non-DNA item ap_id) + k`` and the
+script is idempotent (an existing ``Metroid DNA k`` is left untouched), so
+re-running never shifts IDs. Events used to occupy IDs 21554-21737 (between
+base items and DNA); that range is now a gap left intact for ID stability
+of any saved seed.
 """
 from __future__ import annotations
 

@@ -38,6 +38,9 @@ class State:
     def has(self, name, _player, count=1):
         return self.inventory.get(name, 0) >= count
 
+    def count(self, name, _player):
+        return self.inventory.get(name, 0)
+
 
 def test_twelve_dna_items_exist(items):
     names = {it["name"] for it in items}
@@ -54,17 +57,15 @@ def test_dna_items_map_to_distinct_artifacts(items):
         assert it["quantity"] == 1
 
 
-def test_dna_ids_disjoint_and_after_events(items, compiled):
+def test_dna_ids_disjoint_from_base_items(items, compiled):
+    """DNA AP IDs must not collide with base-item AP IDs. Events were inlined
+    (Option A) so they no longer occupy any IDs — the 21554-21737 range they
+    used to live in is now a deliberate gap to preserve DNA ID stability."""
     by_name = {it["name"]: it for it in items}
     dna_ids = {by_name[f"Metroid DNA {k}"]["ap_id"] for k in range(1, 13)}
     base_ids = {it["ap_id"] for it in items
-                if not it["name"].startswith("Event: ")
-                and not it["name"].startswith("Metroid DNA")}
-    event_ids = {it["ap_id"] for it in items if it["name"].startswith("Event: ")}
+                if not it["name"].startswith("Metroid DNA")}
     assert not (dna_ids & base_ids)
-    assert not (dna_ids & event_ids)
-    if event_ids:
-        assert min(dna_ids) > max(event_ids), "DNA must be appended AFTER events"
 
 
 def _goal(base_ast, n_dna, player=1):

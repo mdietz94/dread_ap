@@ -146,6 +146,15 @@ class DreadWorld(World):
             "Missile+ Tank": 1,
             "Flash Shift Upgrade": 1,
             "Speed Booster Upgrade": 1,
+            # Region floors (Hanubia at trick levels 1/2) gate Menu→Region on
+            # `state.has("Energy Tank", 3)`; the first 3 copies are
+            # progression-relevant, the remaining 5 are pure HP capacity and
+            # would over-saturate the progression pool.
+            "Energy Tank": 3,
+            # PBAmmo sum gates top out at threshold=2 (= 1 PB Tank's worth),
+            # so only the first copy needs to be progression. The remaining
+            # 12 are pure ammo capacity.
+            "Power Bomb Tank": 1,
         }
 
         non_event_locations = sum(

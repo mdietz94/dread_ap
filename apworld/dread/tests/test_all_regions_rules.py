@@ -42,14 +42,15 @@ class State:
     def has(self, name: str, _player: int, count: int = 1) -> bool:
         return self.items.get(name, 0) >= count
 
+    def count(self, name: str, _player: int) -> int:
+        return self.items.get(name, 0)
+
 
 # Late-game state: every progression + useful item the v0.1 pool ships.
-# Post-M2 it also has to include every event item, since events are now
-# real AP items the predicate consults via state.has("Event: <name>").
-# Without them the rules that gate on events stay un-satisfied and the
-# "late-game loadout reaches everything" invariant fails. Event names
-# are derived from compiled_rules.json so this stays in sync with the
-# compiler.
+# Events are inlined into the per-pickup rules (Option A) — no rule consults
+# `state.has("Event: <name>")` anymore. _all_event_items is kept defensively
+# in case a stray event-typed AST node slips through, but it's a no-op for
+# correct artifacts (compiled_rules has zero event AST nodes).
 def _all_event_items() -> dict[str, int]:
     raw = json.loads(
         (ROOT / "data" / "compiled_rules.json").read_text()

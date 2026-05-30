@@ -26,7 +26,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -41,6 +43,69 @@ SKIP_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache",
 
 def _should_skip(path: Path) -> bool:
     return any(part in SKIP_NAMES for part in path.parts)
+
+
+def _ensure_compiled_rules() -> None:
+    """Regenerate the compiled rule artifacts if missing or stale.
+
+    The JSONs are gitignored (each is 150-240k lines), so a fresh checkout
+    has nothing on disk. Both folder and zip installs need them at the
+    destination, so we regen before copying. Total cost is ~10s on a cold
+    cache; warm runs (everything up-to-date) are a no-op via the mtime check.
+    """
+    data_dir = SRC / "data"
+    extract = REPO / "scripts" / "extract_dread_rules.py"
+    cache = REPO / ".dread-cache" / "randovania-logic"
+    pinned = cache / "PINNED_COMMIT.txt"
+
+    if not extract.exists():
+        return  # caller is running install from a stripped-down tree (unlikely)
+
+    if not cache.exists():
+        sys.stderr.write(
+            "\n.dread-cache/randovania-logic/ is missing — install_apworld "
+            "cannot regenerate compiled rules. Populate the cache first "
+            "(see docs/randovania-logic-port.md for the fetch step).\n"
+        )
+        return
+
+    input_mtime = max(extract.stat().st_mtime,
+                      pinned.stat().st_mtime if pinned.exists() else 0)
+
+    targets = {
+        1: data_dir / "compiled_rules.json",
+        2: data_dir / "compiled_rules_l2.json",
+        3: data_dir / "compiled_rules_l3.json",
+    }
+
+    needs_regen = [
+        (level, path) for level, path in targets.items()
+        if not path.exists() or path.stat().st_mtime < input_mtime
+    ]
+    if not needs_regen:
+        return
+
+    # Each level takes ~3.5 min single-threaded. Run all three in parallel
+    # to bring wall-clock down to ~3.5 min instead of ~10.
+    print(f"regenerating {len(needs_regen)} compiled-rule artifact(s) "
+          f"in parallel (~3-4 minutes)...")
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    procs = []
+    for level, path in needs_regen:
+        cmd = [sys.executable, str(extract), "--all",
+               "--trick-level", str(level), "--out", str(path)]
+        procs.append((path, subprocess.Popen(
+            cmd, cwd=str(REPO), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)))
+    failed = []
+    for path, proc in procs:
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            failed.append((path.name, err.decode("utf-8", errors="replace")))
+    if failed:
+        for name, err in failed:
+            sys.stderr.write(f"regen of {name} failed:\n{err}\n")
+        sys.exit(1)
 
 
 def build_apworld_zip(src: Path, dst: Path) -> int:
@@ -105,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
              "Only valid with --mode apworld.",
     )
     args = parser.parse_args(argv)
+
+    _ensure_compiled_rules()
 
     if args.output is not None:
         if args.mode != "apworld":
