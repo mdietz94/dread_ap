@@ -138,10 +138,14 @@ class DreadWorld(World):
         #     each, so pool_count=2 matches the game; the FIRST copy is
         #     logic-gating (any rule disjunct needing the upgrade is
         #     satisfiable with just one), the second is QoL routing.
-        # (Missile Tank doesn't need an entry — it's in BASE_STARTING_ITEMS
-        # / precollected, which satisfies its 3634 amount=1 atoms from turn
-        # 0, so its row classification is already "useful" for every
-        # findable copy.)
+        # (Missile Tank has NO entry on purpose: its 3634 amount=1 atoms +
+        # `sum` ammo gates need state.has/count to see it, so EVERY copy stays
+        # progression_skip_balancing — not capped to N. Precollecting it does
+        # NOT substitute for advancement: AP's collect_item skips non-
+        # advancement items, so a `useful` precollected copy never enters
+        # prog_items and state.has("Missile Tank") would be permanently False.
+        # That was the items/full + minimal generation bug; see
+        # test_missile_tank_copies_are_advancement.)
         MIXED_CLASSIFICATION_FIRST_N = {
             "Missile+ Tank": 1,
             "Flash Shift Upgrade": 1,
