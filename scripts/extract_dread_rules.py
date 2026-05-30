@@ -17,18 +17,18 @@ AST shape:
     {"type": "item", "name": "...", "amount": 1}
     {"type": "event", "name": "..."}
     {"type": "trick", "name": "...", "level": 1}   v0.1: always False
-    {"type": "damage", "kind": "Heat" | "Cold" | "OOB" | "Damage" | "Lava"}
+    {"type": "sum", "terms": [{"name", "per_unit"}, ...],
+                    "base": int, "threshold": int}
+                                         base + Σ count(name) * per_unit ≥ threshold
+    {"type": "damage_threshold",
+        "suit_options": [...], "hp_needed": int}
+                                         any suit OR 99+100·ETank+25·EPart ≥ hp
     {"type": "trivial"}                  always True
     {"type": "impossible"}               always False
 
-Milestone 1 coverage (per docs/randovania-logic-port.md):
-    - Elun only (compile_area runs for any area, but only Elun's rules
-      are written by default; --all compiles every area as a stress test)
-    - Tricks default to OFF (every TrickReq → Impossible)
-    - Damage requirements collapse to suit ownership (Lava/Heat → Varia
-      or Gravity; Cold → Gravity; raw Damage → trivial in v0.1)
-    - Entry point for non-Artaria areas is the cross-region dock(s)
-      because the cross-region access graph itself is Milestone 2.
+The schema version is written to compiled artifacts as ``schema_version``;
+the loader (apworld/dread/Rules.py::load_compiled_rules) refuses mismatched
+versions so a stale artifact never silently passes.
 """
 from __future__ import annotations
 
@@ -44,6 +44,12 @@ from typing import Any, Iterable
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".dread-cache" / "randovania-logic"
 DATA_DIR = REPO_ROOT / "apworld" / "dread" / "data"
+
+# Bumped whenever the AST vocabulary changes. The loader refuses anything
+# that doesn't match — we never want a stale artifact silently passing.
+# v1: pre-v0.3 (no sum / damage_threshold)
+# v2: sum + damage_threshold nodes (v0.3, ammo + HP-budget gating)
+SCHEMA_VERSION = 2
 
 ALL_AREAS = [
     "Artaria", "Burenia", "Cataris", "Dairon", "Elun",
@@ -115,13 +121,25 @@ RDV_ITEM_TO_AP: dict[str, str | None] = {
 }
 
 
-# Ammo / tank items where Randovania's "amount" represents a raw count
-# (75 missiles, 2 power bombs, 5 e-tanks) but our pool doesn't carry that
-# granularity. Collapse to amount=1 for v0.1.
+# Items where Randovania's "amount" is an unlock-flag, not a count: any one
+# pickup satisfies the requirement. (Supers is gated by any Missile+ Tank,
+# MissileLauncher/MainPB by any tank/PB.) These stay collapsed to amount=1.
+#
+# Counted resources have moved out:
+#   - ETank / EFragment: state.has(name, player, N) handles "have N tanks"
+#     directly via translate_requirement's amount pass-through.
+#   - MissileAmmo / PBAmmo: routed to _translate_ammo, which emits sum nodes
+#     that respect per-tank yield (2 per Missile Tank, 10 per Missile+ Tank,
+#     2 per Power Bomb Tank) and the starting capacities (15 missiles, 0 PBs).
 _AMMO_OR_TANK_ITEMS = {
-    "MissileAmmo", "PBAmmo", "EFragment", "ETank", "Supers",
-    "MissileLauncher", "MainPB",
+    "Supers", "MissileLauncher", "MainPB",
 }
+
+# Vanilla starting capacities — matches starter_preset_patcher.json. These are
+# game-stable for our target (Dread 2.1.0); revisit if the patcher's
+# starting_items grows additional ammo-capacity entries.
+_MISSILE_BASE_CAPACITY = 15
+_POWER_BOMB_BASE_CAPACITY = 0
 
 
 # Randovania 'misc' resources are static per-seed CONFIG booleans (door-lock
@@ -363,6 +381,11 @@ def translate_requirement(
         if rtype == "items":
             if rname not in header.items_by_short:
                 raise CompileError(f"unknown item short_name {rname!r}")
+            # MissileAmmo / PBAmmo are raw-count resources (e.g. "75 missiles"
+            # for a shielded door). Route to _translate_ammo which emits a sum
+            # node honoring per-tank yield and starting capacity.
+            if rname in ("MissileAmmo", "PBAmmo"):
+                return _translate_ammo(rname, amount)
             ap_name = RDV_ITEM_TO_AP.get(rname, "<unmapped>")
             if ap_name == "<unmapped>":
                 raise CompileError(
@@ -371,10 +394,9 @@ def translate_requirement(
             if ap_name is None:
                 # Starting equipment / not an AP item — trivially satisfied
                 return TRIVIAL
-            # v0.1 collapses ammo/tank counts to 1: our pool can't satisfy
-            # state.has("Missile Tank", 75) since the requirement is for raw
-            # Randovania-units of MissileAmmo. We approximate "you have any
-            # Missile Tank" → can fire missiles. Real counting is M2.
+            # Unlock-flag items collapse: any single pickup satisfies the
+            # capability requirement. ETank / EFragment fall through and use
+            # state.has(name, player, amount) directly.
             if rname in _AMMO_OR_TANK_ITEMS:
                 amount = 1
             return {"type": "item", "name": ap_name, "amount": amount}
@@ -408,29 +430,80 @@ def translate_requirement(
 
 
 def translate_damage(kind: str, amount: int) -> dict:
-    """Map a damage requirement to suit ownership (v0.1)."""
+    """Map a damage requirement to a damage_threshold (or IMPOSSIBLE for OOB).
+
+    Randovania pre-resolves Dread's suit-multiplier math into the published
+    ``amount`` per requirement, so we don't model coefficients here — suits
+    are a binary shortcut OR an HP-budget check. The lambda compiler resolves
+    the threshold as ``99 + 100·count(Energy Tank) + 25·count(Energy Part)``.
+
+    Generic ``Damage`` (no suit applies) is emitted as ``damage_threshold``
+    with empty ``suit_options``, BUT downstream the compile_forward driver
+    walks the compiled rules to derive per-region E-Tank floors and then
+    *strips* these no-suit nodes from per-location rules (replacing with
+    TRIVIAL). The reason for the round-trip: the amounts are needed to set
+    region_access floors that approximate vanilla HP accumulation, but
+    leaving them in per-location rules deadlocks AP's fill (every Hanubia
+    location ends up needing 3+ E-Tanks reachable in sphere 1). The
+    region-level gate is what AP's fill can satisfy; the per-location gate
+    is too tight. See ``_strip_no_suit_damage_thresholds`` and
+    ``compute_region_etank_floors`` for the post-processing.
+    """
     if kind in ("Heat", "Lava"):
         # Vanilla: Varia required for hot areas (Cataris). Gravity also
         # protects against heat.
-        return mk_or([
-            {"type": "item", "name": "Varia Suit", "amount": 1},
-            {"type": "item", "name": "Gravity Suit", "amount": 1},
-        ])
+        return {"type": "damage_threshold",
+                "suit_options": ["Varia Suit", "Gravity Suit"],
+                "hp_needed": int(amount)}
     if kind == "Cold":
         # Cold rooms in Ferenia — gravity / varia both fine in vanilla.
-        return mk_or([
-            {"type": "item", "name": "Gravity Suit", "amount": 1},
-            {"type": "item", "name": "Varia Suit", "amount": 1},
-        ])
+        return {"type": "damage_threshold",
+                "suit_options": ["Gravity Suit", "Varia Suit"],
+                "hp_needed": int(amount)}
     if kind == "OOB":
-        # Out-of-bounds damage — implies unintended route; v0.1 treats as
+        # Out-of-bounds damage — implies unintended route; treat as
         # impossible to avoid encoding tricks via the back door.
         return IMPOSSIBLE
     if kind == "Damage":
-        # Generic damage — for v0.1 assume the player has enough HP. We
-        # don't model E-Tank counting yet; revisit in Milestone 2.
-        return TRIVIAL
+        # Generic damage — kept temporarily so compile_forward can derive
+        # region floors. Stripped before output (per-location, not per-region).
+        return {"type": "damage_threshold",
+                "suit_options": [],
+                "hp_needed": int(amount)}
     raise CompileError(f"unknown damage kind {kind!r}")
+
+
+def _translate_ammo(rdv_name: str, amount: int) -> dict:
+    """Turn MissileAmmo/PBAmmo requirements into sum nodes.
+
+    Randovania's ``amount`` is the raw count of missiles or power bombs needed.
+    For missiles, our pool contributes 2/Missile Tank and 10/Missile+ Tank on
+    top of 15 starting capacity. For power bombs, our pool contributes 2/Power
+    Bomb (the launcher item, which grants firing + first capacity) and
+    2/Power Bomb Tank; the launcher is also AND'd in so PB capacity without
+    the ability to fire never passes (AP can hand out tanks pre-launcher)."""
+    if rdv_name == "MissileAmmo":
+        return {
+            "type": "sum",
+            "terms": [
+                {"name": "Missile Tank", "per_unit": 2},
+                {"name": "Missile+ Tank", "per_unit": 10},
+            ],
+            "base": _MISSILE_BASE_CAPACITY,
+            "threshold": int(amount),
+        }
+    if rdv_name == "PBAmmo":
+        return mk_and([
+            {"type": "item", "name": "Power Bomb", "amount": 1},
+            {"type": "sum",
+             "terms": [
+                 {"name": "Power Bomb", "per_unit": 2},
+                 {"name": "Power Bomb Tank", "per_unit": 2},
+             ],
+             "base": _POWER_BOMB_BASE_CAPACITY,
+             "threshold": int(amount)},
+        ])
+    raise CompileError(f"_translate_ammo called with non-ammo resource {rdv_name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -612,10 +685,26 @@ def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
         if int(ast.get("level", 1)) <= 1:
             return TRIVIAL_DNF
         return EMPTY_DNF
+    if t == "sum":
+        # Opaque counted-resource atom — the lambda compiler resolves
+        # ``base + Σ count·per_unit ≥ threshold`` at runtime. Two sum atoms
+        # with different thresholds are treated as distinct (no dominance
+        # inference); slightly over-conservative but the DNF cap handles it.
+        terms = tuple((t_["name"], int(t_["per_unit"])) for t_ in ast["terms"])
+        atom = ("sum", terms, int(ast["base"]), int(ast["threshold"]))
+        return frozenset({frozenset({atom})})
+    if t == "damage_threshold":
+        # Opaque HP-budget atom — the lambda compiler resolves
+        # ``any suit OR 99 + 100·ETank + 25·EPart ≥ hp_needed``. We keep it as
+        # a single atom (not expanded into suit-disjuncts) so the DNF stays
+        # bounded; the lambda evaluates the suit shortcut at solve time.
+        suits = tuple(ast.get("suit_options", []))
+        atom = ("damage_threshold", suits, int(ast["hp_needed"]))
+        return frozenset({frozenset({atom})})
     if t == "damage":
-        # Translator collapses damage to OR of suits etc.; reaching here
-        # means a raw damage node slipped through — be permissive.
-        return TRIVIAL_DNF
+        # v1-schema leftover. Translator no longer emits these; raise so
+        # stale artifacts can't sneak past the schema check.
+        raise ValueError("stale 'damage' AST node — regenerate compiled_rules.json")
     if t == "and":
         # AND = product of child DNFs
         result: DNF = TRIVIAL_DNF
@@ -673,6 +762,14 @@ def dnf_to_ast(dnf: DNF) -> dict:
                 and_items.append({"type": "item", "name": a[1], "amount": a[2]})
             elif a[0] == "event":
                 and_items.append({"type": "event", "name": a[1]})
+            elif a[0] == "sum":
+                terms = [{"name": n, "per_unit": p} for n, p in a[1]]
+                and_items.append({"type": "sum", "terms": terms,
+                                  "base": a[2], "threshold": a[3]})
+            elif a[0] == "damage_threshold":
+                and_items.append({"type": "damage_threshold",
+                                  "suit_options": list(a[1]),
+                                  "hp_needed": a[2]})
             else:
                 raise ValueError(f"unknown atom kind in dnf_to_ast: {a}")
         disjuncts.append(mk_and(and_items))
@@ -1010,6 +1107,107 @@ def _substitute_events(ast: dict, event_cost: dict) -> dict:
     return ast
 
 
+def _location_easiest_hp(ast: dict) -> int | float:
+    """For a compiled-rule AST, return the HP needed via the EASIEST
+    surviving disjunct — min over OR-paths of (max no-suit
+    damage_threshold ``hp_needed`` along that path).
+
+    Returns 0 if a disjunct has no no-suit damage gates (player needs no
+    HP for that path); returns ``inf`` if the rule is IMPOSSIBLE. Suit-typed
+    ``damage_threshold`` nodes are treated as 0 (they short-circuit on a
+    suit, which a normal player has by the time they enter that region).
+    """
+    t = ast.get("type")
+    if t == "or":
+        if not ast["items"]:
+            return float("inf")
+        return min(_location_easiest_hp(c) for c in ast["items"])
+    if t == "and":
+        worst = 0
+        for c in ast["items"]:
+            child = _location_easiest_hp(c)
+            if child == float("inf"):
+                return float("inf")
+            if child > worst:
+                worst = child
+        return worst
+    if t == "damage_threshold" and not ast.get("suit_options"):
+        return int(ast["hp_needed"])
+    if t == "impossible":
+        return float("inf")
+    return 0
+
+
+def compute_region_etank_floors(
+    rules_by_loc: dict[str, dict],
+    ap_region_names: list[str],
+) -> dict[str, int]:
+    """Per region, the E-Tank count required to enter — derived from the
+    75th-percentile location HP across the region.
+
+    Each location's easiest_hp = "cheapest reach disjunct's worst hit."
+    For easy locations (the missile tank near the region entry), the rule
+    has a damage-free disjunct gated only on items → easiest_hp=0. For
+    bottleneck locations (Golzuna, Kraid, Hanubia bosses), every disjunct
+    includes a no-suit hit → easiest_hp ≥ 349.
+
+    Using P75 instead of MAX keeps single-outlier regions ungated: Cataris
+    has 24 locations at hp=0 and 1 (Kraid) at hp=349 → P75=0 → no gate.
+    Hanubia has all 4 locations at hp=349 → P75=349 → 3 tanks. This
+    matches "if most-but-not-all locations in R need HP, gate the region;
+    if it's one outlier, leave fill to handle it via item progression."
+
+    Floor = ceil((p75_hp - 99) / 100) since 99 base HP + 100/tank.
+
+    Per-region gating instead of per-location: Randovania's solver
+    pre-orders pickups to accumulate HP; AP's general-purpose fill doesn't.
+    A per-location HP gate generates hundreds of overlapping constraints
+    and deadlocks. One gate per region (≤8) is satisfiable.
+    """
+    per_region: dict[str, list[int]] = {r: [] for r in ap_region_names}
+    for loc_name, rule in rules_by_loc.items():
+        region = loc_name.split(":", 1)[0]
+        if region not in per_region:
+            continue
+        hp = _location_easiest_hp(rule)
+        if hp == float("inf"):
+            continue
+        per_region[region].append(int(hp))
+
+    floors: dict[str, int] = {}
+    for r, hps in per_region.items():
+        if not hps:
+            floors[r] = 0
+            continue
+        hps.sort()
+        # 75th percentile (nearest-rank). For small n, this is close to max.
+        p75 = hps[(3 * len(hps)) // 4] if len(hps) >= 4 else hps[-1]
+        if p75 <= 99:
+            floors[r] = 0
+        else:
+            floors[r] = (p75 - 100) // 100 + 1
+    return floors
+
+
+def _strip_no_suit_damage_thresholds(ast: dict) -> dict:
+    """Replace every ``damage_threshold`` with empty ``suit_options`` with
+    TRIVIAL, simplifying the surrounding AND/OR structure. Suit-typed
+    nodes are preserved (they short-circuit on Varia/Gravity and don't
+    over-constrain fill).
+
+    Called AFTER ``compute_region_etank_floors`` extracts the amounts —
+    once region_access carries the per-region floor, the per-location
+    no-suit HP gates are redundant *and* fill-fatal."""
+    t = ast.get("type")
+    if t == "damage_threshold" and not ast.get("suit_options"):
+        return TRIVIAL
+    if t == "and":
+        return mk_and([_strip_no_suit_damage_thresholds(c) for c in ast["items"]])
+    if t == "or":
+        return mk_or([_strip_no_suit_damage_thresholds(c) for c in ast["items"]])
+    return ast
+
+
 def compile_forward(
     areas: dict[str, dict],
     header: Header,
@@ -1208,12 +1406,36 @@ def main(argv: list[str] | None = None) -> int:
             "location_ap_id": event_loc_base + i,
         })
 
-    # Rules are item-only and global (cross-region cost already inlined), so
-    # region_access is a plain star.
+    # ---- Per-region E-Tank floor + no-suit damage_threshold strip -------------
+    # While compile_forward was running, generic Damage emitted
+    # damage_threshold(no_suit) carrying the original HP amount. Now:
+    #   1. Derive per-region E-Tank floors from those amounts (the "easiest
+    #      surviving path to any pickup in the region" metric).
+    #   2. Strip the no-suit nodes from per-location rules (TRIVIAL them) so
+    #      AP's fill isn't deadlocked by per-location HP gates. Per-region
+    #      gating via region_access is the substitute — coarse but
+    #      fill-solvable, and matches the resource-accumulation pattern
+    #      Randovania's solver bakes in by ordering its own placements.
     ap_region_names = [e["name"] for e in json.loads((DATA_DIR / "regions.json").read_text())]
-    region_access = {r: dict(TRIVIAL) for r in ap_region_names}
+    region_etank_floors = compute_region_etank_floors(out_rules, ap_region_names)
+
+    out_rules = {ln: _strip_no_suit_damage_thresholds(r) for ln, r in out_rules.items()}
+    victory_ast = _strip_no_suit_damage_thresholds(victory_ast)
+    for ev in events_out:
+        ev["rule"] = _strip_no_suit_damage_thresholds(ev["rule"])
+
+    region_access: dict[str, dict] = {}
+    for r in ap_region_names:
+        floor = region_etank_floors.get(r, 0)
+        if floor > 0:
+            region_access[r] = {"type": "item", "name": "Energy Tank",
+                                "amount": floor}
+        else:
+            region_access[r] = dict(TRIVIAL)
+    print("region E-Tank floors:", {r: f for r, f in region_etank_floors.items() if f})
 
     output = {
+        "schema_version": SCHEMA_VERSION,
         "pinned_commit": pinned,
         "areas_compiled": sorted(all_area_data.keys()),
         "trick_level": args.trick_level,

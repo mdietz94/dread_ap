@@ -44,6 +44,9 @@ class State:
     def has(self, name: str, _player: int, count: int = 1) -> bool:
         return self.items.get(name, 0) >= count
 
+    def count(self, name: str, _player: int) -> int:
+        return self.items.get(name, 0)
+
 
 def _all_event_items() -> dict[str, int]:
     raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())

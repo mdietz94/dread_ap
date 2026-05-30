@@ -189,7 +189,7 @@
     "patcher_item_id": "ITEM_ENERGY_TANKS",
     "quantity": 1,
     "pool_count": 8,
-    "classification": "useful"
+    "classification": "progression"
   },
   {
     "name": "Missile+ Tank",
@@ -229,7 +229,7 @@
     "patcher_item_id": "ITEM_WEAPON_POWER_BOMB_MAX",
     "quantity": 1,
     "pool_count": 13,
-    "classification": "filler"
+    "classification": "progression"
   },
   {
     "name": "Energy Part",
