@@ -60,6 +60,10 @@ def main() -> int:
                 "ap_id": event["item_ap_id"],
                 "patcher_item_id": "",
                 "quantity": 1,
+                # Events are inlined into compiled rules and never enter the AP
+                # pool — World.create_items special-cases them. pool_count=0
+                # documents that intent.
+                "pool_count": 0,
                 "classification": "progression",
             })
             new_items += 1

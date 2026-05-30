@@ -46,7 +46,7 @@
     "scenario": "s010_cave",
     "actor": "Item_MissileTank001",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 4
   },
   {
@@ -96,7 +96,7 @@
     "scenario": "s010_cave",
     "actor": "Item_MissileTank005",
     "pickup_type": "actor",
-    "vanilla_item": "Phantom Cloak",
+    "vanilla_item": "Flash Shift",
     "pickup_index": 9
   },
   {
@@ -106,7 +106,7 @@
     "scenario": "s010_cave",
     "actor": "Item_MissileTank006",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 10
   },
   {
@@ -116,7 +116,7 @@
     "scenario": "s010_cave",
     "actor": "Item_MissileTank007",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 11
   },
   {
@@ -126,7 +126,7 @@
     "scenario": "s010_cave",
     "actor": "Item_MissileTank003_1",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 12
   },
   {
@@ -136,7 +136,7 @@
     "scenario": "s010_cave",
     "actor": "Item_MissileTank009",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 13
   },
   {
@@ -246,7 +246,7 @@
     "scenario": "s010_cave",
     "actor": "item_missiletank_002",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 24
   },
   {
@@ -406,7 +406,7 @@
     "scenario": "s020_magma",
     "actor": "item_missiletank_004",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 40
   },
   {
@@ -456,7 +456,7 @@
     "scenario": "s020_magma",
     "actor": "item_missiletank_009",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 45
   },
   {
@@ -576,7 +576,7 @@
     "scenario": "s030_baselab",
     "actor": "itemsphere_widebeam",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 57
   },
   {
@@ -606,7 +606,7 @@
     "scenario": "s030_baselab",
     "actor": "item_missiletank_000",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 60
   },
   {
@@ -646,7 +646,7 @@
     "scenario": "s030_baselab",
     "actor": "item_energyfragment_001",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 64
   },
   {
@@ -776,7 +776,7 @@
     "scenario": "s040_aqua",
     "actor": "item_missiletank",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 77
   },
   {
@@ -786,7 +786,7 @@
     "scenario": "s040_aqua",
     "actor": "powerup_ghostaura",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 78
   },
   {
@@ -816,7 +816,7 @@
     "scenario": "s040_aqua",
     "actor": "item_missiletank_001",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Phantom Cloak",
     "pickup_index": 81
   },
   {
@@ -836,7 +836,7 @@
     "scenario": "s040_aqua",
     "actor": "item_missiletank_003",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 83
   },
   {
@@ -886,7 +886,7 @@
     "scenario": "s040_aqua",
     "actor": "item_missiletankplus",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 88
   },
   {
@@ -966,7 +966,7 @@
     "scenario": "s050_forest",
     "actor": "item_powerbombtank_000",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 96
   },
   {
@@ -996,7 +996,7 @@
     "scenario": "s050_forest",
     "actor": "item_missiletank_001",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 99
   },
   {
@@ -1066,7 +1066,7 @@
     "scenario": "s050_forest",
     "actor": "item_missiletank_006",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 106
   },
   {
@@ -1246,7 +1246,7 @@
     "scenario": "s070_basesanc",
     "actor": "item_energyfragment_001",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 124
   },
   {
@@ -1306,7 +1306,7 @@
     "scenario": "s070_basesanc",
     "actor": "item_missiletankplus_000",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 130
   },
   {
@@ -1336,7 +1336,7 @@
     "scenario": "s070_basesanc",
     "actor": "item_energyfragment",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 133
   },
   {
@@ -1346,7 +1346,7 @@
     "scenario": "s080_shipyard",
     "actor": "item_missiletank_000",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 134
   },
   {
@@ -1366,7 +1366,7 @@
     "scenario": "s080_shipyard",
     "actor": "item_missiletank",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Tank",
     "pickup_index": 136
   },
   {
@@ -1466,7 +1466,7 @@
     "scenario": "s050_forest",
     "actor": "OnEmmyForestDead",
     "pickup_type": "emmi",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Energy Part",
     "pickup_index": 146
   },
   {
@@ -1491,7 +1491,7 @@
   },
   {
     "name": "Event: ArtariaCU",
-    "ap_id": 31303,
+    "ap_id": 31487,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1500,7 +1500,7 @@
   },
   {
     "name": "Event: ArtariaEmmiMagnetDoorLock",
-    "ap_id": 31304,
+    "ap_id": 31488,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1509,7 +1509,7 @@
   },
   {
     "name": "Event: ArtariaEmmiMagnetPlatformLowered",
-    "ap_id": 31305,
+    "ap_id": 31489,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1518,7 +1518,7 @@
   },
   {
     "name": "Event: ArtariaEmmiSingleUseSlide",
-    "ap_id": 31306,
+    "ap_id": 31490,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1527,7 +1527,7 @@
   },
   {
     "name": "Event: ArtariaEmmiSpinnerPulled",
-    "ap_id": 31307,
+    "ap_id": 31491,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1536,7 +1536,7 @@
   },
   {
     "name": "Event: ArtariaEmmiSpinnerRotated",
-    "ap_id": 31308,
+    "ap_id": 31492,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1545,7 +1545,7 @@
   },
   {
     "name": "Event: ArtariaEmmiSpinnerRotatedAgain",
-    "ap_id": 31309,
+    "ap_id": 31493,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1554,7 +1554,7 @@
   },
   {
     "name": "Event: ArtariaEmmiWideBeamBlock",
-    "ap_id": 31310,
+    "ap_id": 31494,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1563,7 +1563,7 @@
   },
   {
     "name": "Event: ArtariaMapSpeed",
-    "ap_id": 31311,
+    "ap_id": 31495,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1572,7 +1572,7 @@
   },
   {
     "name": "Event: ArtariaProtoCU",
-    "ap_id": 31312,
+    "ap_id": 31496,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1581,7 +1581,7 @@
   },
   {
     "name": "Event: ArtariaSARotatable",
-    "ap_id": 31313,
+    "ap_id": 31497,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1590,7 +1590,7 @@
   },
   {
     "name": "Event: BureniaDaironSpeedBlocks",
-    "ap_id": 31314,
+    "ap_id": 31498,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1599,7 +1599,7 @@
   },
   {
     "name": "Event: BureniaDestroyGravitySuitFloor",
-    "ap_id": 31315,
+    "ap_id": 31499,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1608,7 +1608,7 @@
   },
   {
     "name": "Event: BureniaEPart",
-    "ap_id": 31316,
+    "ap_id": 31500,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1617,7 +1617,7 @@
   },
   {
     "name": "Event: BureniaEarlyGravSpeedBlocks",
-    "ap_id": 31317,
+    "ap_id": 31501,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1626,7 +1626,7 @@
   },
   {
     "name": "Event: BureniaGhavoranTeleportEnky",
-    "ap_id": 31318,
+    "ap_id": 31502,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1635,7 +1635,7 @@
   },
   {
     "name": "Event: BureniaGravitySuitRoomStoreSpeed",
-    "ap_id": 31319,
+    "ap_id": 31503,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1644,7 +1644,7 @@
   },
   {
     "name": "Event: BureniaGreenSpeedBlocks",
-    "ap_id": 31320,
+    "ap_id": 31504,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1653,7 +1653,7 @@
   },
   {
     "name": "Event: BureniaHubMagnetPlatform",
-    "ap_id": 31321,
+    "ap_id": 31505,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1662,7 +1662,7 @@
   },
   {
     "name": "Event: BureniaPrepareSpeedSave",
-    "ap_id": 31322,
+    "ap_id": 31506,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1671,7 +1671,7 @@
   },
   {
     "name": "Event: BureniaRobots",
-    "ap_id": 31323,
+    "ap_id": 31507,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1680,7 +1680,7 @@
   },
   {
     "name": "Event: BureniaStormMissileGateEtank",
-    "ap_id": 31324,
+    "ap_id": 31508,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1689,7 +1689,7 @@
   },
   {
     "name": "Event: BureniaStormMissileGateTeleport",
-    "ap_id": 31325,
+    "ap_id": 31509,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1698,7 +1698,7 @@
   },
   {
     "name": "Event: CatarisCU",
-    "ap_id": 31326,
+    "ap_id": 31510,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1707,7 +1707,7 @@
   },
   {
     "name": "Event: CatarisHeatedWideBeamBlock",
-    "ap_id": 31327,
+    "ap_id": 31511,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1716,7 +1716,7 @@
   },
   {
     "name": "Event: CatarisLedgeWarpSetupOutsideDiffusionRoom",
-    "ap_id": 31328,
+    "ap_id": 31512,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1725,7 +1725,7 @@
   },
   {
     "name": "Event: CatarisLowerPowerBombTankCeiling",
-    "ap_id": 31329,
+    "ap_id": 31513,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1734,7 +1734,7 @@
   },
   {
     "name": "Event: CatarisMoveMagnetWallsButton",
-    "ap_id": 31330,
+    "ap_id": 31514,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1743,7 +1743,7 @@
   },
   {
     "name": "Event: CatarisThermalLowerLava",
-    "ap_id": 31331,
+    "ap_id": 31515,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1752,7 +1752,7 @@
   },
   {
     "name": "Event: CatarisThermalMagnetPlatformLowered",
-    "ap_id": 31332,
+    "ap_id": 31516,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1761,7 +1761,7 @@
   },
   {
     "name": "Event: CatarisTransportDaironWideBeamBlock",
-    "ap_id": 31333,
+    "ap_id": 31517,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1770,7 +1770,7 @@
   },
   {
     "name": "Event: CatarisUnderlavaSpeedBlocks",
-    "ap_id": 31334,
+    "ap_id": 31518,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -1779,7 +1779,7 @@
   },
   {
     "name": "Event: ChainReactionEnd",
-    "ap_id": 31335,
+    "ap_id": 31519,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1788,7 +1788,7 @@
   },
   {
     "name": "Event: Corpius",
-    "ap_id": 31336,
+    "ap_id": 31520,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -1797,7 +1797,7 @@
   },
   {
     "name": "Event: DaironCU",
-    "ap_id": 31337,
+    "ap_id": 31521,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1806,7 +1806,7 @@
   },
   {
     "name": "Event: DaironFereniaTransportSpeedBlocks",
-    "ap_id": 31338,
+    "ap_id": 31522,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1815,7 +1815,7 @@
   },
   {
     "name": "Event: DaironFreezerSpeedBlocks",
-    "ap_id": 31339,
+    "ap_id": 31523,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1824,7 +1824,7 @@
   },
   {
     "name": "Event: DaironGrappleBlockElevatorFerenia",
-    "ap_id": 31340,
+    "ap_id": 31524,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1833,7 +1833,7 @@
   },
   {
     "name": "Event: DaironStormMissileGate",
-    "ap_id": 31341,
+    "ap_id": 31525,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1842,7 +1842,7 @@
   },
   {
     "name": "Event: DaironStormSpeedBlocks",
-    "ap_id": 31342,
+    "ap_id": 31526,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1851,7 +1851,7 @@
   },
   {
     "name": "Event: DaironTeleportToArtariaSpeedBlocksDestroyed",
-    "ap_id": 31343,
+    "ap_id": 31527,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1860,7 +1860,7 @@
   },
   {
     "name": "Event: DaironWideBeamBlockCataris",
-    "ap_id": 31344,
+    "ap_id": 31528,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1869,7 +1869,7 @@
   },
   {
     "name": "Event: DaironWideBeamBlockFerenia",
-    "ap_id": 31345,
+    "ap_id": 31529,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1878,7 +1878,7 @@
   },
   {
     "name": "Event: DaironWideBeamBlockHub",
-    "ap_id": 31346,
+    "ap_id": 31530,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1887,7 +1887,7 @@
   },
   {
     "name": "Event: DaironWideBeamBlockSave",
-    "ap_id": 31347,
+    "ap_id": 31531,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1896,7 +1896,7 @@
   },
   {
     "name": "Event: DaironYellowSpeedBlocks",
-    "ap_id": 31348,
+    "ap_id": 31532,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -1905,7 +1905,7 @@
   },
   {
     "name": "Event: Drogyga",
-    "ap_id": 31349,
+    "ap_id": 31533,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -1914,7 +1914,7 @@
   },
   {
     "name": "Event: ElunReleaseX",
-    "ap_id": 31350,
+    "ap_id": 31534,
     "region": "Elun",
     "scenario": "s060_quarantine",
     "actor": "",
@@ -1923,7 +1923,7 @@
   },
   {
     "name": "Event: ElunSoldier",
-    "ap_id": 31351,
+    "ap_id": 31535,
     "region": "Elun",
     "scenario": "s060_quarantine",
     "actor": "",
@@ -1932,7 +1932,7 @@
   },
   {
     "name": "Event: Escue",
-    "ap_id": 31352,
+    "ap_id": 31536,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1941,7 +1941,7 @@
   },
   {
     "name": "Event: FereniaCU",
-    "ap_id": 31353,
+    "ap_id": 31537,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1950,7 +1950,7 @@
   },
   {
     "name": "Event: FereniaRobots",
-    "ap_id": 31354,
+    "ap_id": 31538,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1959,7 +1959,7 @@
   },
   {
     "name": "Event: FereniaStormMissileGateCold",
-    "ap_id": 31355,
+    "ap_id": 31539,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1968,7 +1968,7 @@
   },
   {
     "name": "Event: FereniaStormMissileGateRobotFight",
-    "ap_id": 31356,
+    "ap_id": 31540,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1977,7 +1977,7 @@
   },
   {
     "name": "Event: FereniaStormMissileGateSJ",
-    "ap_id": 31357,
+    "ap_id": 31541,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1986,7 +1986,7 @@
   },
   {
     "name": "Event: FereniaStormMissileGateTutorial",
-    "ap_id": 31358,
+    "ap_id": 31542,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -1995,7 +1995,7 @@
   },
   {
     "name": "Event: GhavoraSupersMagnetPlatformLowered",
-    "ap_id": 31359,
+    "ap_id": 31543,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2004,7 +2004,7 @@
   },
   {
     "name": "Event: GhavoranAmmoRechargeEnkyAbove",
-    "ap_id": 31360,
+    "ap_id": 31544,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2013,7 +2013,7 @@
   },
   {
     "name": "Event: GhavoranAmmoRechargeEnkyBelow",
-    "ap_id": 31361,
+    "ap_id": 31545,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2022,7 +2022,7 @@
   },
   {
     "name": "Event: GhavoranBureniaTransportGrappleBox",
-    "ap_id": 31362,
+    "ap_id": 31546,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2031,7 +2031,7 @@
   },
   {
     "name": "Event: GhavoranCU",
-    "ap_id": 31363,
+    "ap_id": 31547,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2040,7 +2040,7 @@
   },
   {
     "name": "Event: GhavoranChozoX",
-    "ap_id": 31364,
+    "ap_id": 31548,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2049,7 +2049,7 @@
   },
   {
     "name": "Event: GhavoranChozoXTrigger",
-    "ap_id": 31365,
+    "ap_id": 31549,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2058,7 +2058,7 @@
   },
   {
     "name": "Event: GhavoranEyedoor",
-    "ap_id": 31366,
+    "ap_id": 31550,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2067,7 +2067,7 @@
   },
   {
     "name": "Event: GhavoranFereniaTransportEnkyLeft",
-    "ap_id": 31367,
+    "ap_id": 31551,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2076,7 +2076,7 @@
   },
   {
     "name": "Event: GhavoranFereniaTransportEnkyRight",
-    "ap_id": 31368,
+    "ap_id": 31552,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2085,7 +2085,7 @@
   },
   {
     "name": "Event: GhavoranFereniaTransportGrappleBox",
-    "ap_id": 31369,
+    "ap_id": 31553,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2094,7 +2094,7 @@
   },
   {
     "name": "Event: GhavoranPulseRadarEnky",
-    "ap_id": 31370,
+    "ap_id": 31554,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2103,7 +2103,7 @@
   },
   {
     "name": "Event: GhavoranRobotFight",
-    "ap_id": 31371,
+    "ap_id": 31555,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2112,7 +2112,7 @@
   },
   {
     "name": "Event: GhavoranStormMissileGate",
-    "ap_id": 31372,
+    "ap_id": 31556,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2121,7 +2121,7 @@
   },
   {
     "name": "Event: GhavoranSuperRotatableEnky",
-    "ap_id": 31373,
+    "ap_id": 31557,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2130,7 +2130,7 @@
   },
   {
     "name": "Event: GhavoranSupersAreaAccess",
-    "ap_id": 31374,
+    "ap_id": 31558,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2139,7 +2139,7 @@
   },
   {
     "name": "Event: GhavoranSupersRotatable",
-    "ap_id": 31375,
+    "ap_id": 31559,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2148,7 +2148,7 @@
   },
   {
     "name": "Event: GoldChozoFight",
-    "ap_id": 31376,
+    "ap_id": 31560,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -2157,7 +2157,7 @@
   },
   {
     "name": "Event: Golzuna",
-    "ap_id": 31377,
+    "ap_id": 31561,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2166,7 +2166,7 @@
   },
   {
     "name": "Event: HanubiaEMMISpeed",
-    "ap_id": 31378,
+    "ap_id": 31562,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -2175,7 +2175,7 @@
   },
   {
     "name": "Event: HanubiaRedChozo",
-    "ap_id": 31379,
+    "ap_id": 31563,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -2184,7 +2184,7 @@
   },
   {
     "name": "Event: Kraid",
-    "ap_id": 31380,
+    "ap_id": 31564,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2193,7 +2193,7 @@
   },
   {
     "name": "Event: Quiet Robe",
-    "ap_id": 31381,
+    "ap_id": 31565,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -2202,7 +2202,7 @@
   },
   {
     "name": "Event: Ship",
-    "ap_id": 31382,
+    "ap_id": 31566,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -2211,7 +2211,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_CV_PlatformCaveWater_B",
-    "ap_id": 31383,
+    "ap_id": 31567,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2220,7 +2220,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_CV_ThermalDevice",
-    "ap_id": 31384,
+    "ap_id": 31568,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2229,7 +2229,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_000",
-    "ap_id": 31385,
+    "ap_id": 31569,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2238,7 +2238,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_002",
-    "ap_id": 31386,
+    "ap_id": 31570,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2247,7 +2247,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_003",
-    "ap_id": 31387,
+    "ap_id": 31571,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2256,7 +2256,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_006",
-    "ap_id": 31388,
+    "ap_id": 31572,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2265,7 +2265,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_007",
-    "ap_id": 31389,
+    "ap_id": 31573,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2274,7 +2274,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_008",
-    "ap_id": 31390,
+    "ap_id": 31574,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2283,7 +2283,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_010",
-    "ap_id": 31391,
+    "ap_id": 31575,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2292,7 +2292,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_014",
-    "ap_id": 31392,
+    "ap_id": 31576,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2301,7 +2301,7 @@
   },
   {
     "name": "Event: s010_cave:default:PRP_DB_CV_020",
-    "ap_id": 31393,
+    "ap_id": 31577,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2310,7 +2310,7 @@
   },
   {
     "name": "Event: s010_cave:default:breakablecave017",
-    "ap_id": 31394,
+    "ap_id": 31578,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2319,7 +2319,7 @@
   },
   {
     "name": "Event: s010_cave:default:breakablecave019",
-    "ap_id": 31395,
+    "ap_id": 31579,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2328,7 +2328,7 @@
   },
   {
     "name": "Event: s010_cave:default:db_dif_cv_002",
-    "ap_id": 31396,
+    "ap_id": 31580,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2337,7 +2337,7 @@
   },
   {
     "name": "Event: s010_cave:default:db_reg_cv_021",
-    "ap_id": 31397,
+    "ap_id": 31581,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2346,7 +2346,7 @@
   },
   {
     "name": "Event: s010_cave:default:db_reg_cv_022",
-    "ap_id": 31398,
+    "ap_id": 31582,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2355,7 +2355,7 @@
   },
   {
     "name": "Event: s010_cave:default:db_reg_cv_023",
-    "ap_id": 31399,
+    "ap_id": 31583,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2364,7 +2364,7 @@
   },
   {
     "name": "Event: s010_cave:default:ev_chainreaction_deviceheat",
-    "ap_id": 31400,
+    "ap_id": 31584,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2373,7 +2373,7 @@
   },
   {
     "name": "Event: s010_cave:default:grapplepulloff1x2_001",
-    "ap_id": 31401,
+    "ap_id": 31585,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2382,7 +2382,7 @@
   },
   {
     "name": "Event: s010_cave:default:grapplepulloff1x2_002",
-    "ap_id": 31402,
+    "ap_id": 31586,
     "region": "Artaria",
     "scenario": "s010_cave",
     "actor": "",
@@ -2391,7 +2391,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag001",
-    "ap_id": 31403,
+    "ap_id": 31587,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2400,7 +2400,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag002",
-    "ap_id": 31404,
+    "ap_id": 31588,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2409,7 +2409,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag003",
-    "ap_id": 31405,
+    "ap_id": 31589,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2418,7 +2418,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag004",
-    "ap_id": 31406,
+    "ap_id": 31590,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2427,7 +2427,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag005",
-    "ap_id": 31407,
+    "ap_id": 31591,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2436,7 +2436,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag007",
-    "ap_id": 31408,
+    "ap_id": 31592,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2445,7 +2445,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag008",
-    "ap_id": 31409,
+    "ap_id": 31593,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2454,7 +2454,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag009",
-    "ap_id": 31410,
+    "ap_id": 31594,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2463,7 +2463,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag010",
-    "ap_id": 31411,
+    "ap_id": 31595,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2472,7 +2472,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag012",
-    "ap_id": 31412,
+    "ap_id": 31596,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2481,7 +2481,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag013",
-    "ap_id": 31413,
+    "ap_id": 31597,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2490,7 +2490,7 @@
   },
   {
     "name": "Event: s020_magma:default:breakablemag014",
-    "ap_id": 31414,
+    "ap_id": 31598,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2499,7 +2499,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_dif_mg_001",
-    "ap_id": 31415,
+    "ap_id": 31599,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2508,7 +2508,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_dif_mg_002",
-    "ap_id": 31416,
+    "ap_id": 31600,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2517,7 +2517,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_dside_mg_002",
-    "ap_id": 31417,
+    "ap_id": 31601,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2526,7 +2526,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_dside_mg_003",
-    "ap_id": 31418,
+    "ap_id": 31602,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2535,7 +2535,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_dside_mg_004",
-    "ap_id": 31419,
+    "ap_id": 31603,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2544,7 +2544,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_hdoor_mg_001",
-    "ap_id": 31420,
+    "ap_id": 31604,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2553,7 +2553,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_hdoor_mg_002",
-    "ap_id": 31421,
+    "ap_id": 31605,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2562,7 +2562,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_reg_mg_017",
-    "ap_id": 31422,
+    "ap_id": 31606,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2571,7 +2571,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_reg_mg_019",
-    "ap_id": 31423,
+    "ap_id": 31607,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2580,7 +2580,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_reg_mg_020",
-    "ap_id": 31424,
+    "ap_id": 31608,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2589,7 +2589,7 @@
   },
   {
     "name": "Event: s020_magma:default:db_reg_mg_021",
-    "ap_id": 31425,
+    "ap_id": 31609,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2598,7 +2598,7 @@
   },
   {
     "name": "Event: s020_magma:default:deviceheat",
-    "ap_id": 31426,
+    "ap_id": 31610,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2607,7 +2607,7 @@
   },
   {
     "name": "Event: s020_magma:default:deviceheat_001",
-    "ap_id": 31427,
+    "ap_id": 31611,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2616,7 +2616,7 @@
   },
   {
     "name": "Event: s020_magma:default:deviceheat_002",
-    "ap_id": 31428,
+    "ap_id": 31612,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2625,7 +2625,7 @@
   },
   {
     "name": "Event: s020_magma:default:deviceheat_camerafar_000",
-    "ap_id": 31429,
+    "ap_id": 31613,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2634,7 +2634,7 @@
   },
   {
     "name": "Event: s020_magma:default:grapplepulloff1x2",
-    "ap_id": 31430,
+    "ap_id": 31614,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2643,7 +2643,7 @@
   },
   {
     "name": "Event: s020_magma:default:grapplepulloff1x2_000",
-    "ap_id": 31431,
+    "ap_id": 31615,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2652,7 +2652,7 @@
   },
   {
     "name": "Event: s020_magma:default:grapplepulloff1x2_001",
-    "ap_id": 31432,
+    "ap_id": 31616,
     "region": "Cataris",
     "scenario": "s020_magma",
     "actor": "",
@@ -2661,7 +2661,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_dif_b1_001",
-    "ap_id": 31433,
+    "ap_id": 31617,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2670,7 +2670,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_dif_b1_002",
-    "ap_id": 31434,
+    "ap_id": 31618,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2679,7 +2679,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_hdoor_b1_001",
-    "ap_id": 31435,
+    "ap_id": 31619,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2688,7 +2688,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_reg_b1_001",
-    "ap_id": 31436,
+    "ap_id": 31620,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2697,7 +2697,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_reg_b1_002",
-    "ap_id": 31437,
+    "ap_id": 31621,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2706,7 +2706,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_reg_b1_003",
-    "ap_id": 31438,
+    "ap_id": 31622,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2715,7 +2715,7 @@
   },
   {
     "name": "Event: s030_baselab:default:db_reg_b1_005",
-    "ap_id": 31439,
+    "ap_id": 31623,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2724,7 +2724,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2",
-    "ap_id": 31440,
+    "ap_id": 31624,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2733,7 +2733,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_000",
-    "ap_id": 31441,
+    "ap_id": 31625,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2742,7 +2742,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_001",
-    "ap_id": 31442,
+    "ap_id": 31626,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2751,7 +2751,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_002",
-    "ap_id": 31443,
+    "ap_id": 31627,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2760,7 +2760,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_003",
-    "ap_id": 31444,
+    "ap_id": 31628,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2769,7 +2769,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_005",
-    "ap_id": 31445,
+    "ap_id": 31629,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2778,7 +2778,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_006",
-    "ap_id": 31446,
+    "ap_id": 31630,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2787,7 +2787,7 @@
   },
   {
     "name": "Event: s030_baselab:default:grapplepulloff1x2_007",
-    "ap_id": 31447,
+    "ap_id": 31631,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2796,7 +2796,7 @@
   },
   {
     "name": "Event: s030_baselab:default:powergenerator_001",
-    "ap_id": 31448,
+    "ap_id": 31632,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2805,7 +2805,7 @@
   },
   {
     "name": "Event: s030_baselab:default:powergenerator_002",
-    "ap_id": 31449,
+    "ap_id": 31633,
     "region": "Dairon",
     "scenario": "s030_baselab",
     "actor": "",
@@ -2814,7 +2814,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_001",
-    "ap_id": 31450,
+    "ap_id": 31634,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2823,7 +2823,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_002",
-    "ap_id": 31451,
+    "ap_id": 31635,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2832,7 +2832,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_003",
-    "ap_id": 31452,
+    "ap_id": 31636,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2841,7 +2841,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_004",
-    "ap_id": 31453,
+    "ap_id": 31637,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2850,7 +2850,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_005",
-    "ap_id": 31454,
+    "ap_id": 31638,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2859,7 +2859,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_007",
-    "ap_id": 31455,
+    "ap_id": 31639,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2868,7 +2868,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_008",
-    "ap_id": 31456,
+    "ap_id": 31640,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2877,7 +2877,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_009",
-    "ap_id": 31457,
+    "ap_id": 31641,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2886,7 +2886,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_011",
-    "ap_id": 31458,
+    "ap_id": 31642,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2895,7 +2895,7 @@
   },
   {
     "name": "Event: s040_aqua:default:db_reg_aq_012",
-    "ap_id": 31459,
+    "ap_id": 31643,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2904,7 +2904,7 @@
   },
   {
     "name": "Event: s040_aqua:default:ev_demolition_db_001",
-    "ap_id": 31460,
+    "ap_id": 31644,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2913,7 +2913,7 @@
   },
   {
     "name": "Event: s040_aqua:default:ev_demolition_db_002",
-    "ap_id": 31461,
+    "ap_id": 31645,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2922,7 +2922,7 @@
   },
   {
     "name": "Event: s040_aqua:default:ev_demolition_db_003",
-    "ap_id": 31462,
+    "ap_id": 31646,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2931,7 +2931,7 @@
   },
   {
     "name": "Event: s040_aqua:default:grapplepulloff1x2_000",
-    "ap_id": 31463,
+    "ap_id": 31647,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2940,7 +2940,7 @@
   },
   {
     "name": "Event: s040_aqua:default:grapplepulloff1x2_001",
-    "ap_id": 31464,
+    "ap_id": 31648,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2949,7 +2949,7 @@
   },
   {
     "name": "Event: s040_aqua:default:grapplepulloff1x2_003",
-    "ap_id": 31465,
+    "ap_id": 31649,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2958,7 +2958,7 @@
   },
   {
     "name": "Event: s040_aqua:default:grapplepulloff1x2_004",
-    "ap_id": 31466,
+    "ap_id": 31650,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2967,7 +2967,7 @@
   },
   {
     "name": "Event: s040_aqua:default:grapplepulloff1x2_005",
-    "ap_id": 31467,
+    "ap_id": 31651,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2976,7 +2976,7 @@
   },
   {
     "name": "Event: s040_aqua:default:grapplepulloff1x2_006",
-    "ap_id": 31468,
+    "ap_id": 31652,
     "region": "Burenia",
     "scenario": "s040_aqua",
     "actor": "",
@@ -2985,7 +2985,7 @@
   },
   {
     "name": "Event: s050_forest:default:grapplepulloff1x2_000",
-    "ap_id": 31469,
+    "ap_id": 31653,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -2994,7 +2994,7 @@
   },
   {
     "name": "Event: s050_forest:default:grapplepulloff1x2_002",
-    "ap_id": 31470,
+    "ap_id": 31654,
     "region": "Ghavoran",
     "scenario": "s050_forest",
     "actor": "",
@@ -3003,7 +3003,7 @@
   },
   {
     "name": "Event: s060_quarantine:default:db_reg_qt_001",
-    "ap_id": 31471,
+    "ap_id": 31655,
     "region": "Elun",
     "scenario": "s060_quarantine",
     "actor": "",
@@ -3012,7 +3012,7 @@
   },
   {
     "name": "Event: s060_quarantine:default:grapplepulloff1x2_000",
-    "ap_id": 31472,
+    "ap_id": 31656,
     "region": "Elun",
     "scenario": "s060_quarantine",
     "actor": "",
@@ -3021,7 +3021,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:db_reg_b2_001",
-    "ap_id": 31473,
+    "ap_id": 31657,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3030,7 +3030,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:db_reg_b2_003",
-    "ap_id": 31474,
+    "ap_id": 31658,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3039,7 +3039,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:db_reg_b2_004",
-    "ap_id": 31475,
+    "ap_id": 31659,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3048,7 +3048,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:db_reg_b2_005",
-    "ap_id": 31476,
+    "ap_id": 31660,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3057,7 +3057,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:db_reg_b2_006",
-    "ap_id": 31477,
+    "ap_id": 31661,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3066,7 +3066,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:grapplepulloff1x2_000",
-    "ap_id": 31478,
+    "ap_id": 31662,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3075,7 +3075,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:grapplepulloff1x2_002",
-    "ap_id": 31479,
+    "ap_id": 31663,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3084,7 +3084,7 @@
   },
   {
     "name": "Event: s070_basesanc:default:grapplepulloff1x2_003",
-    "ap_id": 31480,
+    "ap_id": 31664,
     "region": "Ferenia",
     "scenario": "s070_basesanc",
     "actor": "",
@@ -3093,7 +3093,7 @@
   },
   {
     "name": "Event: s080_shipyard:default:block_pbtube",
-    "ap_id": 31481,
+    "ap_id": 31665,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -3102,7 +3102,7 @@
   },
   {
     "name": "Event: s080_shipyard:default:block_pbtube_2",
-    "ap_id": 31482,
+    "ap_id": 31666,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -3111,7 +3111,7 @@
   },
   {
     "name": "Event: s080_shipyard:default:grapplepulloff1x2",
-    "ap_id": 31483,
+    "ap_id": 31667,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -3120,7 +3120,7 @@
   },
   {
     "name": "Event: s080_shipyard:default:grapplepulloff1x2_000",
-    "ap_id": 31484,
+    "ap_id": 31668,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -3129,7 +3129,7 @@
   },
   {
     "name": "Event: s080_shipyard:default:grapplepulloff1x2_001",
-    "ap_id": 31485,
+    "ap_id": 31669,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",
@@ -3138,7 +3138,7 @@
   },
   {
     "name": "Event: s090_skybase:default:block_pbcolumn_000",
-    "ap_id": 31486,
+    "ap_id": 31670,
     "region": "Hanubia",
     "scenario": "s080_shipyard",
     "actor": "",

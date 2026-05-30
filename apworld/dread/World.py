@@ -32,11 +32,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from BaseClasses import Item, Region, Tutorial
+from BaseClasses import Item, ItemClassification, Region, Tutorial
 from worlds.AutoWorld import World, WebWorld
 
 from .Items import (
-    DreadItem, DreadItemData, item_table, item_name_to_id,
+    CLASSIFICATION_MAP, DreadItem, DreadItemData, item_table, item_name_to_id,
     item_name_to_item, get_item_classification,
 )
 from .Locations import (
@@ -79,10 +79,13 @@ class DreadWorld(World):
 
     required_client_version = (0, 5, 0)
 
-    def create_item(self, name: str) -> Item:
+    def create_item(self, name: str,
+                    classification: ItemClassification | None = None) -> Item:
+        if classification is None:
+            classification = get_item_classification(name)
         return DreadItem(
             name,
-            get_item_classification(name),
+            classification,
             item_name_to_id[name],
             self.player,
         )
@@ -91,19 +94,57 @@ class DreadWorld(World):
         create_regions(self)
 
     def create_items(self) -> None:
-        # Pool layout (post-M2):
-        #   - One copy of every progression / useful game item.
-        #   - One copy of each event item (locked to its event location
-        #     by Rules.set_rules below — they don't share slots with
-        #     the regular pool).
-        #   - Filler (Missile Tank) until the regular-pool slots
-        #     equal the actor/boss/EMMI/cutscene location count.
-        # Total itempool == total location count; events get pulled out
-        # and place_locked_item'd by set_rules, leaving exactly the
-        # non-event locations for the regular pool.
+        # Pool layout (post-M2 + Dreadvania options):
+        #   - Each tank/expansion item is added pool_count times, where
+        #     pool_count comes from a per-item option (default = Randovania
+        #     starter preset count).
+        #   - Each unique progression item is added once (pool_count=1 from
+        #     items.json).
+        #   - Each event item is skipped — events are inlined into compiled
+        #     rules; they remain in items.json for AP-ID stability only.
+        #   - Metroid DNA: exactly N copies (RequiredArtifacts option).
+        #   - Then _balance_pool_to_locations pads/trims to the slot count.
+        from Options import OptionError
+
+        o = self.options
+        # Sanity guard: PB gates become unreachable if neither the main pickup
+        # nor any tank can grant ammo. Rules currently collapse ammo to >=1
+        # (CLAUDE.md v0.3 deferred), so AP fill won't catch this — we raise
+        # here at generation time instead.
+        if (int(o.power_bomb_tank_count.value) == 0
+                and int(o.starting_power_bombs.value) == 0):
+            raise OptionError(
+                "power_bomb_tank_count=0 with starting_power_bombs=0 makes "
+                "Power Bomb gates unreachable. Set at least one to >=1."
+            )
+
+        # Option-driven counts override items.json pool_count for tanks.
+        pool_overrides = {
+            "Energy Tank":     int(o.energy_tank_count.value),
+            "Energy Part":     int(o.energy_part_count.value),
+            "Missile Tank":    int(o.missile_tank_count.value),
+            "Missile+ Tank":   int(o.missile_plus_tank_count.value),
+            "Power Bomb Tank": int(o.power_bomb_tank_count.value),
+        }
+
+        # For items where compiled rules need amount=1 but the pool has many
+        # copies, only the FIRST N copies get the row's classification — the
+        # rest fall back to "useful" (logic-irrelevant but still placed in
+        # reachable spots where possible). Missile+ Tank: 336 rule refs all
+        # amount=1, NOT precollected, so the first copy is logic-gating and
+        # the other 11 are pure ammo capacity.
+        # (Missile Tank doesn't need an entry here — Missile Tank is in
+        # BASE_STARTING_ITEMS / precollected, which satisfies its 3634
+        # amount=1 atoms from turn 0, so its row classification is already
+        # "useful" for every findable copy.)
+        MIXED_CLASSIFICATION_FIRST_N = {
+            "Missile+ Tank": 1,
+        }
+
         non_event_locations = sum(
             1 for l in location_table if l.pickup_type != "event"
         )
+
         # Forced starting items: precollect into AP logic so state.has() is true
         # from turn 0 (the compiled rules reference them; without this the
         # opening rooms and everything past them are unreachable). See the
@@ -118,38 +159,63 @@ class DreadWorld(World):
         pool: list[Item] = []
         for it in item_table:
             if it.name.startswith("Event: "):
-                # Events are inlined into the item-only compiled rules (their
-                # reach cost is folded into the item requirements), so they are
-                # no longer AP items/locations — skip them entirely. (The data
-                # tables still list them for ID stability; they're just unused.)
                 continue
             if it.name.startswith("Metroid DNA"):
-                # Goal items — added explicitly below, exactly N of them.
                 continue
             if it.name in pool_excluded:
-                # Starting-only — precollected above, not findable.
                 continue
-            if it.classification == "progression":
-                pool.append(self.create_item(it.name))
-            elif it.classification == "useful":
-                pool.append(self.create_item(it.name))
+            count = pool_overrides.get(it.name, it.pool_count)
+            default_cls = CLASSIFICATION_MAP.get(
+                it.classification, ItemClassification.filler,
+            )
+            # If this item has a "first N progression" override, the rest of
+            # the copies fall back to useful (e.g. Missile+ Tank). For items
+            # without an override, n_special == count → every copy uses the
+            # row's classification (the legacy behavior).
+            n_special = MIXED_CLASSIFICATION_FIRST_N.get(it.name, count)
+            for i in range(count):
+                cls = default_cls if i < n_special else ItemClassification.useful
+                pool.append(self.create_item(it.name, classification=cls))
 
-        # Metroid DNA: exactly the first N (mapping to artifacts 1..N). They
-        # count as non-event pool items, so the filler loop self-adjusts. For
-        # prefer_bosses, set_rules pulls them back out and locks them to boss
-        # locations (like events); for anywhere they stay in the pool.
-        n_dna = int(self.options.required_artifacts.value)
+        # Metroid DNA: exactly the first N (mapping to artifacts 1..N).
+        n_dna = int(o.required_artifacts.value)
         for k in range(1, n_dna + 1):
             pool.append(self.create_item(f"Metroid DNA {k}"))
 
-        non_event_in_pool = sum(
-            1 for i in pool if not i.name.startswith("Event: ")
-        )
-        filler_name = "Missile Tank"
-        while non_event_in_pool < non_event_locations:
-            pool.append(self.create_item(filler_name))
-            non_event_in_pool += 1
+        self._balance_pool_to_locations(pool, non_event_locations)
         self.multiworld.itempool += pool
+
+    def _balance_pool_to_locations(self, pool: list[Item], target: int) -> None:
+        """Pad short pools with filler; trim overflows in a defined preference
+        order. Raise OptionError if even after trimming we exceed target —
+        with guidance pointing at the user-facing knobs to lower."""
+        while len(pool) < target:
+            pool.append(self.create_item(self.get_filler_item_name()))
+        if len(pool) <= target:
+            return
+        # Trim least-impactful items first.
+        trim_order = (
+            "Energy Part", "Power Bomb Tank", "Missile Tank",
+            "Energy Tank", "Missile+ Tank",
+        )
+        overflow = len(pool) - target
+        for name in trim_order:
+            if overflow == 0:
+                break
+            for i in range(len(pool) - 1, -1, -1):
+                if overflow == 0:
+                    break
+                if pool[i].name == name:
+                    pool.pop(i)
+                    overflow -= 1
+        if overflow > 0:
+            from Options import OptionError
+            raise OptionError(
+                f"Dread item pool exceeds {target} available locations even "
+                "after trimming. Reduce energy_tank_count / energy_part_count "
+                "/ missile_tank_count / missile_plus_tank_count / "
+                "power_bomb_tank_count."
+            )
 
     def set_rules(self) -> None:
         # set_rules owns both add_rule application AND the
@@ -207,6 +273,7 @@ class DreadWorld(World):
         slot_name = self.multiworld.get_player_name(self.player)
         seed_id = str(self.multiworld.seed_name)
 
+        o = self.options
         placements: list[dict[str, Any]] = []
         for loc in self.multiworld.get_locations(self.player):
             loc_data = location_name_to_location.get(loc.name)
@@ -225,6 +292,10 @@ class DreadWorld(World):
                 if own_item_data is not None:
                     patcher_item_id = own_item_data.patcher_item_id
                     quantity = own_item_data.quantity
+                    # Main Power Bomb pickup grants weapon + N PB capacity.
+                    # The option overrides items.json's vanilla default (2).
+                    if item.name == "Power Bomb":
+                        quantity = int(o.starting_power_bombs.value)
             placements.append({
                 "location_name": loc_data.name,
                 "scenario": loc_data.scenario,
@@ -238,12 +309,14 @@ class DreadWorld(World):
                 "is_own_player": is_own,
             })
 
-        o = self.options
         n_dna = int(o.required_artifacts.value)
         # Starting inventory: baseline + the artifacts the player ISN'T required
         # to collect (N+1..12), so the in-game gate (which checks 1..N) is
         # satisfied exactly by collecting the N placed Metroid DNA.
         starting_items = dict(self.DEFAULT_STARTING_ITEMS)
+        # Starting missile capacity is option-driven (DEFAULT_STARTING_ITEMS is
+        # the vanilla fallback for offline CLI flows that don't pass options).
+        starting_items["ITEM_WEAPON_MISSILE_MAX"] = int(o.starting_missiles.value)
         for k in range(n_dna + 1, 13):
             starting_items[f"ITEM_RANDO_ARTIFACT_{k}"] = 1
         # The forced bottleneck starting items must ALSO be granted in-game, or
@@ -265,6 +338,10 @@ class DreadWorld(World):
             "enable_room_name_display": o.room_name_display.current_key.upper(),
             "raven_beak_damage_table_handling": o.raven_beak_damage_table.current_key,
             "nerf_power_bombs": bool(o.nerf_power_bombs.value),
+            # Top-level patcher field — controls Samus's base max HP and each
+            # Energy Tank's grant. Routed via COSMETIC_COMBAT_PATHS in
+            # patcher_pipeline.py.
+            "energy_per_tank": int(o.energy_per_tank.value),
         }
         return {
             "slot_name": slot_name,
@@ -290,7 +367,17 @@ class DreadWorld(World):
         return payload
 
     def get_filler_item_name(self) -> str:
-        return "Missile Tank"
+        # Respect the user's intent: if Missile Tank is dialed to zero, don't
+        # sneak it back in via filler. Fall through the alternates in roughly
+        # increasing impact order.
+        o = self.options
+        if int(o.missile_tank_count.value) > 0:
+            return "Missile Tank"
+        if int(o.energy_part_count.value) > 0:
+            return "Energy Part"
+        if int(o.power_bomb_tank_count.value) > 0:
+            return "Power Bomb Tank"
+        return "Missile Tank"  # AP-API safety net
 
     def generate_output(self, output_directory: str) -> None:
         """Write the per-slot artifacts AP bundles into the seed zip:

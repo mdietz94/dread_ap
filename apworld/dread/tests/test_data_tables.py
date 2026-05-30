@@ -105,6 +105,22 @@ def test_every_item_has_patcher_id_and_quantity(items):
         assert it["quantity"] >= 1
 
 
+def test_every_item_has_pool_count(items):
+    """pool_count drives the default number of copies World.create_items puts
+    in the pool (option-overridable for tank types). Events are special-cased
+    in create_items (skipped), so pool_count=0 is correct for them. DNA items
+    are added explicitly by RequiredArtifacts, so pool_count is also 0. Every
+    other (game) item is a unique progression item (Morph Ball, beams, suits,
+    etc.) and must have pool_count >= 1 so the loop adds at least one copy."""
+    for it in items:
+        assert "pool_count" in it, f"missing pool_count: {it}"
+        assert isinstance(it["pool_count"], int)
+        assert it["pool_count"] >= 0, f"negative pool_count: {it}"
+        if it["name"].startswith("Event: ") or it["name"].startswith("Metroid DNA"):
+            continue
+        assert it["pool_count"] >= 1, f"non-event/DNA item with pool_count=0: {it}"
+
+
 def test_every_item_has_valid_classification(items):
     valid = {"progression", "progression_skip_balancing", "useful", "filler", "trap"}
     for it in items:

@@ -18,21 +18,23 @@ class DreadItemData:
     name: str
     ap_id: int
     patcher_item_id: str
-    quantity: int
-    classification: str  # "progression" | "useful" | "filler"
+    quantity: int  # capacity-per-pickup granted by the patcher
+    pool_count: int  # default copies in the AP pool (overridable via Options)
+    classification: str  # "progression" | "progression_skip_balancing" | "useful" | "filler"
 
 
 class DreadItem(Item):
     game = "Metroid Dread"
 
 
-_CLASSIFICATION_MAP = {
+CLASSIFICATION_MAP = {
     "progression": ItemClassification.progression,
     "progression_skip_balancing": ItemClassification.progression_skip_balancing,
     "useful": ItemClassification.useful,
     "filler": ItemClassification.filler,
     "trap": ItemClassification.trap,
 }
+_CLASSIFICATION_MAP = CLASSIFICATION_MAP  # legacy alias
 
 
 def _load() -> list[DreadItemData]:

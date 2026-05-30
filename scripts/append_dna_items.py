@@ -45,6 +45,10 @@ def main() -> int:
             "ap_id": base + (k - 1),
             "patcher_item_id": f"ITEM_RANDO_ARTIFACT_{k}",
             "quantity": 1,
+            # DNA is added explicitly by World.create_items (exactly N copies
+            # per RequiredArtifacts), so pool_count from the data table is
+            # unused. 0 documents that intent.
+            "pool_count": 0,
             "classification": "progression",
         })
         added += 1
