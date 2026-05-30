@@ -204,7 +204,7 @@
     "ap_id": 21549,
     "patcher_item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN",
     "quantity": 1,
-    "pool_count": 1,
+    "pool_count": 2,
     "classification": "progression"
   },
   {
@@ -212,7 +212,7 @@
     "ap_id": 21550,
     "patcher_item_id": "ITEM_UPGRADE_SPEED_BOOST_CHARGE",
     "quantity": 1,
-    "pool_count": 1,
+    "pool_count": 2,
     "classification": "progression"
   },
   {

@@ -88,15 +88,18 @@ def test_default_pickup_quantities_match_randovania(items):
 
 
 def test_unique_progression_items_have_pool_count_one(items):
-    """Every progression item that isn't a tank/expansion should have
-    pool_count=1 (one copy in the pool by default)."""
-    tank_like = set(_VANILLA_POOL_COUNTS)
+    """Every progression item that isn't a tank/expansion/upgrade should
+    have pool_count=1 (one copy in the pool by default). The two upgrade
+    items have pool_count=2 — covered by test_upgrade_pool_count_is_two."""
+    multi_copy = set(_VANILLA_POOL_COUNTS) | {
+        "Flash Shift Upgrade", "Speed Booster Upgrade",
+    }
     for it in items:
         if it["name"].startswith("Event: "):
             continue
         if it["name"].startswith("Metroid DNA"):
             continue
-        if it["name"] in tank_like:
+        if it["name"] in multi_copy:
             continue
         assert it["pool_count"] == 1, (
             f"{it['name']}: expected pool_count=1, got {it['pool_count']}"
@@ -323,6 +326,61 @@ def test_missile_plus_tank_first_is_progression_rest_useful():
     )
     assert useful_n == len(mpt) - 1, (
         f"Missile+ Tank: expected {len(mpt) - 1} useful copies, got {useful_n}"
+    )
+
+
+def test_upgrade_pool_count_is_two(items):
+    """Flash Shift Upgrade and Speed Booster Upgrade have pool_count=2 —
+    matches the count of pickups vanilla Dread ships and the maximum
+    amount referenced by compiled rules (amount=2 for both)."""
+    by_name = {it["name"]: it for it in items}
+    assert by_name["Flash Shift Upgrade"]["pool_count"] == 2
+    assert by_name["Speed Booster Upgrade"]["pool_count"] == 2
+
+
+@pytestmark_runtime
+def test_flash_shift_upgrade_first_is_progression_rest_useful():
+    """Compiled rules reference Flash Shift Upgrade up to amount=2, but
+    every amount=2 rule lives in a disjunct with other paths — so only the
+    first copy is logic-gating; the second is QoL routing."""
+    from BaseClasses import ItemClassification
+    world, mw = _build_world()
+    world.create_items()
+    fsu = [it for it in mw.itempool if it.name == "Flash Shift Upgrade"]
+    progression_n = sum(
+        1 for it in fsu if it.classification == ItemClassification.progression
+    )
+    useful_n = sum(
+        1 for it in fsu if it.classification == ItemClassification.useful
+    )
+    assert len(fsu) == 2, f"Flash Shift Upgrade: expected 2 in pool, got {len(fsu)}"
+    assert progression_n == 1, (
+        f"Flash Shift Upgrade: expected 1 progression copy, got {progression_n}"
+    )
+    assert useful_n == 1, (
+        f"Flash Shift Upgrade: expected 1 useful copy, got {useful_n}"
+    )
+
+
+@pytestmark_runtime
+def test_speed_booster_upgrade_first_is_progression_rest_useful():
+    """Same shape as Flash Shift Upgrade — 2 in pool, 1 progression + 1 useful."""
+    from BaseClasses import ItemClassification
+    world, mw = _build_world()
+    world.create_items()
+    sbu = [it for it in mw.itempool if it.name == "Speed Booster Upgrade"]
+    progression_n = sum(
+        1 for it in sbu if it.classification == ItemClassification.progression
+    )
+    useful_n = sum(
+        1 for it in sbu if it.classification == ItemClassification.useful
+    )
+    assert len(sbu) == 2, f"Speed Booster Upgrade: expected 2 in pool, got {len(sbu)}"
+    assert progression_n == 1, (
+        f"Speed Booster Upgrade: expected 1 progression copy, got {progression_n}"
+    )
+    assert useful_n == 1, (
+        f"Speed Booster Upgrade: expected 1 useful copy, got {useful_n}"
     )
 
 
