@@ -26,6 +26,8 @@ The patch file we apply ships next to this module
 
 from __future__ import annotations
 
+import contextlib
+import importlib.resources
 import os
 import shutil
 import subprocess
@@ -41,33 +43,55 @@ from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under
 # child, stealing focus from the wizard). No-op on non-Windows.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-# Where the patch file lives at runtime. Two candidates — repo-root path
-# (dev / pip-installed apworld checkout) first, then next-to-this-file
-# (zipped apworld). We try both because install_apworld.py copies the
-# patch alongside this module at zip-build time but a dev source checkout
-# leaves it at the repo-root path only.
+# Where the patch file lives at runtime. The patch is bundled into the
+# package itself (install_apworld.py packs it via rglob, so it lands at
+# ``apworld/dread/_setup/exlaunch-ryujinx-fix.diff`` inside the zip),
+# AND we keep a repo-root copy at ``scripts/patches/`` for dev checkouts
+# that consume the source directly. Resolution order matters:
+#
+#   1. ``importlib.resources`` on this package — works whether the apworld
+#      is loaded from disk (folder install) OR from a ``.apworld`` zip.
+#      ``git apply`` needs a real filesystem path, so for the zip case we
+#      materialize the patch to a temp file via ``importlib.resources.
+#      as_file`` (the canonical way to bridge a zip-loaded resource into
+#      a tool that demands a real path).
+#   2. Repo-root ``scripts/patches/exlaunch-ryujinx-fix.diff`` walk-up —
+#      covers dev checkouts where the package directory itself was
+#      stripped down or the patch was removed from _setup/ to avoid the
+#      duplication.
 _SETUP_ROOT = Path(__file__).resolve().parent
+_PATCH_FILENAME = "exlaunch-ryujinx-fix.diff"
 
 
-def _locate_patch_file() -> Path | None:
-    """Return the path to exlaunch-ryujinx-fix.diff if we can find one,
-    else None. Tries (in order):
-      1. Next to this module (apworld zip case)
-      2. Walking up the dir tree looking for scripts/patches/ (dev checkout)
+@contextlib.contextmanager
+def _locate_patch_file():
+    """Yield a real-filesystem ``Path`` to ``exlaunch-ryujinx-fix.diff``,
+    or ``None`` if neither the package resource nor the repo-root fallback
+    can be found.
+
+    Context manager because the importlib.resources zip-extract path
+    needs scoped cleanup of its temp file; the disk-resident cases just
+    yield the existing path and tear down cheaply on exit.
     """
-    next_to = _SETUP_ROOT / "exlaunch-ryujinx-fix.diff"
-    if next_to.is_file():
-        return next_to
+    try:
+        resource = importlib.resources.files(__package__).joinpath(_PATCH_FILENAME)
+        if resource.is_file():
+            with importlib.resources.as_file(resource) as p:
+                yield p
+                return
+    except (ModuleNotFoundError, FileNotFoundError, OSError):
+        pass
     cur = _SETUP_ROOT
     for _ in range(8):  # _setup → apworld/dread → apworld → repo-root → …
-        cand = cur / "scripts" / "patches" / "exlaunch-ryujinx-fix.diff"
+        cand = cur / "scripts" / "patches" / _PATCH_FILENAME
         if cand.is_file():
-            return cand
+            yield cand
+            return
         parent = cur.parent
         if parent == cur:
-            return None
+            break
         cur = parent
-    return None
+    yield None
 
 
 # Pinned upstream commit. Chosen by the dread_ap maintainers — bump
@@ -299,16 +323,6 @@ def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
             on_line(f"[patch] {msg}")
         return BuildResult(ok=True, returncode=0, log=msg, detail=msg)
 
-    patch = _locate_patch_file()
-    if patch is None:
-        msg = (
-            "exlaunch-ryujinx-fix.diff not found. Expected next to "
-            f"{_SETUP_ROOT} or under scripts/patches/ in the repo root."
-        )
-        if on_line:
-            on_line(msg)
-        return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
-
     git = shutil.which("git")
     if git is None:
         msg = "git not found on PATH"
@@ -316,16 +330,30 @@ def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
             on_line(msg)
         return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
 
-    if on_line:
-        on_line(f"[patch] applying {patch.name}")
-    # --ignore-whitespace tolerates the line-ending normalization noise
-    # that vendored-repo checkouts on Windows accumulate.
-    r = _stream_subprocess(
-        [git, "apply", "--ignore-whitespace", str(patch)],
-        cwd=checkout,
-        timeout=_TIMEOUTS["git_apply"],
-        on_line=on_line,
-    )
+    with _locate_patch_file() as patch:
+        if patch is None:
+            msg = (
+                f"{_PATCH_FILENAME} not found in the apworld package "
+                "(importlib.resources lookup) and no repo-root "
+                "scripts/patches/ fallback. Rebuild the apworld with "
+                "install_apworld.py so the patch is packed alongside "
+                "_setup/."
+            )
+            if on_line:
+                on_line(msg)
+            return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
+
+        if on_line:
+            on_line(f"[patch] applying {patch.name}")
+        # --ignore-whitespace tolerates the line-ending normalization noise
+        # that vendored-repo checkouts on Windows accumulate.
+        r = _stream_subprocess(
+            [git, "apply", "--ignore-whitespace", str(patch)],
+            cwd=checkout,
+            timeout=_TIMEOUTS["git_apply"],
+            on_line=on_line,
+        )
+
     if not r.ok:
         return BuildResult(
             ok=False, returncode=r.returncode, log=r.log,
