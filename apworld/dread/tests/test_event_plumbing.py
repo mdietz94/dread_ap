@@ -45,6 +45,9 @@ class State:
     def has(self, name: str, _player: int, count: int = 1) -> bool:
         return self.inventory.get(name, 0) >= count
 
+    def count(self, name: str, _player: int) -> int:
+        return self.inventory.get(name, 0)
+
 
 # ---- structural invariants ----
 

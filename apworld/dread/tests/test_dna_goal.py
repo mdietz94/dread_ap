@@ -38,6 +38,9 @@ class State:
     def has(self, name, _player, count=1):
         return self.inventory.get(name, 0) >= count
 
+    def count(self, name, _player):
+        return self.inventory.get(name, 0)
+
 
 def test_twelve_dna_items_exist(items):
     names = {it["name"] for it in items}
