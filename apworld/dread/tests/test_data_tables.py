@@ -30,15 +30,15 @@ def regions():
 # ---- counts ----
 
 def test_location_count_matches_table_sum(locations):
-    """149 game pickups (137 actor + 12 boss/EMMI/cutscene) plus one
-    synthetic event location per compiled event (post-M2). Pickup count
-    is locked by the Randovania starter preset; event count tracks the
-    compiler's output (~184 events at M2 ship)."""
+    """149 game pickups: 137 actor + 12 boss/EMMI/cutscene/corex. Events are
+    inlined into the per-pickup rules and are NOT AP locations (Option A); a
+    leftover event-typed location is a regression."""
     pickup = [l for l in locations if l["pickup_type"] != "event"]
-    event = [l for l in locations if l["pickup_type"] == "event"]
+    leaked_events = [l for l in locations if l["pickup_type"] == "event"]
     assert len(pickup) == 149, f"expected 149 game pickups, got {len(pickup)}"
-    assert event, "expected at least one event location (M2)"
-    assert len(locations) == len(pickup) + len(event)
+    assert not leaked_events, \
+        f"event locations leaked into the table: {[l['name'] for l in leaked_events[:5]]}"
+    assert len(locations) == len(pickup)
 
 
 def test_region_count_is_8(regions):
@@ -92,13 +92,8 @@ def test_item_and_location_id_ranges_disjoint(items, locations):
 
 def test_every_item_has_patcher_id_and_quantity(items):
     """Game items must have a patcher_item_id that maps to a runtime
-    ITEM_* identifier; event items (synthetic, M2) carry no game data
-    so their patcher_item_id is intentionally empty."""
+    ITEM_* identifier. DNA items map to ITEM_RANDO_ARTIFACT_k."""
     for it in items:
-        if it["name"].startswith("Event: "):
-            assert it["patcher_item_id"] == "", f"event item must have empty patcher_item_id: {it}"
-            assert it["classification"] == "progression", f"event item must be progression: {it}"
-            continue
         assert it["patcher_item_id"], f"missing patcher_item_id: {it}"
         assert it["patcher_item_id"].startswith("ITEM_"), f"bad shape: {it}"
         assert isinstance(it["quantity"], int)
@@ -107,18 +102,17 @@ def test_every_item_has_patcher_id_and_quantity(items):
 
 def test_every_item_has_pool_count(items):
     """pool_count drives the default number of copies World.create_items puts
-    in the pool (option-overridable for tank types). Events are special-cased
-    in create_items (skipped), so pool_count=0 is correct for them. DNA items
-    are added explicitly by RequiredArtifacts, so pool_count is also 0. Every
-    other (game) item is a unique progression item (Morph Ball, beams, suits,
-    etc.) and must have pool_count >= 1 so the loop adds at least one copy."""
+    in the pool (option-overridable for tank types). DNA items are added
+    explicitly by RequiredArtifacts, so pool_count=0 is correct for them.
+    Every other item must have pool_count >= 1 so the loop adds at least
+    one copy."""
     for it in items:
         assert "pool_count" in it, f"missing pool_count: {it}"
         assert isinstance(it["pool_count"], int)
         assert it["pool_count"] >= 0, f"negative pool_count: {it}"
-        if it["name"].startswith("Event: ") or it["name"].startswith("Metroid DNA"):
+        if it["name"].startswith("Metroid DNA"):
             continue
-        assert it["pool_count"] >= 1, f"non-event/DNA item with pool_count=0: {it}"
+        assert it["pool_count"] >= 1, f"non-DNA item with pool_count=0: {it}"
 
 
 def test_every_item_has_valid_classification(items):
@@ -128,14 +122,11 @@ def test_every_item_has_valid_classification(items):
 
 
 def test_every_location_has_scenario_and_actor(locations):
-    """Game pickup locations need scenario+actor for the patcher to
-    place a real pickup; synthetic event locations don't (they're
-    locked at generation time, never written to RomFS)."""
+    """Every AP location is a real game pickup the patcher writes to RomFS,
+    so it needs scenario+actor. Events were inlined into rules and are no
+    longer AP locations."""
     pickup_types = {"actor", "emmi", "corex", "corpius", "cutscene"}
     for l in locations:
-        if l["pickup_type"] == "event":
-            assert l["actor"] == "", f"event location must have empty actor: {l}"
-            continue
         assert l["scenario"], f"missing scenario: {l}"
         assert l["actor"], f"missing actor: {l}"
         assert l["pickup_type"] in pickup_types, f"bad type: {l}"

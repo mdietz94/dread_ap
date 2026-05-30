@@ -95,8 +95,6 @@ def test_unique_progression_items_have_pool_count_one(items):
         "Flash Shift Upgrade", "Speed Booster Upgrade",
     }
     for it in items:
-        if it["name"].startswith("Event: "):
-            continue
         if it["name"].startswith("Metroid DNA"):
             continue
         if it["name"] in multi_copy:

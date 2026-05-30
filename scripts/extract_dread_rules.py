@@ -1343,17 +1343,6 @@ def main(argv: list[str] | None = None) -> int:
     ap_loc_by_key, ap_region_scenario = load_ap_locations()
     ap_items = json.loads((DATA_DIR / "items.json").read_text())
     ap_locations = json.loads((DATA_DIR / "locations.json").read_text())
-    # The event ID base must stay anchored to the BASE-item max so re-running
-    # the compiler never renumbers events out from under existing seeds. Exclude
-    # both the event items this script previously appended (else each re-run
-    # shifts the base by len(events)) and the "Metroid DNA" goal item appended
-    # after events. The result is stable across repeated bakes.
-    existing_item_max = max(
-        it["ap_id"] for it in ap_items
-        if not it["name"].startswith("Event: ")
-        and not it["name"].startswith("Metroid DNA")
-    )
-    existing_loc_max = max(l["ap_id"] for l in ap_locations)
 
     # AP location maps: actor pickups by (region, actor); non-actor
     # (boss/EMMI/cutscene/corex) by pickup_index.
@@ -1388,22 +1377,18 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ---- Build the events list ------------------------------------------------
-    # event_region_by_name covers every event NODE (stable across bakes), so the
-    # sorted order — and thus the append-only IDs — match items.json. Item-only
-    # event rules (IMPOSSIBLE if an event was never reached) gate the (now
-    # vestigial) event locations; nothing in the pickup rules references them.
+    # Events are inlined into the per-pickup rules and the victory_condition,
+    # so they are not AP items / locations. The events array is retained as a
+    # diagnostic / test surface — it documents which events the forward
+    # resolver inlined and at what item-only cost — but carries no AP IDs.
     event_names = sorted(event_region_by_name.keys())
-    event_item_base = existing_item_max + 1
-    event_loc_base = existing_loc_max + 1
 
     events_out: list[dict] = []
-    for i, ename in enumerate(event_names):
+    for ename in event_names:
         events_out.append({
             "name": ename,
             "region": event_region_by_name.get(ename, ""),
             "rule": event_rule_by_name.get(ename, IMPOSSIBLE),
-            "item_ap_id": event_item_base + i,
-            "location_ap_id": event_loc_base + i,
         })
 
     # ---- Per-region E-Tank floor + no-suit damage_threshold strip -------------

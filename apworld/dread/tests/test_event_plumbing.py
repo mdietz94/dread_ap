@@ -66,57 +66,42 @@ def test_every_event_has_name_region_and_rule(compiled):
             f"event missing or malformed rule: {ev}"
 
 
-def test_event_ap_ids_disjoint_from_existing_ranges(compiled, items, locations):
-    """Append-only AP IDs: event item IDs must not collide with the
-    existing pickup item IDs, event location IDs likewise. This pins
-    the M2 promise that adding events doesn't shift existing seeds."""
-    item_ids = {it["ap_id"] for it in items
-                if not it["name"].startswith("Event: ")}
-    loc_ids = {l["ap_id"] for l in locations
-               if l.get("pickup_type") != "event"}
-    event_item_ids = {ev["item_ap_id"] for ev in compiled["events"]}
-    event_loc_ids = {ev["location_ap_id"] for ev in compiled["events"]}
-    assert event_item_ids.isdisjoint(item_ids), \
-        "event item IDs collide with pickup item IDs"
-    assert event_loc_ids.isdisjoint(loc_ids), \
-        "event location IDs collide with pickup location IDs"
-    assert event_item_ids.isdisjoint(event_loc_ids), \
-        "event item IDs collide with event location IDs"
-
-
-def test_event_ap_ids_unique(compiled):
-    item_ids = [ev["item_ap_id"] for ev in compiled["events"]]
-    loc_ids = [ev["location_ap_id"] for ev in compiled["events"]]
-    assert len(item_ids) == len(set(item_ids)), "duplicate event item IDs"
-    assert len(loc_ids) == len(set(loc_ids)), "duplicate event location IDs"
-
-
 def test_events_sorted_by_name(compiled):
-    """Sorted ordering is a stability invariant: appending or renaming
-    an event shouldn't reshuffle the AP IDs of unrelated events."""
+    """Sorted ordering is a stability invariant for the diagnostic events
+    list (so re-bakes produce byte-stable artifacts)."""
     names = [ev["name"] for ev in compiled["events"]]
-    assert names == sorted(names), \
-        "events list is not sorted by name (breaks AP ID stability)"
+    assert names == sorted(names), "events list is not sorted by name"
 
 
-def test_every_event_has_a_pool_item(compiled, items):
-    """Each compiled event must have a matching item entry in
-    items.json — World.create_items relies on the name lookup."""
-    item_names = {it["name"] for it in items}
-    missing = [
-        f"Event: {ev['name']}" for ev in compiled["events"]
-        if f"Event: {ev['name']}" not in item_names
-    ]
-    assert not missing, f"events without item entries: {missing[:5]}"
+def test_events_are_not_ap_items(compiled, items):
+    """Events are inlined into the per-pickup rules; they are NOT AP items.
+    A leftover `Event: ...` item entry would mean events leak into the pool
+    (the pre-Option-A bug: events placed as locked items at locked locations
+    that AP's fill couldn't reach, breaking accessibility checks)."""
+    leaked = [it["name"] for it in items if it["name"].startswith("Event: ")]
+    assert not leaked, f"event items leaked into items.json: {leaked[:5]}"
 
 
-def test_every_event_has_a_pool_location(compiled, locations):
-    loc_names = {l["name"] for l in locations}
-    missing = [
-        f"Event: {ev['name']}" for ev in compiled["events"]
-        if f"Event: {ev['name']}" not in loc_names
-    ]
-    assert not missing, f"events without location entries: {missing[:5]}"
+def test_events_are_not_ap_locations(compiled, locations):
+    """Events are inlined into the per-pickup rules; they are NOT AP
+    locations. Anything with name `Event: ...` or pickup_type=event is a
+    regression — see test_events_are_not_ap_items for the failure mode."""
+    by_name = [l["name"] for l in locations if l["name"].startswith("Event: ")]
+    by_type = [l["name"] for l in locations if l.get("pickup_type") == "event"]
+    assert not by_name, f"event locations leaked into locations.json: {by_name[:5]}"
+    assert not by_type, f"locations tagged pickup_type=event: {by_type[:5]}"
+
+
+def test_events_carry_no_ap_ids(compiled):
+    """The compiled events list documents what the forward resolver inlined.
+    Event entries used to carry item_ap_id / location_ap_id used by the
+    removed scripts/append_event_data.py — they are dead bookkeeping now
+    and must not return (else they invite re-introducing the leak)."""
+    for ev in compiled["events"]:
+        assert "item_ap_id" not in ev, \
+            f"event {ev['name']!r} carries stale item_ap_id"
+        assert "location_ap_id" not in ev, \
+            f"event {ev['name']!r} carries stale location_ap_id"
 
 
 # ---- victory condition ----

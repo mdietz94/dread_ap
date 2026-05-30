@@ -919,9 +919,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21554,
-      "location_ap_id": 31671
+      }
     },
     {
       "name": "ArtariaEmmiMagnetDoorLock",
@@ -1240,9 +1238,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21555,
-      "location_ap_id": 31672
+      }
     },
     {
       "name": "ArtariaEmmiMagnetPlatformLowered",
@@ -1561,9 +1557,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21556,
-      "location_ap_id": 31673
+      }
     },
     {
       "name": "ArtariaEmmiSingleUseSlide",
@@ -1892,9 +1886,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21557,
-      "location_ap_id": 31674
+      }
     },
     {
       "name": "ArtariaEmmiSpinnerPulled",
@@ -2318,9 +2310,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21558,
-      "location_ap_id": 31675
+      }
     },
     {
       "name": "ArtariaEmmiSpinnerRotated",
@@ -2694,9 +2684,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21559,
-      "location_ap_id": 31676
+      }
     },
     {
       "name": "ArtariaEmmiSpinnerRotatedAgain",
@@ -3120,9 +3108,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21560,
-      "location_ap_id": 31677
+      }
     },
     {
       "name": "ArtariaEmmiWideBeamBlock",
@@ -3441,9 +3427,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21561,
-      "location_ap_id": 31678
+      }
     },
     {
       "name": "ArtariaMapSpeed",
@@ -3722,9 +3706,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21562,
-      "location_ap_id": 31679
+      }
     },
     {
       "name": "ArtariaProtoCU",
@@ -3763,9 +3745,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21563,
-      "location_ap_id": 31680
+      }
     },
     {
       "name": "ArtariaSARotatable",
@@ -5494,9 +5474,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21564,
-      "location_ap_id": 31681
+      }
     },
     {
       "name": "BureniaDaironSpeedBlocks",
@@ -6672,9 +6650,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21565,
-      "location_ap_id": 31682
+      }
     },
     {
       "name": "BureniaDestroyGravitySuitFloor",
@@ -8505,9 +8481,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21566,
-      "location_ap_id": 31683
+      }
     },
     {
       "name": "BureniaEPart",
@@ -9626,9 +9600,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21567,
-      "location_ap_id": 31684
+      }
     },
     {
       "name": "BureniaEarlyGravSpeedBlocks",
@@ -10512,9 +10484,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21568,
-      "location_ap_id": 31685
+      }
     },
     {
       "name": "BureniaGhavoranTeleportEnky",
@@ -11633,9 +11603,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21569,
-      "location_ap_id": 31686
+      }
     },
     {
       "name": "BureniaGravitySuitRoomStoreSpeed",
@@ -14755,9 +14723,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21570,
-      "location_ap_id": 31687
+      }
     },
     {
       "name": "BureniaGreenSpeedBlocks",
@@ -15641,9 +15607,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21571,
-      "location_ap_id": 31688
+      }
     },
     {
       "name": "BureniaHubMagnetPlatform",
@@ -17354,9 +17318,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21572,
-      "location_ap_id": 31689
+      }
     },
     {
       "name": "BureniaPrepareSpeedSave",
@@ -18709,9 +18671,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21573,
-      "location_ap_id": 31690
+      }
     },
     {
       "name": "BureniaRobots",
@@ -20000,9 +19960,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21574,
-      "location_ap_id": 31691
+      }
     },
     {
       "name": "BureniaStormMissileGateEtank",
@@ -21974,9 +21932,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21575,
-      "location_ap_id": 31692
+      }
     },
     {
       "name": "BureniaStormMissileGateTeleport",
@@ -24859,9 +24815,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21576,
-      "location_ap_id": 31693
+      }
     },
     {
       "name": "CatarisCU",
@@ -25475,9 +25429,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21577,
-      "location_ap_id": 31694
+      }
     },
     {
       "name": "CatarisHeatedWideBeamBlock",
@@ -25791,9 +25743,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21578,
-      "location_ap_id": 31695
+      }
     },
     {
       "name": "CatarisLedgeWarpSetupOutsideDiffusionRoom",
@@ -26617,9 +26567,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21579,
-      "location_ap_id": 31696
+      }
     },
     {
       "name": "CatarisLowerPowerBombTankCeiling",
@@ -27569,9 +27517,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21580,
-      "location_ap_id": 31697
+      }
     },
     {
       "name": "CatarisMoveMagnetWallsButton",
@@ -29580,9 +29526,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21581,
-      "location_ap_id": 31698
+      }
     },
     {
       "name": "CatarisThermalLowerLava",
@@ -30116,9 +30060,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21582,
-      "location_ap_id": 31699
+      }
     },
     {
       "name": "CatarisThermalMagnetPlatformLowered",
@@ -30597,9 +30539,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21583,
-      "location_ap_id": 31700
+      }
     },
     {
       "name": "CatarisTransportDaironWideBeamBlock",
@@ -31293,9 +31233,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21584,
-      "location_ap_id": 31701
+      }
     },
     {
       "name": "CatarisUnderlavaSpeedBlocks",
@@ -32012,9 +31950,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21585,
-      "location_ap_id": 31702
+      }
     },
     {
       "name": "ChainReactionEnd",
@@ -32343,9 +32279,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21586,
-      "location_ap_id": 31703
+      }
     },
     {
       "name": "Corpius",
@@ -33609,9 +33543,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21587,
-      "location_ap_id": 31704
+      }
     },
     {
       "name": "DaironCU",
@@ -35587,9 +35519,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21588,
-      "location_ap_id": 31705
+      }
     },
     {
       "name": "DaironFereniaTransportSpeedBlocks",
@@ -36395,9 +36325,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21589,
-      "location_ap_id": 31706
+      }
     },
     {
       "name": "DaironFreezerSpeedBlocks",
@@ -37218,9 +37146,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21590,
-      "location_ap_id": 31707
+      }
     },
     {
       "name": "DaironGrappleBlockElevatorFerenia",
@@ -38056,9 +37982,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21591,
-      "location_ap_id": 31708
+      }
     },
     {
       "name": "DaironStormMissileGate",
@@ -39534,9 +39458,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21592,
-      "location_ap_id": 31709
+      }
     },
     {
       "name": "DaironStormSpeedBlocks",
@@ -40492,9 +40414,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21593,
-      "location_ap_id": 31710
+      }
     },
     {
       "name": "DaironTeleportToArtariaSpeedBlocksDestroyed",
@@ -41038,9 +40958,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21594,
-      "location_ap_id": 31711
+      }
     },
     {
       "name": "DaironWideBeamBlockCataris",
@@ -41916,9 +41834,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21595,
-      "location_ap_id": 31712
+      }
     },
     {
       "name": "DaironWideBeamBlockFerenia",
@@ -43011,9 +42927,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21596,
-      "location_ap_id": 31713
+      }
     },
     {
       "name": "DaironWideBeamBlockHub",
@@ -44284,9 +44198,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21597,
-      "location_ap_id": 31714
+      }
     },
     {
       "name": "DaironWideBeamBlockSave",
@@ -45557,9 +45469,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21598,
-      "location_ap_id": 31715
+      }
     },
     {
       "name": "DaironYellowSpeedBlocks",
@@ -46920,9 +46830,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21599,
-      "location_ap_id": 31716
+      }
     },
     {
       "name": "Drogyga",
@@ -49471,9 +49379,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21600,
-      "location_ap_id": 31717
+      }
     },
     {
       "name": "ElunReleaseX",
@@ -51233,9 +51139,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21601,
-      "location_ap_id": 31718
+      }
     },
     {
       "name": "ElunSoldier",
@@ -52834,9 +52738,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21602,
-      "location_ap_id": 31719
+      }
     },
     {
       "name": "Escue",
@@ -54009,9 +53911,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21603,
-      "location_ap_id": 31720
+      }
     },
     {
       "name": "FereniaCU",
@@ -55942,9 +55842,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21604,
-      "location_ap_id": 31721
+      }
     },
     {
       "name": "FereniaRobots",
@@ -57917,9 +57815,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21605,
-      "location_ap_id": 31722
+      }
     },
     {
       "name": "FereniaStormMissileGateCold",
@@ -59499,9 +59395,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21606,
-      "location_ap_id": 31723
+      }
     },
     {
       "name": "FereniaStormMissileGateRobotFight",
@@ -61743,9 +61637,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21607,
-      "location_ap_id": 31724
+      }
     },
     {
       "name": "FereniaStormMissileGateSJ",
@@ -64190,9 +64082,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21608,
-      "location_ap_id": 31725
+      }
     },
     {
       "name": "FereniaStormMissileGateTutorial",
@@ -66125,9 +66015,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21609,
-      "location_ap_id": 31726
+      }
     },
     {
       "name": "GhavoraSupersMagnetPlatformLowered",
@@ -68287,9 +68175,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21610,
-      "location_ap_id": 31727
+      }
     },
     {
       "name": "GhavoranAmmoRechargeEnkyAbove",
@@ -69188,9 +69074,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21611,
-      "location_ap_id": 31728
+      }
     },
     {
       "name": "GhavoranAmmoRechargeEnkyBelow",
@@ -70089,9 +69973,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21612,
-      "location_ap_id": 31729
+      }
     },
     {
       "name": "GhavoranBureniaTransportGrappleBox",
@@ -71330,9 +71212,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21613,
-      "location_ap_id": 31730
+      }
     },
     {
       "name": "GhavoranCU",
@@ -72066,9 +71946,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21614,
-      "location_ap_id": 31731
+      }
     },
     {
       "name": "GhavoranChozoX",
@@ -73887,9 +73765,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21615,
-      "location_ap_id": 31732
+      }
     },
     {
       "name": "GhavoranChozoXTrigger",
@@ -75383,9 +75259,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21616,
-      "location_ap_id": 31733
+      }
     },
     {
       "name": "GhavoranEyedoor",
@@ -75774,9 +75648,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21617,
-      "location_ap_id": 31734
+      }
     },
     {
       "name": "GhavoranFereniaTransportEnkyLeft",
@@ -76255,9 +76127,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21618,
-      "location_ap_id": 31735
+      }
     },
     {
       "name": "GhavoranFereniaTransportEnkyRight",
@@ -78342,9 +78212,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21619,
-      "location_ap_id": 31736
+      }
     },
     {
       "name": "GhavoranFereniaTransportGrappleBox",
@@ -78858,9 +78726,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21620,
-      "location_ap_id": 31737
+      }
     },
     {
       "name": "GhavoranPulseRadarEnky",
@@ -79339,9 +79205,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21621,
-      "location_ap_id": 31738
+      }
     },
     {
       "name": "GhavoranRobotFight",
@@ -80560,9 +80424,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21622,
-      "location_ap_id": 31739
+      }
     },
     {
       "name": "GhavoranStormMissileGate",
@@ -81231,9 +81093,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21623,
-      "location_ap_id": 31740
+      }
     },
     {
       "name": "GhavoranSuperRotatableEnky",
@@ -82132,9 +81992,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21624,
-      "location_ap_id": 31741
+      }
     },
     {
       "name": "GhavoranSupersAreaAccess",
@@ -84205,9 +84063,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21625,
-      "location_ap_id": 31742
+      }
     },
     {
       "name": "GhavoranSupersRotatable",
@@ -86357,9 +86213,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21626,
-      "location_ap_id": 31743
+      }
     },
     {
       "name": "GoldChozoFight",
@@ -87278,9 +87132,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21627,
-      "location_ap_id": 31744
+      }
     },
     {
       "name": "Golzuna",
@@ -88329,9 +88181,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21628,
-      "location_ap_id": 31745
+      }
     },
     {
       "name": "HanubiaEMMISpeed",
@@ -88660,9 +88510,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21629,
-      "location_ap_id": 31746
+      }
     },
     {
       "name": "HanubiaRedChozo",
@@ -90431,9 +90279,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21630,
-      "location_ap_id": 31747
+      }
     },
     {
       "name": "Kraid",
@@ -90882,9 +90728,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21631,
-      "location_ap_id": 31748
+      }
     },
     {
       "name": "Quiet Robe",
@@ -91965,9 +91809,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21632,
-      "location_ap_id": 31749
+      }
     },
     {
       "name": "Ship",
@@ -92476,9 +92318,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21633,
-      "location_ap_id": 31750
+      }
     },
     {
       "name": "s010_cave:default:PRP_CV_PlatformCaveWater_B",
@@ -92757,9 +92597,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21634,
-      "location_ap_id": 31751
+      }
     },
     {
       "name": "s010_cave:default:PRP_CV_ThermalDevice",
@@ -93088,9 +92926,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21635,
-      "location_ap_id": 31752
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_000",
@@ -93784,9 +93620,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21636,
-      "location_ap_id": 31753
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_002",
@@ -94115,9 +93949,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21637,
-      "location_ap_id": 31754
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_003",
@@ -94446,9 +94278,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21638,
-      "location_ap_id": 31755
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_006",
@@ -94467,9 +94297,7 @@
             "amount": 1
           }
         ]
-      },
-      "item_ap_id": 21639,
-      "location_ap_id": 31756
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_007",
@@ -95208,9 +95036,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21640,
-      "location_ap_id": 31757
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_008",
@@ -95799,9 +95625,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21641,
-      "location_ap_id": 31758
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_010",
@@ -96095,9 +95919,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21642,
-      "location_ap_id": 31759
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_014",
@@ -96176,9 +95998,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21643,
-      "location_ap_id": 31760
+      }
     },
     {
       "name": "s010_cave:default:PRP_DB_CV_020",
@@ -97442,9 +97262,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21644,
-      "location_ap_id": 31761
+      }
     },
     {
       "name": "s010_cave:default:breakablecave017",
@@ -97773,9 +97591,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21645,
-      "location_ap_id": 31762
+      }
     },
     {
       "name": "s010_cave:default:breakablecave019",
@@ -98504,9 +98320,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21646,
-      "location_ap_id": 31763
+      }
     },
     {
       "name": "s010_cave:default:db_dif_cv_002",
@@ -98825,9 +98639,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21647,
-      "location_ap_id": 31764
+      }
     },
     {
       "name": "s010_cave:default:db_reg_cv_021",
@@ -99566,9 +99378,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21648,
-      "location_ap_id": 31765
+      }
     },
     {
       "name": "s010_cave:default:db_reg_cv_022",
@@ -100627,9 +100437,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21649,
-      "location_ap_id": 31766
+      }
     },
     {
       "name": "s010_cave:default:db_reg_cv_023",
@@ -101258,9 +101066,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21650,
-      "location_ap_id": 31767
+      }
     },
     {
       "name": "s010_cave:default:ev_chainreaction_deviceheat",
@@ -101589,9 +101395,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21651,
-      "location_ap_id": 31768
+      }
     },
     {
       "name": "s010_cave:default:grapplepulloff1x2_001",
@@ -102380,9 +102184,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21652,
-      "location_ap_id": 31769
+      }
     },
     {
       "name": "s010_cave:default:grapplepulloff1x2_002",
@@ -102756,9 +102558,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21653,
-      "location_ap_id": 31770
+      }
     },
     {
       "name": "s020_magma:default:breakablemag001",
@@ -103497,9 +103297,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21654,
-      "location_ap_id": 31771
+      }
     },
     {
       "name": "s020_magma:default:breakablemag002",
@@ -105538,9 +105336,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21655,
-      "location_ap_id": 31772
+      }
     },
     {
       "name": "s020_magma:default:breakablemag003",
@@ -106399,9 +106195,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21656,
-      "location_ap_id": 31773
+      }
     },
     {
       "name": "s020_magma:default:breakablemag004",
@@ -108100,9 +107894,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21657,
-      "location_ap_id": 31774
+      }
     },
     {
       "name": "s020_magma:default:breakablemag005",
@@ -108486,9 +108278,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21658,
-      "location_ap_id": 31775
+      }
     },
     {
       "name": "s020_magma:default:breakablemag007",
@@ -109102,9 +108892,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21659,
-      "location_ap_id": 31776
+      }
     },
     {
       "name": "s020_magma:default:breakablemag008",
@@ -110913,9 +110701,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21660,
-      "location_ap_id": 31777
+      }
     },
     {
       "name": "s020_magma:default:breakablemag009",
@@ -112474,9 +112260,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21661,
-      "location_ap_id": 31778
+      }
     },
     {
       "name": "s020_magma:default:breakablemag010",
@@ -112795,9 +112579,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21662,
-      "location_ap_id": 31779
+      }
     },
     {
       "name": "s020_magma:default:breakablemag012",
@@ -114398,9 +114180,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21663,
-      "location_ap_id": 31780
+      }
     },
     {
       "name": "s020_magma:default:breakablemag013",
@@ -115094,9 +114874,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21664,
-      "location_ap_id": 31781
+      }
     },
     {
       "name": "s020_magma:default:breakablemag014",
@@ -115725,9 +115503,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21665,
-      "location_ap_id": 31782
+      }
     },
     {
       "name": "s020_magma:default:db_dif_mg_001",
@@ -116776,9 +116552,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21666,
-      "location_ap_id": 31783
+      }
     },
     {
       "name": "s020_magma:default:db_dif_mg_002",
@@ -117737,9 +117511,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21667,
-      "location_ap_id": 31784
+      }
     },
     {
       "name": "s020_magma:default:db_dside_mg_002",
@@ -118118,9 +117890,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21668,
-      "location_ap_id": 31785
+      }
     },
     {
       "name": "s020_magma:default:db_dside_mg_003",
@@ -118404,9 +118174,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21669,
-      "location_ap_id": 31786
+      }
     },
     {
       "name": "s020_magma:default:db_dside_mg_004",
@@ -118635,9 +118403,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21670,
-      "location_ap_id": 31787
+      }
     },
     {
       "name": "s020_magma:default:db_hdoor_mg_001",
@@ -118926,9 +118692,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21671,
-      "location_ap_id": 31788
+      }
     },
     {
       "name": "s020_magma:default:db_hdoor_mg_002",
@@ -119362,9 +119126,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21672,
-      "location_ap_id": 31789
+      }
     },
     {
       "name": "s020_magma:default:db_reg_mg_017",
@@ -119643,9 +119405,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21673,
-      "location_ap_id": 31790
+      }
     },
     {
       "name": "s020_magma:default:db_reg_mg_019",
@@ -119964,9 +119724,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21674,
-      "location_ap_id": 31791
+      }
     },
     {
       "name": "s020_magma:default:db_reg_mg_020",
@@ -120285,9 +120043,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21675,
-      "location_ap_id": 31792
+      }
     },
     {
       "name": "s020_magma:default:db_reg_mg_021",
@@ -121336,9 +121092,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21676,
-      "location_ap_id": 31793
+      }
     },
     {
       "name": "s020_magma:default:deviceheat",
@@ -122077,9 +121831,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21677,
-      "location_ap_id": 31794
+      }
     },
     {
       "name": "s020_magma:default:deviceheat_001",
@@ -122513,9 +122265,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21678,
-      "location_ap_id": 31795
+      }
     },
     {
       "name": "s020_magma:default:deviceheat_002",
@@ -123094,9 +122844,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21679,
-      "location_ap_id": 31796
+      }
     },
     {
       "name": "s020_magma:default:deviceheat_camerafar_000",
@@ -123585,9 +123333,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21680,
-      "location_ap_id": 31797
+      }
     },
     {
       "name": "s020_magma:default:grapplepulloff1x2",
@@ -124851,9 +124597,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21681,
-      "location_ap_id": 31798
+      }
     },
     {
       "name": "s020_magma:default:grapplepulloff1x2_000",
@@ -126032,9 +125776,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21682,
-      "location_ap_id": 31799
+      }
     },
     {
       "name": "s020_magma:default:grapplepulloff1x2_001",
@@ -126398,9 +126140,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21683,
-      "location_ap_id": 31800
+      }
     },
     {
       "name": "s030_baselab:default:db_dif_b1_001",
@@ -127978,9 +127718,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21684,
-      "location_ap_id": 31801
+      }
     },
     {
       "name": "s030_baselab:default:db_dif_b1_002",
@@ -129808,9 +129546,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21685,
-      "location_ap_id": 31802
+      }
     },
     {
       "name": "s030_baselab:default:db_hdoor_b1_001",
@@ -131454,9 +131190,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21686,
-      "location_ap_id": 31803
+      }
     },
     {
       "name": "s030_baselab:default:db_reg_b1_001",
@@ -133615,9 +133349,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21687,
-      "location_ap_id": 31804
+      }
     },
     {
       "name": "s030_baselab:default:db_reg_b1_002",
@@ -136507,9 +136239,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21688,
-      "location_ap_id": 31805
+      }
     },
     {
       "name": "s030_baselab:default:db_reg_b1_003",
@@ -138215,9 +137945,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21689,
-      "location_ap_id": 31806
+      }
     },
     {
       "name": "s030_baselab:default:db_reg_b1_005",
@@ -139673,9 +139401,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21690,
-      "location_ap_id": 31807
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2",
@@ -141021,9 +140747,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21691,
-      "location_ap_id": 31808
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_000",
@@ -142377,9 +142101,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21692,
-      "location_ap_id": 31809
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_001",
@@ -143923,9 +143645,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21693,
-      "location_ap_id": 31810
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_002",
@@ -145271,9 +144991,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21694,
-      "location_ap_id": 31811
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_003",
@@ -147056,9 +146774,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21695,
-      "location_ap_id": 31812
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_005",
@@ -148404,9 +148120,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21696,
-      "location_ap_id": 31813
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_006",
@@ -148767,9 +148481,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21697,
-      "location_ap_id": 31814
+      }
     },
     {
       "name": "s030_baselab:default:grapplepulloff1x2_007",
@@ -150180,9 +149892,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21698,
-      "location_ap_id": 31815
+      }
     },
     {
       "name": "s030_baselab:default:powergenerator_001",
@@ -151638,9 +151348,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21699,
-      "location_ap_id": 31816
+      }
     },
     {
       "name": "s030_baselab:default:powergenerator_002",
@@ -153346,9 +153054,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21700,
-      "location_ap_id": 31817
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_001",
@@ -154970,9 +154676,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21701,
-      "location_ap_id": 31818
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_002",
@@ -158395,9 +158099,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21702,
-      "location_ap_id": 31819
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_003",
@@ -161986,9 +161688,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21703,
-      "location_ap_id": 31820
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_004",
@@ -164233,9 +163933,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21704,
-      "location_ap_id": 31821
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_005",
@@ -165749,9 +165447,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21705,
-      "location_ap_id": 31822
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_007",
@@ -168680,9 +168376,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21706,
-      "location_ap_id": 31823
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_008",
@@ -171191,9 +170885,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21707,
-      "location_ap_id": 31824
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_009",
@@ -173226,9 +172918,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21708,
-      "location_ap_id": 31825
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_011",
@@ -175737,9 +175427,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21709,
-      "location_ap_id": 31826
+      }
     },
     {
       "name": "s040_aqua:default:db_reg_aq_012",
@@ -178830,9 +178518,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21710,
-      "location_ap_id": 31827
+      }
     },
     {
       "name": "s040_aqua:default:ev_demolition_db_001",
@@ -180779,9 +180465,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21711,
-      "location_ap_id": 31828
+      }
     },
     {
       "name": "s040_aqua:default:ev_demolition_db_002",
@@ -182733,9 +182417,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21712,
-      "location_ap_id": 31829
+      }
     },
     {
       "name": "s040_aqua:default:ev_demolition_db_003",
@@ -184516,9 +184198,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21713,
-      "location_ap_id": 31830
+      }
     },
     {
       "name": "s040_aqua:default:grapplepulloff1x2_000",
@@ -185879,9 +185559,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21714,
-      "location_ap_id": 31831
+      }
     },
     {
       "name": "s040_aqua:default:grapplepulloff1x2_001",
@@ -187510,9 +187188,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21715,
-      "location_ap_id": 31832
+      }
     },
     {
       "name": "s040_aqua:default:grapplepulloff1x2_003",
@@ -189402,9 +189078,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21716,
-      "location_ap_id": 31833
+      }
     },
     {
       "name": "s040_aqua:default:grapplepulloff1x2_004",
@@ -191033,9 +190707,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21717,
-      "location_ap_id": 31834
+      }
     },
     {
       "name": "s040_aqua:default:grapplepulloff1x2_005",
@@ -193168,9 +192840,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21718,
-      "location_ap_id": 31835
+      }
     },
     {
       "name": "s040_aqua:default:grapplepulloff1x2_006",
@@ -194944,9 +194614,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21719,
-      "location_ap_id": 31836
+      }
     },
     {
       "name": "s050_forest:default:grapplepulloff1x2_000",
@@ -195905,9 +195573,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21720,
-      "location_ap_id": 31837
+      }
     },
     {
       "name": "s050_forest:default:grapplepulloff1x2_002",
@@ -198284,9 +197950,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21721,
-      "location_ap_id": 31838
+      }
     },
     {
       "name": "s060_quarantine:default:db_reg_qt_001",
@@ -200046,9 +199710,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21722,
-      "location_ap_id": 31839
+      }
     },
     {
       "name": "s060_quarantine:default:grapplepulloff1x2_000",
@@ -201808,9 +201470,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21723,
-      "location_ap_id": 31840
+      }
     },
     {
       "name": "s070_basesanc:default:db_reg_b2_001",
@@ -204429,9 +204089,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21724,
-      "location_ap_id": 31841
+      }
     },
     {
       "name": "s070_basesanc:default:db_reg_b2_003",
@@ -205312,9 +204970,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21725,
-      "location_ap_id": 31842
+      }
     },
     {
       "name": "s070_basesanc:default:db_reg_b2_004",
@@ -207041,9 +206697,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21726,
-      "location_ap_id": 31843
+      }
     },
     {
       "name": "s070_basesanc:default:db_reg_b2_005",
@@ -208947,9 +208601,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21727,
-      "location_ap_id": 31844
+      }
     },
     {
       "name": "s070_basesanc:default:db_reg_b2_006",
@@ -210213,9 +209865,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21728,
-      "location_ap_id": 31845
+      }
     },
     {
       "name": "s070_basesanc:default:grapplepulloff1x2_000",
@@ -211965,9 +211615,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21729,
-      "location_ap_id": 31846
+      }
     },
     {
       "name": "s070_basesanc:default:grapplepulloff1x2_002",
@@ -212947,9 +212595,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21730,
-      "location_ap_id": 31847
+      }
     },
     {
       "name": "s070_basesanc:default:grapplepulloff1x2_003",
@@ -214622,9 +214268,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21731,
-      "location_ap_id": 31848
+      }
     },
     {
       "name": "s080_shipyard:default:block_pbtube",
@@ -215038,9 +214682,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21732,
-      "location_ap_id": 31849
+      }
     },
     {
       "name": "s080_shipyard:default:block_pbtube_2",
@@ -217049,9 +216691,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21733,
-      "location_ap_id": 31850
+      }
     },
     {
       "name": "s080_shipyard:default:grapplepulloff1x2",
@@ -217405,9 +217045,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21734,
-      "location_ap_id": 31851
+      }
     },
     {
       "name": "s080_shipyard:default:grapplepulloff1x2_000",
@@ -219622,9 +219260,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21735,
-      "location_ap_id": 31852
+      }
     },
     {
       "name": "s080_shipyard:default:grapplepulloff1x2_001",
@@ -220053,9 +219689,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21736,
-      "location_ap_id": 31853
+      }
     },
     {
       "name": "s090_skybase:default:block_pbcolumn_000",
@@ -220974,9 +220608,7 @@
             ]
           }
         ]
-      },
-      "item_ap_id": 21737,
-      "location_ap_id": 31854
+      }
     }
   ],
   "rules": {
