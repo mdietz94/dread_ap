@@ -44,6 +44,16 @@ jobs:
           # Python and validate the patcher-pipeline conversion logic.
           python -m pytest scripts/tests/ -q
 
+      # The compiled_rules*.json artifacts are gitignored (each 150-240k
+      # lines, derived from Randovania's published logic JSON), so a fresh
+      # checkout has nothing on disk. install_apworld.py regenerates them
+      # during the build — but only if the Randovania logic cache exists;
+      # without it _ensure_compiled_rules() warns and no-ops, producing an
+      # incomplete zip that the verify step rejects. Populate the cache first
+      # (network fetch of ~7.2 MB from a pinned upstream commit).
+      - name: Fetch Randovania logic cache
+        run: python scripts/cache_randovania_logic.py
+
       - name: Build apworld zip
         run: |
           mkdir -p dist
