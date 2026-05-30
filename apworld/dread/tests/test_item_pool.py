@@ -289,6 +289,44 @@ def test_default_pool_has_randovania_counts():
 
 
 @pytestmark_runtime
+def test_missile_tank_copies_all_useful():
+    """Missile Tank is in BASE_STARTING_ITEMS (precollected), so the row
+    classification is "useful" — every findable copy is useful (no logic
+    role, since the atom is satisfied from turn 0 by the precollected copy)."""
+    from BaseClasses import ItemClassification
+    world, mw = _build_world()
+    world.create_items()
+    mt = [it for it in mw.itempool if it.name == "Missile Tank"]
+    assert all(it.classification == ItemClassification.useful for it in mt), (
+        "Missile Tank: not all copies are useful: "
+        f"{[(it.classification.name) for it in mt[:5]]}..."
+    )
+
+
+@pytestmark_runtime
+def test_missile_plus_tank_first_is_progression_rest_useful():
+    """Missile+ Tank has 336 amount=1 logic refs but is NOT precollected — the
+    FIRST copy is logic-gating, the rest are pure ammo. MIXED_CLASSIFICATION_
+    FIRST_N["Missile+ Tank"]=1 enforces that split."""
+    from BaseClasses import ItemClassification
+    world, mw = _build_world()
+    world.create_items()
+    mpt = [it for it in mw.itempool if it.name == "Missile+ Tank"]
+    progression_n = sum(
+        1 for it in mpt if it.classification == ItemClassification.progression
+    )
+    useful_n = sum(
+        1 for it in mpt if it.classification == ItemClassification.useful
+    )
+    assert progression_n == 1, (
+        f"Missile+ Tank: expected exactly 1 progression copy, got {progression_n}"
+    )
+    assert useful_n == len(mpt) - 1, (
+        f"Missile+ Tank: expected {len(mpt) - 1} useful copies, got {useful_n}"
+    )
+
+
+@pytestmark_runtime
 def test_energy_tank_count_drives_pool():
     world, mw = _build_world(energy_tank_count=4)
     world.create_items()

@@ -32,11 +32,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from BaseClasses import Item, Region, Tutorial
+from BaseClasses import Item, ItemClassification, Region, Tutorial
 from worlds.AutoWorld import World, WebWorld
 
 from .Items import (
-    DreadItem, DreadItemData, item_table, item_name_to_id,
+    CLASSIFICATION_MAP, DreadItem, DreadItemData, item_table, item_name_to_id,
     item_name_to_item, get_item_classification,
 )
 from .Locations import (
@@ -79,10 +79,13 @@ class DreadWorld(World):
 
     required_client_version = (0, 5, 0)
 
-    def create_item(self, name: str) -> Item:
+    def create_item(self, name: str,
+                    classification: ItemClassification | None = None) -> Item:
+        if classification is None:
+            classification = get_item_classification(name)
         return DreadItem(
             name,
-            get_item_classification(name),
+            classification,
             item_name_to_id[name],
             self.player,
         )
@@ -124,6 +127,20 @@ class DreadWorld(World):
             "Power Bomb Tank": int(o.power_bomb_tank_count.value),
         }
 
+        # For items where compiled rules need amount=1 but the pool has many
+        # copies, only the FIRST N copies get the row's classification — the
+        # rest fall back to "useful" (logic-irrelevant but still placed in
+        # reachable spots where possible). Missile+ Tank: 336 rule refs all
+        # amount=1, NOT precollected, so the first copy is logic-gating and
+        # the other 11 are pure ammo capacity.
+        # (Missile Tank doesn't need an entry here — Missile Tank is in
+        # BASE_STARTING_ITEMS / precollected, which satisfies its 3634
+        # amount=1 atoms from turn 0, so its row classification is already
+        # "useful" for every findable copy.)
+        MIXED_CLASSIFICATION_FIRST_N = {
+            "Missile+ Tank": 1,
+        }
+
         non_event_locations = sum(
             1 for l in location_table if l.pickup_type != "event"
         )
@@ -148,8 +165,17 @@ class DreadWorld(World):
             if it.name in pool_excluded:
                 continue
             count = pool_overrides.get(it.name, it.pool_count)
-            for _ in range(count):
-                pool.append(self.create_item(it.name))
+            default_cls = CLASSIFICATION_MAP.get(
+                it.classification, ItemClassification.filler,
+            )
+            # If this item has a "first N progression" override, the rest of
+            # the copies fall back to useful (e.g. Missile+ Tank). For items
+            # without an override, n_special == count → every copy uses the
+            # row's classification (the legacy behavior).
+            n_special = MIXED_CLASSIFICATION_FIRST_N.get(it.name, count)
+            for i in range(count):
+                cls = default_cls if i < n_special else ItemClassification.useful
+                pool.append(self.create_item(it.name, classification=cls))
 
         # Metroid DNA: exactly the first N (mapping to artifacts 1..N).
         n_dna = int(o.required_artifacts.value)

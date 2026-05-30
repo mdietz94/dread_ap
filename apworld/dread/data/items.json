@@ -221,7 +221,7 @@
     "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
     "quantity": 2,
     "pool_count": 60,
-    "classification": "progression_skip_balancing"
+    "classification": "useful"
   },
   {
     "name": "Power Bomb Tank",

@@ -27,13 +27,14 @@ class DreadItem(Item):
     game = "Metroid Dread"
 
 
-_CLASSIFICATION_MAP = {
+CLASSIFICATION_MAP = {
     "progression": ItemClassification.progression,
     "progression_skip_balancing": ItemClassification.progression_skip_balancing,
     "useful": ItemClassification.useful,
     "filler": ItemClassification.filler,
     "trap": ItemClassification.trap,
 }
+_CLASSIFICATION_MAP = CLASSIFICATION_MAP  # legacy alias
 
 
 def _load() -> list[DreadItemData]:

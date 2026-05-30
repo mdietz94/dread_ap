@@ -95,15 +95,28 @@ ITEM_TABLE: list[tuple[str, str, int, int, str]] = [
     ("Space Jump",          "ITEM_SPACE_JUMP",          1, 1, "progression"),
     ("Screw Attack",        "ITEM_SCREW_ATTACK",        1, 1, "progression"),
     ("Slide",               "ITEM_FLOOR_SLIDE",         1, 1, "progression"),
-    # Capacity / utility items. M2 retro fix kept Energy Tank as "useful" and
-    # promoted Missile+ Tank / Flash Shift Upgrade / Speed Booster Upgrade to
-    # progression (logic-required under accessibility: items). Missile Tank
-    # is progression_skip_balancing (logic-required, but kept out of balance).
+    # Capacity / utility items. Classification is informed by what compiled
+    # rules ACTUALLY reference (verified by walking compiled_rules.json):
+    #   - Energy Tank, Energy Part, Power Bomb Tank: 0 logic references.
+    #     Rules only check the main Power Bomb item; tanks are pure QoL.
+    #   - Missile Tank: 3634 refs, all amount=1. BUT Missile Tank is in
+    #     BASE_STARTING_ITEMS (precollected), so the atom is satisfied from
+    #     turn 0 — all 60 findable copies add zero logic value, hence useful.
+    #   - Missile+ Tank: 336 refs, all amount=1, NOT precollected. The FIRST
+    #     copy is logic-gating; the remaining 11 are pure ammo capacity. The
+    #     mixed classification is handled in World.create_items via
+    #     MIXED_CLASSIFICATION_FIRST_N (this row is "progression" — the World
+    #     uses that for the first copy, useful for the rest).
+    #   - Flash Shift Upgrade / Speed Booster Upgrade: rules want amount=2 but
+    #     we only have 1 in pool (pre-existing logic-data quirk; pickups don't
+    #     exist in the vanilla starter preset, AP places them ex nihilo). Left
+    #     as progression — gen succeeds because the amount=2 atoms live in
+    #     disjuncts with other paths.
     ("Energy Tank",         "ITEM_ENERGY_TANKS",        1, 8, "useful"),
     ("Missile+ Tank",       "ITEM_WEAPON_MISSILE_MAX",  10, 12, "progression"),
     ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 1, 1, "progression"),
     ("Speed Booster Upgrade","ITEM_UPGRADE_SPEED_BOOST_CHARGE", 1, 1, "progression"),
-    ("Missile Tank",        "ITEM_WEAPON_MISSILE_MAX",  2, 60, "progression_skip_balancing"),
+    ("Missile Tank",        "ITEM_WEAPON_MISSILE_MAX",  2, 60, "useful"),
     # Each Power Bomb Tank pickup grants +1 PB capacity (vanilla).
     ("Power Bomb Tank",     "ITEM_WEAPON_POWER_BOMB_MAX", 1, 13, "filler"),
     ("Energy Part",         "ITEM_LIFE_SHARDS",         1, 16, "filler"),

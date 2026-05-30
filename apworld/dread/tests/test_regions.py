@@ -91,12 +91,24 @@ def test_pickup_rules_carry_real_item_gating(compiled):
 
 
 def test_logic_required_items_are_progression(compiled):
-    """Every item the rules / victory reference MUST be collected by AP's logic
-    sweep — i.e. classified progression(_skip_balancing). A logic item left as
-    'filler'/'useful' (the Missile Tank bug) makes its gated locations
-    unreachable and breaks accessibility=items/full."""
+    """Every item the rules / victory reference MUST be reachable to AP's logic
+    sweep. Two ways to satisfy this:
+      (a) The item is classified progression(_skip_balancing) — AP's sweep
+          finds it via the normal progression search.
+      (b) The item is PRECOLLECTED (BASE_STARTING_ITEMS), so its atom is
+          satisfied from turn 0 regardless of the findable copies'
+          classification. Missile Tank is the canonical example — it has
+          3634 logic refs but is in BASE_STARTING_ITEMS, so all 60 findable
+          copies can be 'useful' without breaking logic.
+    A logic-required item that is NEITHER progression NOR precollected makes
+    its gated locations unreachable and breaks accessibility=items/full (the
+    original Missile Tank bug)."""
     cls = {i["name"]: i["classification"]
            for i in json.loads((DATA / "items.json").read_text())}
+    # Precollected items — must mirror World.BASE_STARTING_ITEMS + EXTRA_
+    # STARTING_ITEMS. Duplicated here so the test stays import-clean (the
+    # World module needs the AP runtime, which isn't installed in CI).
+    precollected = {"Slide", "Pulse Radar", "Missile Tank", "Charge Beam"}
     refs: set = set()
 
     def walk(a):
@@ -107,9 +119,12 @@ def test_logic_required_items_are_progression(compiled):
     for r in compiled["rules"].values():
         walk(r)
     walk(compiled["victory_condition"])
-    bad = [n for n in sorted(refs)
-           if cls.get(n) not in ("progression", "progression_skip_balancing")]
-    assert not bad, f"logic-required items not progression: {bad}"
+    bad = [
+        n for n in sorted(refs)
+        if cls.get(n) not in ("progression", "progression_skip_balancing")
+        and n not in precollected
+    ]
+    assert not bad, f"logic-required items not progression and not precollected: {bad}"
 
 
 def test_all_regions_reachable_with_full_inventory(compiled):
