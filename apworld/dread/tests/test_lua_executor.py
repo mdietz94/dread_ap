@@ -65,6 +65,11 @@ class FakeSwitch:
         self._server: asyncio.base_events.Server | None = None
         self.port: int = 0
         self._req_num: int = 0
+        # Track active connections so stop() can close them — asyncio's
+        # Server.close() only stops accepting new conns; it leaves existing
+        # ones alive, which makes "simulate mid-session drop" tests hang
+        # until the client's READ_TIMEOUT (15s).
+        self._writers: list[asyncio.StreamWriter] = []
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(self._handle, host="127.0.0.1", port=0)
@@ -72,9 +77,18 @@ class FakeSwitch:
         self.port = sock.getsockname()[1]
 
     async def stop(self) -> None:
+        # Close any active client writers first — kicks each client's
+        # next readexactly into IncompleteReadError immediately.
+        for w in list(self._writers):
+            try:
+                w.close()
+            except OSError:
+                pass
+        self._writers.clear()
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
+            self._server = None
 
     def _bump(self) -> int:
         n = self._req_num
@@ -82,6 +96,7 @@ class FakeSwitch:
         return n
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._writers.append(writer)
         try:
             # --- Handshake request: [0x01][interest_byte] ---
             handshake = await reader.readexactly(2)
@@ -312,5 +327,80 @@ async def test_unknown_packet_type_raises():
         # Give it a beat to log + tear down.
         await asyncio.sleep(0.1)
         await exec_.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.asyncio
+async def test_on_disconnect_fires_when_socket_drops():
+    """The bug this guards: when the Switch closes the TCP socket mid-
+    session (Ryujinx-side drop after a stall), the executor's read loop
+    exits but the owning context never learned. The supervisor stayed
+    asleep at max-backoff with a dead ``executor`` reference and the
+    poll loop spammed ``Switch poll failed`` forever — users had to
+    manually ``/dread_connect`` to recover.
+
+    Fixed by ``on_disconnect``: the read loop's exception branch fires
+    it exactly once before unwinding, so the context can drop its
+    executor reference and wake the supervisor for an immediate redial.
+    """
+    fake = FakeSwitch()
+    await fake.start()
+
+    disconnect_calls: list[float] = []
+
+    async def on_disconnect() -> None:
+        disconnect_calls.append(asyncio.get_running_loop().time())
+
+    try:
+        exec_ = le.DreadExecutor(
+            host="127.0.0.1", port=fake.port, on_disconnect=on_disconnect,
+        )
+        await exec_.connect()
+        # Slam the server side closed mid-session. The read loop's
+        # next readexactly() raises IncompleteReadError → on_disconnect.
+        await fake.stop()
+        # Give the read loop a moment to notice EOF + run the callback.
+        for _ in range(20):
+            await asyncio.sleep(0.05)
+            if disconnect_calls:
+                break
+        assert len(disconnect_calls) == 1, (
+            f"expected on_disconnect to fire once after socket close, "
+            f"got {len(disconnect_calls)} call(s)"
+        )
+        # Latch guarantees no second fire even if both loops trip.
+        await asyncio.sleep(0.1)
+        assert len(disconnect_calls) == 1
+        await exec_.close()
+    finally:
+        # fake already stopped above; idempotent in case of early exit
+        await fake.stop()
+
+
+@pytest.mark.asyncio
+async def test_on_disconnect_does_not_fire_on_normal_close():
+    """A user-initiated ``close()`` must not look like a disconnect —
+    that path cancels the read loop with CancelledError, which is a
+    legitimate shutdown signal, not a socket drop. Firing on_disconnect
+    here would race the supervisor's own teardown and re-spawn a redial
+    we don't want.
+    """
+    fake = FakeSwitch()
+    await fake.start()
+
+    disconnect_calls: list[int] = []
+
+    async def on_disconnect() -> None:
+        disconnect_calls.append(1)
+
+    try:
+        exec_ = le.DreadExecutor(
+            host="127.0.0.1", port=fake.port, on_disconnect=on_disconnect,
+        )
+        await exec_.connect()
+        await exec_.close()  # the path under test
+        await asyncio.sleep(0.1)
+        assert disconnect_calls == []
     finally:
         await fake.stop()

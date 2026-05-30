@@ -70,6 +70,7 @@ class ApiInfo:
 
 
 PushHandler = Callable[[lp.PacketType, lp.Response], Awaitable[None]]
+DisconnectHandler = Callable[[], Awaitable[None]]
 
 
 @dataclass
@@ -77,6 +78,13 @@ class DreadExecutor:
     host: str
     port: int = DEFAULT_PORT
     on_push: Optional[PushHandler] = None
+    # Fired exactly once when the read loop exits because the underlying
+    # socket died mid-session (not on a normal close()-initiated
+    # cancellation). The owning context wires this to clear its
+    # `executor` reference and poke the supervisor so the next redial
+    # happens immediately instead of waiting out the 30s max-backoff
+    # sleep — see DreadContext._on_switch_disconnect.
+    on_disconnect: Optional[DisconnectHandler] = None
 
     _reader: Optional[asyncio.StreamReader] = field(default=None, init=False)
     _writer: Optional[asyncio.StreamWriter] = field(default=None, init=False)
@@ -84,6 +92,10 @@ class DreadExecutor:
     _pending_reply: Optional[asyncio.Future[lp.Response]] = field(default=None, init=False)
     _read_task: Optional[asyncio.Task[None]] = field(default=None, init=False)
     _keep_alive_task: Optional[asyncio.Task[None]] = field(default=None, init=False)
+    # Latched True once on_disconnect has fired; prevents the keep-alive
+    # loop from re-firing it after the read loop already did (a normal
+    # mid-session drop trips both loops in quick succession).
+    _disconnect_signaled: bool = field(default=False, init=False)
     api: Optional[ApiInfo] = field(default=None, init=False)
 
     async def connect(self) -> ApiInfo:
@@ -220,6 +232,22 @@ class DreadExecutor:
             f"unexpected packet type from Switch: {ptype.name} (0x{ptype.value:02x})"
         )
 
+    async def _signal_disconnect(self) -> None:
+        """Fire ``on_disconnect`` at most once per executor lifetime.
+
+        Called from both the read and keep-alive loops because either can
+        be the first to detect a dropped socket. The ``_disconnect_signaled``
+        latch makes the second call a no-op so the owning context doesn't
+        get double-notified.
+        """
+        if self._disconnect_signaled or self.on_disconnect is None:
+            return
+        self._disconnect_signaled = True
+        try:
+            await self.on_disconnect()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("on_disconnect handler raised: %s", exc)
+
     async def _read_loop(self) -> None:
         try:
             while True:
@@ -250,6 +278,9 @@ class DreadExecutor:
             pending = self._pending_reply
             if pending is not None and not pending.done():
                 pending.set_exception(exc)
+            # Notify the owning context so its supervisor redials NOW
+            # instead of sleeping at max-backoff with a dead socket.
+            await self._signal_disconnect()
 
     async def _keep_alive_loop(self) -> None:
         try:
@@ -266,3 +297,6 @@ class DreadExecutor:
             raise
         except (ConnectionError, asyncio.TimeoutError) as exc:
             logger.warning("keep-alive loop exiting: %s", exc)
+            # Belt-and-suspenders: if keep-alive notices the drop first
+            # (read loop was idle waiting for a push), still signal.
+            await self._signal_disconnect()

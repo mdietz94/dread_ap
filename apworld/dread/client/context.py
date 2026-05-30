@@ -379,6 +379,7 @@ class DreadContext(CommonContext):
             host=self.switch_host,
             port=self.switch_port,
             on_push=self._on_switch_push,
+            on_disconnect=self._on_switch_disconnect,
         )
         try:
             self._bootstrapped = False
@@ -443,6 +444,43 @@ class DreadContext(CommonContext):
         ``reconnect_switch``, which calls this so a manual retry never has to
         wait out the current backoff sleep."""
         self._redial_event.set()
+
+    async def _on_switch_disconnect(self) -> None:
+        """Fired by ``DreadExecutor`` when its read loop (or keep-alive
+        loop) exits because the socket died mid-session.
+
+        The supervisor's "is the wire up?" gate is ``self.executor is
+        None`` — without this callback the dead executor object stays
+        set, the supervisor sleeps at ``_SWITCH_BACKOFF_MAX`` (30 s),
+        and ``_poll_loop`` just logs ``Switch poll failed`` over and
+        over with no redial. Users observed that as "had to type
+        /dread_connect to recover" after a Ryujinx-side socket drop;
+        the fix is to drop the executor reference here so the next
+        supervisor tick (woken immediately via ``request_redial``)
+        sees a missing wire and reconnects.
+
+        Reentrancy note: we're called from inside the executor's own
+        read loop coroutine, so we MUST NOT ``await
+        self.executor.close()`` here — close cancels the read task
+        we're running in. We just drop our reference and let the
+        outgoing executor unwind naturally (its writer / keep-alive
+        will fail their next write and exit), then schedule a best-
+        effort close on a separate task so the socket descriptor is
+        released promptly without us awaiting it.
+        """
+        gone = self.executor
+        if gone is None:
+            return
+        log.info("Switch connection lost mid-session; redialing")
+        self.state.set_switch_conn("disconnected")
+        self.executor = None
+        self._bootstrapped = False
+        self.request_redial()
+        # Best-effort socket cleanup off-loop. close() cancels the read
+        # task — which IS the caller of this method — so launching it as
+        # a separate task avoids self-cancellation while still releasing
+        # the writer + keep-alive resources.
+        asyncio.create_task(gone.close(), name="dread-exec-cleanup")
 
     def _remember_switch_target(self) -> None:
         """Persist the current Switch host/port so the next session reuses it."""
