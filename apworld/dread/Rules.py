@@ -21,9 +21,17 @@ Gate B shipped (see ``docs/randovania-logic-port-notes.md``):
     ``region_access`` map (global reach rule per region); Regions.py
     gates Menu→region on it, composing with the per-pickup reach rules.
 
-Approximations still in flight (see the notes doc):
-  * Damage requirements collapse to suit ownership (Lava/Heat → Varia
-    or Gravity; Cold → Gravity; raw → True). No E-Tank counting (v0.3).
+v0.3: ammo + HP-budget damage gating shipped. Two new AST node types:
+  * ``sum`` — ``base + Σ state.count(name, p) · per_unit ≥ threshold``.
+    Used for raw Randovania missile / power-bomb counts (e.g. a shielded
+    door needing 75 missiles).
+  * ``damage_threshold`` — ``any suit_option holds OR
+    99 + 100·count(Energy Tank) + 25·count(Energy Part) ≥ hp_needed``.
+    Replaces the old all-or-nothing suit-OR damage collapse.
+
+The compiler tags artifacts with ``schema_version``; ``load_compiled_rules``
+refuses anything that doesn't match the expected version so a stale bake
+can't silently pass.
 """
 from __future__ import annotations
 
@@ -79,8 +87,30 @@ def compile_to_lambda(ast: dict, player: int) -> Predicate:
         # in case a hand-edited rule slips through.
         return _const_true if level <= 1 else _const_false
 
-    if t == "damage":
-        return _const_true
+    if t == "sum":
+        terms = tuple((tr["name"], int(tr["per_unit"])) for tr in ast["terms"])
+        base = int(ast["base"])
+        thr = int(ast["threshold"])
+        def _sum_pred(state, _p=player, _terms=terms, _base=base, _thr=thr):
+            total = _base
+            for name, per in _terms:
+                total += state.count(name, _p) * per
+                if total >= _thr:
+                    return True
+            return total >= _thr
+        return _sum_pred
+
+    if t == "damage_threshold":
+        suits = tuple(ast.get("suit_options", []))
+        hp = int(ast["hp_needed"])
+        def _dthr_pred(state, _p=player, _suits=suits, _hp=hp):
+            for s in _suits:
+                if state.has(s, _p):
+                    return True
+            budget = 99 + 100 * state.count("Energy Tank", _p) \
+                        + 25 * state.count("Energy Part", _p)
+            return budget >= _hp
+        return _dthr_pred
 
     if t == "and":
         children = [compile_to_lambda(c, player) for c in ast["items"]]
@@ -111,6 +141,12 @@ _TRICK_LEVEL_FILE = {
     3: "compiled_rules_l3.json",
 }
 
+# Must match scripts/extract_dread_rules.py::SCHEMA_VERSION. A mismatch means
+# the on-disk artifact predates a vocabulary change (e.g. v1 had `damage`
+# nodes, v2 has `sum` + `damage_threshold`) and would silently route through
+# stale collapses. Fail closed and prompt for a regen.
+EXPECTED_SCHEMA_VERSION = 2
+
 
 def load_compiled_rules(trick_level: int = 1) -> dict[str, Any]:
     """Load the pre-baked rule set for the given trick level.
@@ -118,14 +154,27 @@ def load_compiled_rules(trick_level: int = 1) -> dict[str, Any]:
     Unknown level → canonical L1. A missing ``_lN`` file falls back to the
     canonical ``compiled_rules.json`` so a dev box that only baked L1 still
     works; a missing canonical file raises FileNotFoundError, preserving the
-    "everything reachable" fallback that set_rules / create_regions honor."""
+    "everything reachable" fallback that set_rules / create_regions honor.
+
+    Raises ``RuntimeError`` if the artifact's ``schema_version`` does not
+    match ``EXPECTED_SCHEMA_VERSION`` — regenerate with
+    ``python scripts/extract_dread_rules.py --trick-level {1,2,3}``."""
     name = _TRICK_LEVEL_FILE.get(int(trick_level), "compiled_rules.json")
     try:
-        return load_json(name)
+        compiled = load_json(name)
     except FileNotFoundError:
         if name != "compiled_rules.json":
-            return load_json("compiled_rules.json")
+            return load_compiled_rules(1)
         raise
+    version = compiled.get("schema_version")
+    if version != EXPECTED_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"compiled_rules.json schema_version={version!r} but loader "
+            f"expects {EXPECTED_SCHEMA_VERSION}. Regenerate with "
+            f"`python scripts/extract_dread_rules.py --trick-level "
+            f"{{1,2,3}}`."
+        )
+    return compiled
 
 
 def set_rules(world) -> None:

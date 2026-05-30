@@ -40,6 +40,11 @@ class StubState:
             f"compile_to_lambda passed wrong player {player}"
         return self.inventory.get(name, 0) >= count
 
+    def count(self, name: str, player: int) -> int:
+        assert player == self.expected_player, \
+            f"compile_to_lambda passed wrong player {player}"
+        return self.inventory.get(name, 0)
+
 
 # ---- primitive nodes ----
 
@@ -203,3 +208,138 @@ def test_compiled_elun_energy_tank_rule_is_item_gated():
         "Storm Missile", "Ice Missile", "Slide", "Pulse Radar",
         "Flash Shift Upgrade", "Speed Booster Upgrade")}
     assert pred(StubState(full)) is True
+
+
+# ---- sum (v0.3 ammo counting) ----
+
+def test_sum_below_threshold_is_false():
+    """15 starting + 2*5=10 = 25 missiles, threshold 30 — fails."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2},
+                     {"name": "Missile+ Tank", "per_unit": 10}],
+           "base": 15, "threshold": 30}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({"Missile Tank": 5})) is False
+
+
+def test_sum_at_threshold_is_true():
+    """15 + 2*7 + 10*0 = 29 missiles below 30; 15 + 2*8 = 31 above. Boundary
+    crossed by adding one tank — exactly the boundary the AP solver gates on."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2},
+                     {"name": "Missile+ Tank", "per_unit": 10}],
+           "base": 15, "threshold": 30}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({"Missile Tank": 7})) is False     # 15 + 14 = 29
+    assert pred(StubState({"Missile Tank": 8})) is True      # 15 + 16 = 31
+
+
+def test_sum_above_threshold_is_true():
+    """Late game: 30 missile tanks + 5 missile+ = 15 + 60 + 50 = 125."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2},
+                     {"name": "Missile+ Tank", "per_unit": 10}],
+           "base": 15, "threshold": 75}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({"Missile Tank": 30, "Missile+ Tank": 5})) is True
+
+
+def test_sum_mixed_terms():
+    """Missile+ Tanks pay 5x — mix them in and the threshold falls fast."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2},
+                     {"name": "Missile+ Tank", "per_unit": 10}],
+           "base": 15, "threshold": 75}
+    pred = compile_to_lambda(ast, player=1)
+    # 15 + 2*0 + 10*6 = 75 — exactly threshold
+    assert pred(StubState({"Missile+ Tank": 6})) is True
+    # 15 + 2*0 + 10*5 = 65 — below
+    assert pred(StubState({"Missile+ Tank": 5})) is False
+    # 15 + 2*30 + 10*0 = 75 — exactly threshold via base term
+    assert pred(StubState({"Missile Tank": 30})) is True
+
+
+def test_sum_base_alone_satisfies():
+    """A threshold ≤ base never needs collecting — fires immediately. Catches
+    early-exit short-circuit (the loop returns True as soon as total ≥ thr)."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2}],
+           "base": 15, "threshold": 15}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({})) is True
+
+
+def test_sum_power_bomb_shape():
+    """Power bombs start at 0; need the launcher + tanks. The compiler wraps
+    PBAmmo in an AND with the launcher item — this test exercises the inner
+    sum only (launcher AND lives a level up). 0 + 2*3 = 6 PBs covers thr=5."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Power Bomb", "per_unit": 2},
+                     {"name": "Power Bomb Tank", "per_unit": 2}],
+           "base": 0, "threshold": 5}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({})) is False
+    assert pred(StubState({"Power Bomb Tank": 2})) is False   # 4 < 5
+    assert pred(StubState({"Power Bomb": 1, "Power Bomb Tank": 2})) is True  # 6
+
+
+# ---- damage_threshold (v0.3 HP budget) ----
+
+def test_damage_threshold_suit_shortcircuits():
+    """Any listed suit satisfies the predicate regardless of HP — heat/cold
+    rooms are gated by Varia/Gravity in the Randovania database, so a suited
+    player should pass even with zero E-Tanks."""
+    ast = {"type": "damage_threshold",
+           "suit_options": ["Varia Suit", "Gravity Suit"],
+           "hp_needed": 500}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({"Varia Suit": 1})) is True
+    assert pred(StubState({"Gravity Suit": 1})) is True
+    # Both suits = also true.
+    assert pred(StubState({"Varia Suit": 1, "Gravity Suit": 1})) is True
+
+
+def test_damage_threshold_hp_budget_path():
+    """Without suits: 99 base + 100*ETank + 25*EPart must cover hp_needed.
+    Boundary at hp=200: 1 ETank = 99 + 100 = 199 fails; 2 ETank = 299 passes."""
+    ast = {"type": "damage_threshold",
+           "suit_options": ["Varia Suit"],
+           "hp_needed": 200}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({})) is False                       # 99 < 200
+    assert pred(StubState({"Energy Tank": 1})) is False       # 199 < 200
+    assert pred(StubState({"Energy Tank": 2})) is True        # 299 >= 200
+    # Energy Parts mix in at 25 each — 99 + 100 + 25*4 = 199 + 100 = 299; check
+    # the lower-density path that uses Parts to finish.
+    assert pred(StubState({"Energy Tank": 1, "Energy Part": 4})) is True  # 299
+
+
+def test_damage_threshold_empty_suit_options():
+    """Generic Damage requirements emit damage_threshold with empty suits —
+    only the HP budget can satisfy. No suit shortcut."""
+    ast = {"type": "damage_threshold",
+           "suit_options": [],
+           "hp_needed": 150}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({"Varia Suit": 1, "Gravity Suit": 1})) is False  # suits ignored
+    assert pred(StubState({"Energy Tank": 1})) is True        # 199 >= 150
+
+
+def test_damage_threshold_zero_hp_always_true():
+    """Edge case: hp_needed=0 means the rule trivially holds (no damage to
+    survive). Starting HP 99 ≥ 0."""
+    ast = {"type": "damage_threshold",
+           "suit_options": [],
+           "hp_needed": 0}
+    pred = compile_to_lambda(ast, player=1)
+    assert pred(StubState({})) is True
+
+
+def test_damage_threshold_in_real_rules():
+    """Live check: at least one location's compiled rule contains a
+    damage_threshold node — the compiler is actually emitting them."""
+    import json
+    raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
+    text = json.dumps(raw)
+    assert '"damage_threshold"' in text, "no damage_threshold nodes in compiled output"
+    assert '"sum"' in text, "no sum nodes in compiled output"

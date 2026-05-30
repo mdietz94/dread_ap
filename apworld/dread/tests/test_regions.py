@@ -38,6 +38,9 @@ class State:
     def has(self, name, _player, count=1):
         return self.inventory.get(name, 0) >= count
 
+    def count(self, name, _player):
+        return self.inventory.get(name, 0)
+
 
 def test_region_access_present_for_every_region(compiled, region_names):
     ra = compiled["region_access"]
@@ -62,12 +65,20 @@ def test_region_access_is_item_only(compiled):
         walk(rule)
 
 
-def test_region_access_is_a_star(compiled):
+def test_region_access_is_item_gate_or_trivial(compiled):
     """The forward resolver inlines cross-region cost into each per-pickup
-    rule, so region_access is intentionally a plain star (every region Trivial
-    from Menu). The real gating lives in the per-pickup rules below."""
-    assert all(rule == {"type": "trivial"}
-               for rule in compiled["region_access"].values())
+    rule. region_access carries one extra signal on top: per-region E-Tank
+    floors (Hanubia in particular), derived from no-suit generic-Damage
+    thresholds. Most regions stay Trivial; gated ones are a single item-count
+    check on Energy Tank."""
+    for region, rule in compiled["region_access"].items():
+        t = rule.get("type")
+        assert t in ("trivial", "item"), \
+            f"unexpected region_access type {t!r} for {region}"
+        if t == "item":
+            assert rule["name"] == "Energy Tank", \
+                f"{region} gated on {rule['name']!r}, expected Energy Tank"
+            assert rule["amount"] >= 1
 
 
 def test_pickup_rules_carry_real_item_gating(compiled):

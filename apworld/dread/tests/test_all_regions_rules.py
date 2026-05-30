@@ -42,6 +42,9 @@ class State:
     def has(self, name: str, _player: int, count: int = 1) -> bool:
         return self.items.get(name, 0) >= count
 
+    def count(self, name: str, _player: int) -> int:
+        return self.items.get(name, 0)
+
 
 # Late-game state: every progression + useful item the v0.1 pool ships.
 # Post-M2 it also has to include every event item, since events are now
