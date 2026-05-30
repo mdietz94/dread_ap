@@ -22,13 +22,6 @@ The patch file we apply ships next to this module
 (`apworld/dread/_setup/exlaunch-ryujinx-fix.diff`). It's identical to
 `scripts/patches/exlaunch-ryujinx-fix.diff` in the source tree —
 `install_apworld.py` will sync it at apworld-zip time.
-
-A handful of imports here are vestigial smo-baseline functions the
-lifted wizard.py still references (`run_cmake_configure`, `run_cmake_build`,
-`run_extract_maps`, `run_sync_capture_table`, `maps_ready`,
-`verify_map_hashes`, `bundled_switch_mod`). They raise NotImplementedError
-with a clear "this is smo-only — wizard.py surgery removes the call site"
-message. Drop them once wizard.py is rewritten for the dread page flow.
 """
 
 from __future__ import annotations
@@ -36,12 +29,11 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import appdata_root, build_dir
+from . import build_dir
 from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under
 
 # Suppress per-child console window under the AP Launcher (no parent console
@@ -435,67 +427,6 @@ def build_ready() -> bool:
     """True when both build outputs are present on disk. Used by the
     deploy page to gate the Deploy button."""
     return len(collect_build_outputs()) == 2
-
-
-# ---------------------------------------------------------------------------
-# Vestigial smo-only exports — wizard.py surgery removes their call sites
-# ---------------------------------------------------------------------------
-
-def _smo_only(name: str) -> BuildResult:
-    """Stub-result for the smo-only build steps the lifted wizard.py still
-    imports. The dread wizard surgery (Phase 2B follow-up) replaces those
-    pages with our flow; until then, calling one returns a "we don't do
-    this on dread" failure that the wizard can render."""
-    msg = (f"{name} is a smo-baseline build step that doesn't apply to "
-           f"dread. The dread wizard surgery removes the call site.")
-    return BuildResult(ok=False, returncode=2, log=msg, detail=msg)
-
-
-def bundled_switch_mod() -> Path:
-    """Stub — smo's CMake source tree. Dread has no equivalent (we git-
-    clone upstream exlaunch instead). The wizard.py BuildPage references
-    this; the Phase 2B page surgery removes the reference."""
-    raise NotImplementedError(
-        "bundled_switch_mod is smo-only; dread builds from a git checkout "
-        "(see ensure_exlaunch_checkout)."
-    )
-
-
-def maps_ready() -> bool:
-    """Stub — smo's shine-map / capture-map readiness probe. Dread has no
-    such maps; always returns True so the wizard's gate doesn't fail."""
-    return True
-
-
-def run_cmake_configure(*args, on_line: ProgressFn | None = None,
-                        **kwargs) -> BuildResult:
-    return _smo_only("run_cmake_configure")
-
-
-def run_cmake_build(on_line: ProgressFn | None = None) -> BuildResult:
-    return _smo_only("run_cmake_build")
-
-
-def run_extract_maps(on_line: ProgressFn | None = None,
-                     **kwargs) -> BuildResult:
-    return _smo_only("run_extract_maps")
-
-
-def run_sync_capture_table(on_line: ProgressFn | None = None) -> BuildResult:
-    return _smo_only("run_sync_capture_table")
-
-
-@dataclass
-class MapHashCheck:
-    name: str
-    ok: bool
-    detail: str = ""
-
-
-def verify_map_hashes() -> list[MapHashCheck]:
-    """Stub — smo verifies extracted-map hashes match the apworld's known-
-    good values. Dread has no extracted maps; returns empty."""
-    return []
 
 
 # ---------------------------------------------------------------------------
