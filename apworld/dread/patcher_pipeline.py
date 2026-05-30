@@ -195,6 +195,25 @@ def _pickup_key(pickup: dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _objective_hints_for(required_artifacts: int) -> list[str]:
+    """Neutral, non-spoiler text for the in-game objective screen, replacing
+    the starter preset's stale per-guardian hints.
+
+    The template hard-codes hints like ``"Metroid DNA 1 is guarded by
+    Corpius"``, baked for Randovania's own DNA placement. Under AP those are
+    simply WRONG whenever DNA is shuffled anywhere, lands on a different random
+    boss subset, or isn't required at all (``required_artifacts: 0``). Faithful
+    regeneration would need a guardian-name map plus Randovania's per-location
+    hint logic — out of scope for v0.1 — so we state only the count and leak
+    nothing. ``{c1}``/``{c0}`` are the game's colour escapes (kept so the line
+    renders like the originals). Always returns exactly one string, matching the
+    template's shape."""
+    n = int(required_artifacts)
+    if n <= 0:
+        return ["Return to your ship to escape ZDR."]
+    return [f"Recover {{c1}}{n} Metroid DNA{{c0}} to complete your mission."]
+
+
 def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
     """Apply the AP override dict on top of a vanilla template.
 
@@ -221,11 +240,16 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
         if field_name in cosmetic_combat:
             _set_in(out, path, cosmetic_combat[field_name])
 
-    # Goal: how many Metroid DNA must be collected. Overwrite only the count,
-    # preserving the template's objective.hints. None ⇒ leave template default.
+    # Goal: how many Metroid DNA must be collected. Overwrite the count AND
+    # replace objective.hints — the template's per-guardian hints are baked for
+    # Randovania's placement and are false under AP shuffling (see
+    # _objective_hints_for). None ⇒ leave the template untouched so offline /
+    # template-passthrough flows stay byte-identical.
     required_artifacts = overrides.get("required_artifacts")
     if required_artifacts is not None:
-        out.setdefault("objective", {})["required_artifacts"] = int(required_artifacts)
+        obj = out.setdefault("objective", {})
+        obj["required_artifacts"] = int(required_artifacts)
+        obj["hints"] = _objective_hints_for(int(required_artifacts))
 
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})

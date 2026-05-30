@@ -167,8 +167,21 @@ def test_objective_required_artifacts_applied():
     t = _template()
     out = merge_overrides(t, {"required_artifacts": 7})
     assert out["objective"]["required_artifacts"] == 7
-    # hints preserved
-    assert out["objective"]["hints"] == ["hint text"]
+    # Stale per-guardian hints are replaced with a neutral, count-accurate,
+    # non-spoiler line (the template's "guarded by Corpius" text is false under
+    # AP placement).
+    assert out["objective"]["hints"] == [
+        "Recover {c1}7 Metroid DNA{c0} to complete your mission."
+    ]
+
+
+def test_objective_zero_artifacts_blanks_dna_hint():
+    t = _template()
+    out = merge_overrides(t, {"required_artifacts": 0})
+    assert out["objective"]["required_artifacts"] == 0
+    # No DNA required ⇒ the hint must not claim any DNA exist.
+    assert out["objective"]["hints"] == ["Return to your ship to escape ZDR."]
+    assert "Metroid DNA" not in out["objective"]["hints"][0]
 
 
 def test_objective_absent_when_not_supplied():

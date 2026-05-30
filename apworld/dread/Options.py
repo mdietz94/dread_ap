@@ -40,6 +40,16 @@ class TrickLevel(Choice):
     default = 1
 
 
+class StartWithPulseRadar(DefaultOnToggle):
+    """Whether Samus starts with Pulse Radar (the hidden-block / breakable
+    reveal ability). ON reproduces the Randovania starter preset. Turning it
+    OFF is fully safe: Pulse Radar gates nothing in the access logic (it has
+    zero rule references), so seeds are equally solvable either way — the only
+    effect is that Pulse Radar becomes a findable pickup you shuffle into the
+    world instead of starting inventory."""
+    display_name = "Start With Pulse Radar"
+
+
 # ---------------------------------------------------------------------------
 # Cosmetic / combat passthrough — these flow straight to the patcher config
 # and have NO effect on access logic. Defaults match the starter preset so a
@@ -213,6 +223,7 @@ class DreadOptions(PerGameCommonOptions):
     starting_area: StartingArea
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
+    start_with_pulse_radar: StartWithPulseRadar
     show_boss_lifebar: ShowBossLifebar
     show_enemy_life: ShowEnemyLife
     show_enemy_damage: ShowEnemyDamage

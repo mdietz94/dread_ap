@@ -1,6 +1,6 @@
 name: Samus
 game: Metroid Dread
-description: Dread-only smoke test — single-slot, accessibility=items. The forward resolver inlines events into item-only rules, the logic-required items are classified progression, and Charge Beam is forced as the one bottleneck starting item, so items/full now generate. Exercises trick level, the DNA goal, and cosmetic options.
+description: Dread-only smoke test — single-slot, accessibility=items. The forward resolver inlines events into item-only rules and the logic-required items are classified progression, so items/full generate with no forced starting items beyond the Randovania starter set. Exercises trick level, the DNA goal, and cosmetic options.
 
 Metroid Dread:
   accessibility: items

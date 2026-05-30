@@ -119,7 +119,9 @@ def test_logic_required_items_are_progression(compiled):
     # Precollected items — must mirror World.BASE_STARTING_ITEMS + EXTRA_
     # STARTING_ITEMS. Duplicated here so the test stays import-clean (the
     # World module needs the AP runtime, which isn't installed in CI).
-    precollected = {"Slide", "Pulse Radar", "Missile Tank", "Charge Beam"}
+    # (EXTRA_STARTING_ITEMS is now empty — Charge Beam is no longer forced; it
+    # satisfies this test via its `progression` classification instead.)
+    precollected = {"Slide", "Pulse Radar", "Missile Tank"}
     refs: set = set()
 
     def walk(a):

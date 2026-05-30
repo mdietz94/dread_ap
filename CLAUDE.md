@@ -210,11 +210,25 @@ logic. Events are therefore NO LONGER AP items/locations (World/Regions/Rules
 skip them; data tables keep them for ID stability). Two more pieces were
 required: a classification fix (Missile Tank was `filler`, Missile+ Tank /
 Flash Shift Upgrade / Speed Booster Upgrade were `useful` — all logic-required,
-now progression(_skip_balancing)), and ONE forced starting item, Charge Beam
-(`World.EXTRA_STARTING_ITEMS`, precollected + in the patcher starting_items),
-the minimal set that clears the fill bottleneck. region_access is a star (cost
+now progression(_skip_balancing)). region_access is a star (cost
 inlined per-rule). Smoke seed is now `accessibility: items`. See the notes retro
 for the full diagnosis.
+
+UPDATE (post-logic-fixes): `World.EXTRA_STARTING_ITEMS` is now EMPTY — Charge
+Beam used to be force-started to clear a fill bottleneck, but once Missile Tank
+became advancement the early reachable set opened up and Charge Beam places as a
+normal findable item (verified 146 generations: solo+multiworld × all trick
+levels × minimal/items/full, 0 fill failures). Also: `objective.hints` in the
+patcher output is now regenerated to a neutral count line — the starter
+template's per-guardian hints ("DNA 1 guarded by Corpius") are false under AP
+placement. Of the precollected starters, only **Slide** (191 rule atoms) and
+**Missile Tank** are real logic gates; **Pulse Radar is logic-INERT** (0 rule
+atoms — Randovania never gates traversal on it, despite the old "EMMI routes
+need it" folklore), so it's now an opt-out `start_with_pulse_radar` option
+(default on): off ⇒ not precollected, dropped from patcher `starting_items`,
+shuffled into the findable pool as `useful`; solvability is identical. The only
+starter baked into compilation is the 15 starting missile capacity (the ammo
+`sum` thresholds assume it).
 
 Wire wiring: Gate A + B shipped. Every Switch→PC frame is now
 demuxed by leading type byte; the wire format documented previously
