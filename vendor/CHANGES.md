@@ -2,11 +2,11 @@
 
 This file tracks our local diffs vs. the upstream sources in `vendor/`.
 
-## Current status (as of project Phase 1)
+## Current status
 
-**No local changes.** Both repos are vendored as shallow clones from their
-default branches. We use them as references and as a build-time pin; we do
-not ship modified copies yet.
+`open-dread-rando-exlaunch/` carries a local patch (see "exlaunch:
+Ryujinx-safe non-blocking socket loop" below). `open-dread-rando/`
+is still clean and reference-only.
 
 ## Subdirectories
 
@@ -37,15 +37,52 @@ Shallow clone of [randovania/open-dread-rando-exlaunch](https://github.com/rando
 The in-game sysmodule (subsdk9 + main.npdm) that opens the Lua-eval socket
 on port 6969.
 
-**Why vendored**: reference only. We do not redistribute this binary; end
-users download the upstream release directly per
-[docs/install-switch.md](../docs/install-switch.md). Our copy is so we can
-read the Lua bootstrap files and the C++ source when debugging wire
-issues, and pin a release tag in our docs.
+**Why vendored**: was reference-only; now a soft fork carrying one local
+patch ("exlaunch: Ryujinx-safe non-blocking socket loop", below). End
+users still download the upstream release for production hardware. The
+local fork only matters if we ship our own .nso build, or for the
+upstream PR.
 
-We expect zero modifications here. If we hit a sysmodule limitation, the
-right path is an upstream PR (or, if blocked, fork and submit upstream
-when ready) — not a private hard fork.
+**Patch — exlaunch: Ryujinx-safe non-blocking socket loop**
+
+Files touched:
+- `open-dread-rando-exlaunch/source/nn/socket.hpp` — add `#include <poll.h>`
+  and an `s32 Poll(pollfd*, ulong, s32)` declaration alongside the other
+  `nn::socket::*` wrappers. The Nintendo SDK function exists but the
+  exlaunch header didn't declare it.
+- `open-dread-rando-exlaunch/source/program/remote_api.cpp` — replace the
+  2 ms busy-sleep loop in `SocketSpawn` with `nn::socket::Poll`, add
+  `POLLHUP`/`POLLERR` handling for instant dead-peer teardown, and replace
+  the blocking `nn::socket::Recv(..., 0)` calls in `ParseClientPacket`
+  with a poll + `MSG_DONTWAIT` helper (`RecvFullNonBlocking`) bounded by a
+  per-call deadline. `SendLogic` switched to `MSG_DONTWAIT` with
+  leave-on-EWOULDBLOCK / partial-erase. `ResetValueAliveTimer` retuned for
+  the new poll cadence (~3 s idle window, down from 10 s — `POLLHUP` is
+  now the primary mechanism, the timer is a backstop). Comment block at
+  the top updated to note that `nn::socket::Poll` works on Ryujinx (the
+  earlier "fcntl doesn't work, MSG_DONTWAIT is the only non-blocking
+  knob" advisory remained accurate but missed `Poll`).
+
+**Why**: upstream's loop is blocking on a half-open Ryujinx socket
+(`Recv(..., 0)` mid-Lua-payload or `Send(..., 0)` to a dead peer parks
+the whole socket subsystem per the Ryujinx limitation documented at the
+top of the upstream file), forcing a 10-second wait for the manual
+keep-alive timer before the sysmodule can re-accept. The patch makes
+every socket op non-blocking and uses `poll()` as the only thing that
+ever sleeps in the kernel. Architecture is otherwise unchanged: single
+thread, manual keep-alive, binary TLV framing.
+
+**Verified-by-precedent**: smo_archipelago's Switch client uses the same
+`nn::socket::Poll` call (`switch-mod/src/ap/ApClient.cpp:209-216`,
+`sockPollReadable`) and that codepath has been validated on Ryujinx +
+real HW. So we know `Poll` works; the Dread upstream just didn't try it.
+
+**Upstream PR plan**: file against
+[randovania/open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch)
+once we've confirmed the patched .nso boots cleanly on Ryujinx and grants
+an item end-to-end. The diff is small enough (~80 lines) to land as one
+PR. Once merged, point this vendor copy at the merged commit and delete
+this section.
 
 ## Updating the vendored copies
 
