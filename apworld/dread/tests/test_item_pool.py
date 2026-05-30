@@ -317,6 +317,33 @@ def test_missile_tank_copies_are_advancement():
 
 
 @pytestmark_runtime
+def test_pulse_radar_default_is_precollected_not_findable():
+    """Default (start_with_pulse_radar on): Pulse Radar is precollected and kept
+    out of the findable pool — mirrors the Randovania starter preset."""
+    world, mw = _build_world()
+    world.create_items()
+    precollected = {it.name for it in mw.precollected_items}
+    in_pool = {it.name for it in mw.itempool}
+    assert "Pulse Radar" in precollected
+    assert "Pulse Radar" not in in_pool
+
+
+@pytestmark_runtime
+def test_pulse_radar_off_is_findable_and_useful():
+    """start_with_pulse_radar off: Pulse Radar is NOT precollected, rejoins the
+    findable pool, and is classified `useful` (it gates nothing — 0 rule atoms —
+    so it must not consume a progression slot). Solvability is unchanged."""
+    from BaseClasses import ItemClassification
+    world, mw = _build_world(start_with_pulse_radar=False)
+    world.create_items()
+    precollected = {it.name for it in mw.precollected_items}
+    radar = [it for it in mw.itempool if it.name == "Pulse Radar"]
+    assert "Pulse Radar" not in precollected
+    assert len(radar) == 1, f"expected 1 findable Pulse Radar, got {len(radar)}"
+    assert radar[0].classification == ItemClassification.useful
+
+
+@pytestmark_runtime
 def test_missile_plus_tank_first_is_progression_rest_useful():
     """Missile+ Tank has 336 amount=1 logic refs but is NOT precollected — the
     FIRST copy is logic-gating, the rest are pure ammo. MIXED_CLASSIFICATION_

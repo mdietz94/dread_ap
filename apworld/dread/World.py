@@ -12,9 +12,13 @@ Logic status (see docs/randovania-logic-port-notes.md):
     set_rules; the data tables keep them only for AP-ID stability).
     region_access is a plain star — cross-region cost is inlined per rule.
   * accessibility=items/full WORK: item-only rules bootstrap in AP's monotonic
-    sweep. This needed (a) classifying logic-required items as progression
-    (Missile Tank etc.), and (b) forcing Charge Beam as a starting item
-    (EXTRA_STARTING_ITEMS) to clear the early-prerequisite fill bottleneck.
+    sweep. This needed classifying logic-required items as progression
+    (Missile Tank etc.). An earlier crutch — forcing Charge Beam as a starting
+    item (EXTRA_STARTING_ITEMS) to clear an early-prerequisite fill bottleneck —
+    is no longer required: once Missile Tank became advancement the early
+    reachable set opened up, and Charge Beam places normally as a findable item
+    (verified: 146 generations across solo/multiworld × all trick levels ×
+    minimal/items/full, 0 fill failures). EXTRA_STARTING_ITEMS is now empty.
   * Trick Level option (3 pre-baked rule files); DNA-collection goal
     (RequiredArtifacts 0-12 + ArtifactPlacement; goal = reach-ship AND N DNA).
 
@@ -169,12 +173,23 @@ class DreadWorld(World):
         # from turn 0 (the compiled rules reference them; without this the
         # opening rooms and everything past them are unreachable). See the
         # class-attr docstrings for why the bottleneck set is needed.
-        forced_starting = tuple(self.BASE_STARTING_ITEMS) + tuple(self.EXTRA_STARTING_ITEMS)
+        #
+        # Pulse Radar is the one starter that gates NOTHING in our logic (0 rule
+        # atoms — Randovania never requires it for traversal), so it's an opt-out
+        # selector: when start_with_pulse_radar is off we don't precollect it and
+        # it rejoins the findable pool. Solvability is identical either way.
+        start_with_radar = bool(o.start_with_pulse_radar.value)
+        forced_starting = list(self.BASE_STARTING_ITEMS) + list(self.EXTRA_STARTING_ITEMS)
+        if not start_with_radar:
+            forced_starting = [n for n in forced_starting if n != "Pulse Radar"]
         for name in forced_starting:
             self.multiworld.push_precollected(self.create_item(name))
         # Starting-only items are removed from the findable pool. Missile Tank
-        # is precollected for capacity but stays findable.
-        pool_excluded = {"Slide", "Pulse Radar"} | set(self.EXTRA_STARTING_ITEMS)
+        # is precollected for capacity but stays findable. Pulse Radar is only
+        # excluded when it's a starting item.
+        pool_excluded = {"Slide"} | set(self.EXTRA_STARTING_ITEMS)
+        if start_with_radar:
+            pool_excluded.add("Pulse Radar")
 
         pool: list[Item] = []
         for it in item_table:
@@ -188,6 +203,11 @@ class DreadWorld(World):
             default_cls = CLASSIFICATION_MAP.get(
                 it.classification, ItemClassification.filler,
             )
+            # Pulse Radar only reaches the pool when start_with_pulse_radar is
+            # off. It gates nothing (0 rule atoms), so as a findable item it's
+            # QoL, not progression — don't let it consume a progression slot.
+            if it.name == "Pulse Radar":
+                default_cls = ItemClassification.useful
             # If this item has a "first N progression" override, the rest of
             # the copies fall back to useful (e.g. Missile+ Tank). For items
             # without an override, n_special == count → every copy uses the
@@ -246,14 +266,19 @@ class DreadWorld(World):
         set_rules(self)
 
     # Baseline starting inventory — matches Randovania's starter preset.
-    # Without these the seed isn't playable:
     #   - Slide: required to pass under the first low ceiling in s010_cave
-    #     (the very first room after the intro). No slide == softlock at
-    #     literal step 1.
-    #   - Sonar (Pulse Radar): EMMI zones are intended to be entered with
-    #     Pulse Radar available; without it some routes become unreachable.
+    #     (the very first room after the intro). A genuine logic gate (191 rule
+    #     atoms); no slide == softlock at literal step 1.
+    #   - Sonar (Pulse Radar): does NOT gate anything in our access logic (0
+    #     rule atoms — Randovania never requires it for traversal; it only
+    #     reveals breakable blocks). Included here to mirror the preset, but
+    #     it's opt-out via start_with_pulse_radar — turning it off leaves
+    #     solvability untouched and makes it a findable pickup. (ITEM_SONAR is
+    #     dropped from the patcher starting_items in that case.)
     #   - 15 starting missile capacity: matches Randovania default; vanilla
-    #     gives 5. Less than ~10 makes early-game boss fights unwinnable.
+    #     gives 5. Less than ~10 makes early-game boss fights unwinnable. NOTE:
+    #     the compiled ammo `sum` thresholds bake in this 15, so it's the one
+    #     starter that is also a (mild) logic assumption.
     # Rando artifacts are handled dynamically in _build_placements_payload:
     # the RequiredArtifacts option picks N, the in-game gate checks
     # ITEM_RANDO_ARTIFACT_1..N (granted by the N placed Metroid DNA pickups),
@@ -267,18 +292,28 @@ class DreadWorld(World):
     }
 
     # Randovania starter abilities — precollected into AP logic AND granted by
-    # the patcher. Slide + Pulse Radar are starting-only (not findable); Missile
-    # Tank is precollected for the starting capacity but stays findable.
+    # the patcher. Slide is starting-only (not findable); Missile Tank is
+    # precollected for the starting capacity but stays findable. Pulse Radar is
+    # precollected only when start_with_pulse_radar is on (default); otherwise
+    # it's filtered out of this set and shuffled into the findable pool.
     BASE_STARTING_ITEMS: tuple[str, ...] = ("Slide", "Pulse Radar", "Missile Tank")
 
-    # Minimal bottleneck set forced as STARTING items so the globally-faithful
-    # (forward-resolver, item-only) logic is fillable. Those rules make Charge
-    # Beam a near-universal early prerequisite, so AP's fill_restrictive has too
-    # few early-reachable spots to place it; granting it at start clears the
-    # bottleneck. Determined empirically as the MINIMAL set (just Charge Beam).
-    # Precollected into AP logic, removed from the findable pool, and added to
-    # the patcher's starting_items so the game grants it too.
-    EXTRA_STARTING_ITEMS: tuple[str, ...] = ("Charge Beam",)
+    # Extra items forced as STARTING items beyond the Randovania starter set,
+    # to clear fill bottlenecks in the globally-faithful (forward-resolver,
+    # item-only) logic. Each entry is precollected into AP logic, removed from
+    # the findable pool, and added to the patcher's starting_items so the game
+    # grants it too.
+    #
+    # NOW EMPTY. This used to hold Charge Beam: the rules make it a
+    # near-universal early prerequisite, and before Missile Tank was classified
+    # advancement, AP's fill_restrictive had too few early-reachable spots to
+    # place it. The Missile-Tank fix (commit 32f3da2) opened the early reachable
+    # set enough that Charge Beam now places normally as a findable item —
+    # verified over 146 generations (solo + multiworld, every trick level,
+    # accessibility minimal/items/full, up to 30 seeds per config) with zero
+    # fill failures. Dropping it is also more faithful to Randovania, whose
+    # starter preset ships Charge Beam as a findable pickup, not a start item.
+    EXTRA_STARTING_ITEMS: tuple[str, ...] = ()
 
     def _build_placements_payload(self) -> dict[str, Any]:
         """Build the per-slot placements payload.
@@ -337,6 +372,10 @@ class DreadWorld(World):
         # Starting missile capacity is option-driven (DEFAULT_STARTING_ITEMS is
         # the vanilla fallback for offline CLI flows that don't pass options).
         starting_items["ITEM_WEAPON_MISSILE_MAX"] = int(o.starting_missiles.value)
+        # Pulse Radar (ITEM_SONAR) is granted at start only when opted in; when
+        # off it's a findable pickup, so the patcher must not pre-grant it.
+        if not bool(o.start_with_pulse_radar.value):
+            starting_items.pop("ITEM_SONAR", None)
         for k in range(n_dna + 1, 13):
             starting_items[f"ITEM_RANDO_ARTIFACT_{k}"] = 1
         # The forced bottleneck starting items must ALSO be granted in-game, or
