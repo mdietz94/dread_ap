@@ -47,46 +47,66 @@ SCENARIO_TO_REGION = {
 
 # Lifted from the Randovania pickup-database fetch + per-item quantities
 # we observed in the vendored starter preset. Keys are AP-facing item
-# names; values are (patcher_item_id, default_quantity, classification).
+# names; values are (patcher_item_id, default_quantity, default_pool_count,
+# classification).
 #
+# Fields:
+#   * patcher_item_id     — open-dread-rando resource ID granted on pickup.
+#   * default_quantity    — capacity-per-pickup (passed to the patcher as the
+#                           resource's `quantity`). Vanilla values verified
+#                           against starter_preset_patcher.json.
+#   * default_pool_count  — how many copies of this item are in the AP pool
+#                           by default. Mirrors Randovania starter counts:
+#                           Energy Tank 8, Energy Part 16, Missile Tank 60,
+#                           Missile+ Tank 12, Power Bomb Tank 13. Options in
+#                           Options.py can override this at generation time.
+#                           Unique progression items are 1 (one copy each).
 # Classifications:
-#   * "progression" — unlocks new logic (beams, suits, traversal, missiles >0)
-#   * "useful"      — quality of life (extra energy, ammo capacity)
-#   * "filler"      — small ammo / energy parts; trivially safe to lose
-ITEM_TABLE: list[tuple[str, str, int, str]] = [
+#   * "progression"               — unlocks new logic (logic-required).
+#   * "progression_skip_balancing" — progression but exempt from balancing.
+#   * "useful"                    — quality of life (non-logic capacity).
+#   * "filler"                    — trivially safe to lose.
+ITEM_TABLE: list[tuple[str, str, int, int, str]] = [
     # Progression core
-    ("Morph Ball",          "ITEM_MORPH_BALL",          1, "progression"),
-    ("Bomb",                "ITEM_WEAPON_BOMB",         1, "progression"),
-    ("Cross Bomb",          "ITEM_WEAPON_LINE_BOMB",    1, "progression"),
-    ("Power Bomb",          "ITEM_WEAPON_POWER_BOMB",   1, "progression"),
-    ("Charge Beam",         "ITEM_WEAPON_CHARGE_BEAM",  1, "progression"),
-    ("Wide Beam",           "ITEM_WEAPON_WIDE_BEAM",    1, "progression"),
-    ("Plasma Beam",         "ITEM_WEAPON_PLASMA_BEAM",  1, "progression"),
-    ("Wave Beam",           "ITEM_WEAPON_WAVE_BEAM",    1, "progression"),
-    ("Diffusion Beam",      "ITEM_WEAPON_DIFFUSION_BEAM", 1, "progression"),
-    ("Grapple Beam",        "ITEM_WEAPON_GRAPPLE_BEAM", 1, "progression"),
-    ("Ice Missile",         "ITEM_WEAPON_ICE_MISSILE",  1, "progression"),
-    ("Storm Missile",       "ITEM_MULTILOCKON",         1, "progression"),
-    ("Varia Suit",          "ITEM_VARIA_SUIT",          1, "progression"),
-    ("Gravity Suit",        "ITEM_GRAVITY_SUIT",        1, "progression"),
-    ("Phantom Cloak",       "ITEM_OPTIC_CAMOUFLAGE",    1, "progression"),
-    ("Flash Shift",         "ITEM_GHOST_AURA",          1, "progression"),
-    ("Pulse Radar",         "ITEM_SONAR",               1, "progression"),
-    ("Speed Booster",       "ITEM_SPEED_BOOSTER",       1, "progression"),
-    ("Spider Magnet",       "ITEM_MAGNET_GLOVE",        1, "progression"),
-    ("Spin Boost",          "ITEM_DOUBLE_JUMP",         1, "progression"),
-    ("Space Jump",          "ITEM_SPACE_JUMP",          1, "progression"),
-    ("Screw Attack",        "ITEM_SCREW_ATTACK",        1, "progression"),
-    ("Slide",               "ITEM_FLOOR_SLIDE",         1, "progression"),
-    # Useful (capacity / utility)
-    ("Energy Tank",         "ITEM_ENERGY_TANKS",        1, "useful"),
-    ("Missile+ Tank",       "ITEM_WEAPON_MISSILE_MAX",  10, "useful"),
-    ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 1, "useful"),
-    ("Speed Booster Upgrade","ITEM_UPGRADE_SPEED_BOOST_CHARGE", 1, "useful"),
-    # Filler
-    ("Missile Tank",        "ITEM_WEAPON_MISSILE_MAX",  2, "filler"),
-    ("Power Bomb Tank",     "ITEM_WEAPON_POWER_BOMB_MAX", 2, "filler"),
-    ("Energy Part",         "ITEM_LIFE_SHARDS",         1, "filler"),
+    ("Morph Ball",          "ITEM_MORPH_BALL",          1, 1, "progression"),
+    ("Bomb",                "ITEM_WEAPON_BOMB",         1, 1, "progression"),
+    ("Cross Bomb",          "ITEM_WEAPON_LINE_BOMB",    1, 1, "progression"),
+    # Main Power Bomb pickup grants the weapon + N starting PB capacity.
+    # Vanilla Randovania starter is N=2 (verified in starter_preset_patcher.json).
+    # World._build_placements_payload overrides this at runtime from the
+    # StartingPowerBombs option.
+    ("Power Bomb",          "ITEM_WEAPON_POWER_BOMB",   2, 1, "progression"),
+    ("Charge Beam",         "ITEM_WEAPON_CHARGE_BEAM",  1, 1, "progression"),
+    ("Wide Beam",           "ITEM_WEAPON_WIDE_BEAM",    1, 1, "progression"),
+    ("Plasma Beam",         "ITEM_WEAPON_PLASMA_BEAM",  1, 1, "progression"),
+    ("Wave Beam",           "ITEM_WEAPON_WAVE_BEAM",    1, 1, "progression"),
+    ("Diffusion Beam",      "ITEM_WEAPON_DIFFUSION_BEAM", 1, 1, "progression"),
+    ("Grapple Beam",        "ITEM_WEAPON_GRAPPLE_BEAM", 1, 1, "progression"),
+    ("Ice Missile",         "ITEM_WEAPON_ICE_MISSILE",  1, 1, "progression"),
+    ("Storm Missile",       "ITEM_MULTILOCKON",         1, 1, "progression"),
+    ("Varia Suit",          "ITEM_VARIA_SUIT",          1, 1, "progression"),
+    ("Gravity Suit",        "ITEM_GRAVITY_SUIT",        1, 1, "progression"),
+    ("Phantom Cloak",       "ITEM_OPTIC_CAMOUFLAGE",    1, 1, "progression"),
+    ("Flash Shift",         "ITEM_GHOST_AURA",          1, 1, "progression"),
+    ("Pulse Radar",         "ITEM_SONAR",               1, 1, "progression"),
+    ("Speed Booster",       "ITEM_SPEED_BOOSTER",       1, 1, "progression"),
+    ("Spider Magnet",       "ITEM_MAGNET_GLOVE",        1, 1, "progression"),
+    ("Spin Boost",          "ITEM_DOUBLE_JUMP",         1, 1, "progression"),
+    ("Space Jump",          "ITEM_SPACE_JUMP",          1, 1, "progression"),
+    ("Screw Attack",        "ITEM_SCREW_ATTACK",        1, 1, "progression"),
+    ("Slide",               "ITEM_FLOOR_SLIDE",         1, 1, "progression"),
+    # Capacity / utility items. M2 retro fix kept Energy Tank as "useful" and
+    # promoted Missile+ Tank / Flash Shift Upgrade / Speed Booster Upgrade to
+    # progression (logic-required under accessibility: items). Missile Tank
+    # is progression_skip_balancing (logic-required, but kept out of balance).
+    ("Energy Tank",         "ITEM_ENERGY_TANKS",        1, 8, "useful"),
+    ("Missile+ Tank",       "ITEM_WEAPON_MISSILE_MAX",  10, 12, "progression"),
+    ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 1, 1, "progression"),
+    ("Speed Booster Upgrade","ITEM_UPGRADE_SPEED_BOOST_CHARGE", 1, 1, "progression"),
+    ("Missile Tank",        "ITEM_WEAPON_MISSILE_MAX",  2, 60, "progression_skip_balancing"),
+    # Each Power Bomb Tank pickup grants +1 PB capacity (vanilla).
+    ("Power Bomb Tank",     "ITEM_WEAPON_POWER_BOMB_MAX", 1, 13, "filler"),
+    ("Energy Part",         "ITEM_LIFE_SHARDS",         1, 16, "filler"),
 ]
 
 
@@ -109,10 +129,10 @@ def _resource_to_ap_name(resources: list[list[dict]]) -> str:
     pid = first.get("item_id", "")
     qty = int(first.get("quantity", 1))
     # Reverse-lookup against ITEM_TABLE
-    for ap_name, patcher_id, default_qty, _ in ITEM_TABLE:
+    for ap_name, patcher_id, default_qty, _pool, _cls in ITEM_TABLE:
         if patcher_id == pid and default_qty == qty:
             return ap_name
-    for ap_name, patcher_id, _default_qty, _ in ITEM_TABLE:
+    for ap_name, patcher_id, _default_qty, _pool, _cls in ITEM_TABLE:
         if patcher_id == pid:
             return ap_name
     return "Missile Tank"  # last-resort filler
@@ -138,12 +158,13 @@ def extract(template_path: Path) -> tuple[list, list, list]:
     locs_seed = _hash16("Metroid Dread maxdietz locations")
 
     items = []
-    for offset, (name, patcher_id, qty, cls) in enumerate(ITEM_TABLE):
+    for offset, (name, patcher_id, qty, pool_count, cls) in enumerate(ITEM_TABLE):
         items.append({
             "name": name,
             "ap_id": items_seed + offset,
             "patcher_item_id": patcher_id,
             "quantity": qty,
+            "pool_count": pool_count,
             "classification": cls,
         })
 
