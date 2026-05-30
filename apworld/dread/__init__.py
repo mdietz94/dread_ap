@@ -23,6 +23,65 @@ except ImportError:
     pass
 
 
+def _setup_state_incomplete() -> bool:
+    """True when the /setup wizard hasn't persisted enough state for the
+    sysmodule + per-seed patcher to work.
+
+    Three signals count as "incomplete" and trigger the first-run wizard
+    pop on launch:
+      - ``setup_state.json`` missing entirely
+      - JSON unreadable / malformed
+      - ``romfs_path`` or ``deploy_target`` absent (a partial run that
+        didn't reach the RomFS picker or Deploy page)
+
+    Always returns False if the ``_setup`` package isn't available — the
+    Launcher Component still needs to register on unit-test isolation
+    without an AP install on sys.path.
+    """
+    try:
+        from ._setup import setup_state_path
+    except ImportError:
+        return False
+    import json
+    path = setup_state_path()
+    if not path.is_file():
+        return True
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if not isinstance(state, dict):
+        return True
+    return not state.get("romfs_path") or not state.get("deploy_target")
+
+
+def _spawn_setup_wizard() -> None:
+    """Spawn the Kivy setup wizard as a parallel subprocess so it runs
+    alongside DreadClient on first launch.
+
+    Subprocess (not in-process) because ``run_setup_wizard`` blocks on
+    its own ``App().run()`` — running it inline would freeze the AP
+    Launcher until the user closes the wizard. Failures here are
+    logged-and-swallowed: a broken wizard launch must not block
+    DreadClient from coming up.
+    """
+    import logging
+    import subprocess
+    import sys
+    code = (
+        "try:\n"
+        "    from worlds.dread._setup.wizard import run_setup_wizard\n"
+        "except ImportError:\n"
+        "    from dread._setup.wizard import run_setup_wizard\n"
+        "run_setup_wizard(None)\n"
+    )
+    try:
+        subprocess.Popen([sys.executable, "-c", code])
+    except OSError as e:
+        logging.getLogger(__name__).warning(
+            "could not spawn setup wizard subprocess: %s", e)
+
+
 def launch_dread_client(*args: str) -> None:
     """Archipelago Launcher entry point for the Dread Client.
 
@@ -33,6 +92,12 @@ def launch_dread_client(*args: str) -> None:
     expanded into CLI args so the client lands pre-filled; the ``.dreadap``
     arg itself is dropped (the client's argparser doesn't know it). A parse
     failure never blocks the launch — we log and open the client unfilled.
+
+    First-run gate: if the /setup wizard hasn't recorded the romfs path
+    + deploy target yet, spawn the Kivy wizard as a parallel subprocess
+    so the user is guided through prereqs / build / deploy without having
+    to discover the /setup slash command. The wizard runs ALONGSIDE
+    DreadClient — the user can close it any time; DreadClient stays up.
     """
     from worlds.LauncherComponents import launch as launch_or_subprocess
     from .client.main import launch as dread_client_launch
@@ -50,6 +115,9 @@ def launch_dread_client(*args: str) -> None:
             logging.getLogger(__name__).warning(
                 "could not parse %s: %s; launching client without pre-fill",
                 dreadap_path, e)
+
+    if _setup_state_incomplete():
+        _spawn_setup_wizard()
 
     launch_or_subprocess(dread_client_launch, name="DreadClient", args=final_args)
 
