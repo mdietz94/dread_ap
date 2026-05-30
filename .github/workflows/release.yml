@@ -1,11 +1,18 @@
-name: Release apworld
+name: Release apworld + exlaunch sysmodule
 
-# Builds dread.apworld and attaches it to a GitHub Release.
+# Builds dread.apworld AND the patched exlaunch sysmodule (subsdk9 +
+# main.npdm), attaching both to a GitHub Release.
+#
+# The sysmodule build mirrors what `/setup` does on the user's machine:
+# clone open-dread-rando-exlaunch at the pinned commit, apply our
+# Ryujinx-fix patch, run `./exlaunch.sh build` under devkitPro. Shipping
+# pre-built binaries is the alternative distribution channel for users
+# who don't want to install devkitPro locally.
 #
 # Triggers:
 #   - Tag push matching `v*` (e.g. `git tag v0.1.0 && git push --tags`).
 #   - Manual dispatch — useful for testing the build without cutting a tag.
-#     The manual run uploads a workflow artifact instead of creating a release.
+#     The manual run uploads workflow artifacts instead of creating a release.
 
 on:
   push:
@@ -14,10 +21,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # required for softprops/action-gh-release to publish the release
+  contents: write  # required for softprops/action-gh-release to publish
 
 jobs:
-  build:
+  build-apworld:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,7 +43,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest jsonschema
 
-      - name: Run tests (apworld + scripts)
+      - name: Run tests (scripts)
         run: |
           # apworld tests pull in BaseClasses / CommonClient / NetUtils
           # from Archipelago. We don't run them in CI because that would
@@ -77,7 +84,6 @@ jobs:
           if missing:
               print("MISSING from .apworld:", missing, file=sys.stderr)
               sys.exit(1)
-          # The pycache + tests directories must NOT be in the zip.
           forbidden = [n for n in names
                        if "__pycache__" in n or n.startswith("dread/tests/")]
           if forbidden:
@@ -86,49 +92,145 @@ jobs:
           print(f"OK — {len(names)} entries, all required files present.")
           PY
 
-      # Tagged release path: publish to GitHub Releases with the apworld
-      # as the only asset. The release notes pull from the tag annotation
-      # if present, otherwise softprops auto-generates a changelog.
+      - name: Upload apworld artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dread-apworld
+          path: dist/dread.apworld
+          if-no-files-found: error
+
+  build-exlaunch:
+    # Build the patched exlaunch sysmodule inside devkitPro's official
+    # container so users get pre-built subsdk9 + main.npdm without
+    # installing devkitPro locally. Mirrors the on-machine /setup flow:
+    # clone -> patch -> build.
+    #
+    # Container: devkitpro/devkita64 ships the devkitA64 cross-compiler
+    # plus the rest of the Switch toolchain pre-installed (and DEVKITPRO
+    # env var set). If the image tag ever moves, pin to a specific digest
+    # to keep CI reproducible.
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    steps:
+      - name: Checkout dread_ap
+        uses: actions/checkout@v4
+
+      - name: Clone open-dread-rando-exlaunch at the pinned commit
+        run: |
+          set -e
+          # Match PINNED_EXLAUNCH_COMMIT in apworld/dread/_setup/build.py.
+          # If the constant changes, this step must change too — keeping
+          # them in lock-step is part of the patch-bump checklist in the
+          # plan doc.
+          PINNED=$(python3 -c \
+            "import re, pathlib;
+             s = pathlib.Path('apworld/dread/_setup/build.py').read_text();
+             m = re.search(r'PINNED_EXLAUNCH_COMMIT = \"([^\"]+)\"', s);
+             print(m.group(1))")
+          echo "Pinned commit: $PINNED"
+          git clone https://github.com/randovania/open-dread-rando-exlaunch.git \
+            exlaunch-checkout
+          cd exlaunch-checkout
+          git fetch origin
+          git reset --hard "$PINNED"
+
+      - name: Apply Ryujinx-fix patch
+        run: |
+          set -e
+          cd exlaunch-checkout
+          git apply --ignore-whitespace \
+            ../scripts/patches/exlaunch-ryujinx-fix.diff
+          # Sanity: the sentinel string the patch introduces must be in
+          # remote_api.cpp; the local /setup uses the same probe for
+          # idempotence.
+          grep -q "nn::socket::Poll DOES work on Ryujinx" \
+            source/program/remote_api.cpp
+
+      - name: Build the sysmodule
+        run: |
+          set -e
+          cd exlaunch-checkout
+          ./exlaunch.sh build
+
+      - name: Verify build outputs
+        run: |
+          set -e
+          deploy=exlaunch-checkout/src/open_dread_rando_exlaunch/deploy
+          test -f "$deploy/subsdk9"
+          test -f "$deploy/main.npdm"
+          echo "subsdk9:    $(stat -c%s "$deploy/subsdk9") bytes"
+          echo "main.npdm:  $(stat -c%s "$deploy/main.npdm") bytes"
+
+      - name: Stage outputs for release
+        run: |
+          mkdir -p dist
+          cp exlaunch-checkout/src/open_dread_rando_exlaunch/deploy/subsdk9 dist/
+          cp exlaunch-checkout/src/open_dread_rando_exlaunch/deploy/main.npdm dist/
+
+      - name: Upload exlaunch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exlaunch-sysmodule
+          path: |
+            dist/subsdk9
+            dist/main.npdm
+          if-no-files-found: error
+
+  release:
+    # Tagged release path: download both artifacts and publish them as
+    # a single GitHub Release. Skipped on manual dispatch (those runs use
+    # the artifacts uploaded by build-apworld / build-exlaunch directly).
+    needs: [build-apworld, build-exlaunch]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download apworld artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dread-apworld
+          path: dist/
+
+      - name: Download exlaunch artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: exlaunch-sysmodule
+          path: dist/
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/dread.apworld
+          files: |
+            dist/dread.apworld
+            dist/subsdk9
+            dist/main.npdm
           generate_release_notes: true
           fail_on_unmatched_files: true
-          # Drop a one-liner so the release page tells users what to do.
           body: |
             ## Installation
 
-            1. Download `dread.apworld` (below) and drop it into your
-               Archipelago install's `custom_worlds/` directory.
+            1. Download `dread.apworld` and drop it into your Archipelago
+               install's `custom_worlds/` directory.
             2. Generate a multiworld using `Metroid Dread` as the game.
-            3. Launch the **Dread Client** from Archipelago's Launcher (or
-               open a `.dreadap` file). The window includes an AP server address
-               bar, a **"Dread"** tab (live status + log), and a top-bar
-               **Switch-status pill** for pointing the client at your Switch or
-               Ryujinx. Click the pill → edit the IP → **Reconnect** (or use
-               `/dread_connect <ip>` in the command bar).
+            3. Launch the **Dread Client** from Archipelago's Launcher
+               (or double-click a `.dreadap` file).
 
-               Headless alternative (no display server / CI):
-               ```
-               DREAD_NOGUI=1 python -m worlds.dread.client.main \
-                 --connect <server>:<port> --name <slot> --switch-host <switch-ip>
-               ```
-            4. Build and deploy the patched RomFS — see the
-               [e2e runbook](https://github.com/${{ github.repository }}/blob/main/docs/e2e-runbook.md)
-               (steps 3–6) for the `seed_to_patcher_overrides` → `build_patcher_json`
-               → `open_dread_rando` → SD-card deploy pipeline.
+               On first run the Kivy setup wizard pops automatically — it
+               builds the patched exlaunch sysmodule and deploys it to
+               Ryujinx / SD card / a custom folder. See
+               [docs/first-time-setup.md](https://github.com/${{ github.repository }}/blob/main/docs/first-time-setup.md)
+               for the click-by-click walkthrough.
 
-            See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md)
-            for prerequisites (Switch hardware, Atmosphere CFW, Dread 2.1.0 RomFS, etc.).
+            4. Optional: skip the sysmodule build by using the prebuilt
+               `subsdk9` and `main.npdm` attached to this release.
+               Drop them at one of:
+               - **Ryujinx**: `%APPDATA%/Ryujinx/mods/contents/010093801237c000/DreadRandovania/exefs/`
+               - **Real Switch**: `<SD>:/atmosphere/contents/010093801237c000/exefs/`
 
-      # Manual dispatch path: upload as a workflow artifact so we can
-      # download + test without cutting a release tag.
-      - name: Upload artifact (manual dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dread.apworld
-          path: dist/dread.apworld
-          if-no-files-found: error
+               Then run `/setup` from inside DreadClient to record your
+               extracted-romfs path; the per-seed romfs patcher runs
+               automatically on AP-connect.
+
+            See the
+            [install-switch.md](https://github.com/${{ github.repository }}/blob/main/docs/install-switch.md)
+            backgrounder for the architecture and troubleshooting matrix.
