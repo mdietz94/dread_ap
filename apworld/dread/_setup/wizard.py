@@ -546,7 +546,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             run_installer_popup(ordered, preflight=True)
 
         install_all_btn = Button(
-            text="Install all missing (Python 3.12 via winget; ~25 MB)",
+            text="Install all missing (Python 3.12 via winget + open-dread-rando via pip)",
             size_hint_y=None, height=40,
             disabled=(persisted_mode != "auto"),
         )

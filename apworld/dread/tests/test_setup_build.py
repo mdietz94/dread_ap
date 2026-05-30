@@ -157,8 +157,14 @@ def test_apply_patch_missing_patch_file_returns_actionable_error(
 ):
     """Sentinel absent + .git present, but the patch file can't be located:
     failure should name the expected paths."""
+    import contextlib
     _make_checkout_with_remote_api(build_root, sentinel=False)
-    monkeypatch.setattr(build, "_locate_patch_file", lambda: None)
+    monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
+
+    @contextlib.contextmanager
+    def _yield_none():
+        yield None
+    monkeypatch.setattr(build, "_locate_patch_file", _yield_none)
     r = build.apply_ryujinx_patch()
     assert r.ok is False
     assert "exlaunch-ryujinx-fix.diff" in r.detail
@@ -169,10 +175,15 @@ def test_apply_patch_calls_git_apply_with_ignore_whitespace(
 ):
     """Happy path: sentinel absent, patch file locatable: invoke
     ``git apply --ignore-whitespace <patch>``."""
+    import contextlib
     _make_checkout_with_remote_api(build_root, sentinel=False)
     patch = tmp_path / "exlaunch-ryujinx-fix.diff"
     patch.write_text("--- a\n+++ b\n", encoding="utf-8")
-    monkeypatch.setattr(build, "_locate_patch_file", lambda: patch)
+
+    @contextlib.contextmanager
+    def _yield_patch():
+        yield patch
+    monkeypatch.setattr(build, "_locate_patch_file", _yield_patch)
     monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
     commands_run: list[list[str]] = []
 

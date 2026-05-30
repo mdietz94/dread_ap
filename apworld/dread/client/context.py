@@ -75,8 +75,9 @@ def _expand(path: str) -> str:
 
 def _user_config_path() -> Path:
     """Per-user config location for the Dread client. Survives across
-    Archipelago launcher restarts so users don't have to repaste
-    /patch_python every session.
+    Archipelago launcher restarts so the auto-detected patcher Python
+    (recorded by ``_ensure_patcher_python``) is reused across sessions
+    without re-probing every connect.
 
     Windows: ``%APPDATA%\\dread_ap\\config.json``.
     Other:   ``~/.config/dread_ap/config.json`` (XDG-ish; this client is
@@ -204,77 +205,55 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         asyncio.ensure_future(self.ctx._poke_lua(source))
         return True
 
-    def _cmd_patch_python(self, path: str = "") -> bool:
-        """``/patch_python`` is deprecated — ``/setup`` selects and
-        validates the patcher Python via its Prereqs page.
-
-        The per-seed romfs patcher runs automatically on AP-connect once
-        ``/setup`` has recorded your paths; if the patcher fails because
-        ``open_dread_rando`` isn't importable, the failure surfaces in
-        DreadClient's log with the exact ``pip install`` command, and
-        re-running ``/setup`` lets you point at the right interpreter.
-        """
-        del path  # accepted-and-ignored so old aliases don't error
-        self.output(
-            "/patch_python is deprecated. The patcher Python is now "
-            "configured via /setup's Prereqs page; re-run /setup to "
-            "pick a different interpreter. The romfs patcher runs "
-            "automatically on AP-connect once /setup has recorded your "
-            "paths."
-        )
-        return True
-
     def _cmd_patch(self, *args) -> bool:
         """``/patch`` is deprecated — the romfs patcher now runs
         automatically on AP-connect.
 
-        Run ``/setup ryujinx`` (or ``/setup sd``) once per machine to
-        build the sysmodule and record your romfs + deploy paths. Every
-        subsequent seed re-patches on connect — no /patch typing needed.
+        Run ``/setup`` once per machine to open the wizard — it walks
+        you through prereqs, vanilla romfs picker, sysmodule build, and
+        deploy target. Every subsequent seed re-patches on connect — no
+        /patch typing needed.
         """
         del args  # accepted-and-ignored so old aliases don't error
         self.output(
             "/patch is deprecated. The romfs patcher now runs "
             "automatically on AP-connect once /setup has recorded your "
-            "paths. Run /setup ryujinx (or /setup sd) once per machine; "
+            "paths. Run /setup once per machine to open the wizard; "
             "subsequent seeds patch on connect."
         )
         return True
 
-    def _cmd_setup(self, target: str = "ryujinx") -> bool:
-        """``/setup [ryujinx|sd]`` — build the patched exlaunch sysmodule
-        and deploy it.
+    def _cmd_setup(self, *_args: str) -> bool:
+        """``/setup`` — open the Kivy setup wizard in a new window.
 
-        Runs the full pipeline:
-          1. Clone / refresh open-dread-rando-exlaunch at the pinned commit
-             under ``%APPDATA%/dread_ap/build/exlaunch-checkout/``.
-          2. Apply our Ryujinx-fix patch (idempotent — skips if already
-             applied).
-          3. Run ``./exlaunch.sh build`` under devkitPro's msys2 bash.
-          4. Deploy ``subsdk9`` + ``main.npdm`` to the chosen target.
+        Covers first-time setup and re-runs alike: prereq install
+        (devkitPro / Python 3.12 / open-dread-rando), vanilla romfs
+        picker, exlaunch sysmodule build, and deploy-target picker
+        (Ryujinx / SD card / custom folder). Spawns the wizard as a
+        subprocess so DreadClient stays open while it runs — close it
+        any time; DreadClient is unaffected.
 
-        With no args, deploys to Ryujinx (the dev iteration target).
-        Defensive prerequisite checks (devkitPro, Python 3.12,
-        open-dread-rando) run before the build kicks off — failures surface
-        with a clear install hint instead of a cryptic ``make: command
-        not found`` later.
-
-        This command is the eventual replacement for ``/patch``; the per-
-        seed romfs patcher will auto-run on AP-connect once the wizard
-        page surgery lands.
+        Mirrors smo_archipelago's ``/setup`` pattern: the slash command
+        delegates entirely to the wizard, which is the single canonical
+        UI for build + deploy. Earlier behavior (``/setup [ryujinx|sd]``
+        as an inline one-shot build pipeline) is gone — the wizard's
+        DeployPage handles target selection with auto-detection. The
+        positional arg is accepted-and-ignored so old muscle memory
+        doesn't error.
         """
-        target = target.strip().lower() or "ryujinx"
-        if target not in ("ryujinx", "sd"):
-            self.output(
-                f"unknown target {target!r}; expected one of: ryujinx, sd"
-            )
-            return True
+        from worlds.LauncherComponents import launch_subprocess
+        # Defer to a module-level callable so the subprocess-pickling
+        # path in launch_subprocess can reach it by qualified name.
+        # ``_run_setup_wizard_no_dreadap`` is the only sanctioned entry
+        # point exported by the apworld root __init__ for the wizard.
+        from .. import _run_setup_wizard_no_dreadap
+        launch_subprocess(_run_setup_wizard_no_dreadap, name="DreadSetup")
         self.output(
-            "setup: starting build pipeline — first run may take "
-            "1-3 minutes (git clone + cross-compile). "
-            "Progress streams to the log box; watch for [setup] entries."
+            "Launched setup wizard in a new window. DreadClient stays "
+            "open; the wizard walks you through prereqs, vanilla romfs "
+            "picker, exlaunch build, and deploy target. Close it any "
+            "time — DreadClient is unaffected."
         )
-        asyncio.ensure_future(self.ctx._run_setup(target))
         return True
 
 
@@ -331,12 +310,15 @@ class DreadContext(CommonContext):
         # /patch command reads from here so users don't need a local seed
         # zip to run the patcher.
         self.slot_data: dict = {}
-        # Override for the Python the patcher subprocess invokes. Default
-        # (None) means use sys.executable, which is correct from a real
-        # Python but WRONG inside the frozen Archipelago launcher — that
-        # binary's bundled site-packages never sees `pip install`. Set via
-        # the /patch_python command; persisted in _user_config_path() so
-        # the setting survives Archipelago launcher restarts.
+        # Cached path to the external Python the per-seed romfs patcher
+        # subprocess invokes. Auto-detected by ``_ensure_patcher_python``
+        # via ``patcher_pipeline.autodetect_patcher_python`` and persisted
+        # in ``_user_config_path()`` so the resolved interpreter survives
+        # across Archipelago launcher restarts. ``sys.executable`` is
+        # explicitly NOT used — inside the frozen Archipelago launcher
+        # the bundled site-packages can't ``pip install``, so we always
+        # shell out to an external interpreter the user already has set
+        # up. The setup wizard's prereqs page surfaces the same probe.
         self.dreadvania_python: Optional[str] = _load_user_config().get(
             "dreadvania_python"
         )
@@ -397,6 +379,7 @@ class DreadContext(CommonContext):
             host=self.switch_host,
             port=self.switch_port,
             on_push=self._on_switch_push,
+            on_disconnect=self._on_switch_disconnect,
         )
         try:
             self._bootstrapped = False
@@ -461,6 +444,43 @@ class DreadContext(CommonContext):
         ``reconnect_switch``, which calls this so a manual retry never has to
         wait out the current backoff sleep."""
         self._redial_event.set()
+
+    async def _on_switch_disconnect(self) -> None:
+        """Fired by ``DreadExecutor`` when its read loop (or keep-alive
+        loop) exits because the socket died mid-session.
+
+        The supervisor's "is the wire up?" gate is ``self.executor is
+        None`` — without this callback the dead executor object stays
+        set, the supervisor sleeps at ``_SWITCH_BACKOFF_MAX`` (30 s),
+        and ``_poll_loop`` just logs ``Switch poll failed`` over and
+        over with no redial. Users observed that as "had to type
+        /dread_connect to recover" after a Ryujinx-side socket drop;
+        the fix is to drop the executor reference here so the next
+        supervisor tick (woken immediately via ``request_redial``)
+        sees a missing wire and reconnects.
+
+        Reentrancy note: we're called from inside the executor's own
+        read loop coroutine, so we MUST NOT ``await
+        self.executor.close()`` here — close cancels the read task
+        we're running in. We just drop our reference and let the
+        outgoing executor unwind naturally (its writer / keep-alive
+        will fail their next write and exit), then schedule a best-
+        effort close on a separate task so the socket descriptor is
+        released promptly without us awaiting it.
+        """
+        gone = self.executor
+        if gone is None:
+            return
+        log.info("Switch connection lost mid-session; redialing")
+        self.state.set_switch_conn("disconnected")
+        self.executor = None
+        self._bootstrapped = False
+        self.request_redial()
+        # Best-effort socket cleanup off-loop. close() cancels the read
+        # task — which IS the caller of this method — so launching it as
+        # a separate task avoids self-cancellation while still releasing
+        # the writer + keep-alive resources.
+        asyncio.create_task(gone.close(), name="dread-exec-cleanup")
 
     def _remember_switch_target(self) -> None:
         """Persist the current Switch host/port so the next session reuses it."""
@@ -813,96 +833,6 @@ class DreadContext(CommonContext):
         cfg["vanilla_romfs_dir"] = vanilla_romfs_dir
         _save_user_config(cfg)
         await self._run_patch(dreadvania_dir, vanilla_romfs_dir)
-
-    async def _run_setup(self, target: str) -> None:
-        """Drive the sysmodule build + deploy pipeline.
-
-        Worker thread runs the synchronous build (git clone / fetch / apply /
-        msys2 bash make) and the synchronous deploy (file copy). Progress
-        from both steps lands on ``log.info`` so DreadClient's GUI log box
-        renders it live.
-
-        Failure modes surfaced with the smo-baseline defensive-error style:
-          - missing prereqs (devkitPro / Python 3.12 / open-dread-rando)
-            fail at the prereq-check step with an install URL + pip command
-          - git apply mismatch falls back to "bump PINNED_EXLAUNCH_COMMIT"
-          - msys2 bash missing surfaces "re-run devkitPro installer with
-            msys2 component selected"
-        """
-        # Late imports — keeps the apworld load-time work the same on AP
-        # gen hosts (which never run /setup).
-        from .._setup.build import run_build_pipeline
-        from .._setup.deploy import (
-            deploy_to_ryujinx, deploy_to_sd,
-            detect_ryujinx_path, detect_sd_candidates,
-        )
-        from .._setup.prereqs import check_all, all_ok
-
-        log.info("/setup: prereq sweep")
-        results = await asyncio.to_thread(check_all)
-        for r in results:
-            mark = "OK " if r.ok else "MISS"
-            log.info("  %s %-32s %s", mark, r.name, r.detail)
-            if r.note and not r.ok:
-                log.info("       hint: %s", r.note)
-        if not all_ok(results):
-            log.error("/setup: prereqs not satisfied; fix the missing rows "
-                      "above and re-run /setup")
-            return
-
-        def emit(line: str) -> None:
-            log.info("[setup] %s", line)
-
-        try:
-            build_result = await asyncio.to_thread(run_build_pipeline, emit)
-        except Exception as exc:  # noqa: BLE001
-            log.exception("/setup: unhandled exception during build: %s", exc)
-            return
-
-        if not build_result.ok:
-            log.error("/setup: build FAILED — %s", build_result.detail)
-            return
-        log.info("/setup: build OK — %s", build_result.detail)
-
-        if target == "ryujinx":
-            ryu = detect_ryujinx_path()
-            if ryu is None:
-                log.error(
-                    "/setup: Ryujinx not found under %%APPDATA%%/Ryujinx. "
-                    "Install Ryujinx first or re-run with /setup sd."
-                )
-                return
-            deploy_fn = lambda: deploy_to_ryujinx(ryu, build_result.outputs)
-        elif target == "sd":
-            cands = await asyncio.to_thread(detect_sd_candidates)
-            if not cands:
-                log.error(
-                    "/setup: no SD card with atmosphere/ found on any "
-                    "mounted drive. Insert your Switch SD via USB / "
-                    "card reader and re-run /setup sd."
-                )
-                return
-            deploy_fn = lambda: deploy_to_sd(cands[0], build_result.outputs)
-        else:  # defensive — _cmd_setup validates first
-            log.error("/setup: unknown target %r", target)
-            return
-
-        try:
-            dep = await asyncio.to_thread(deploy_fn)
-        except Exception as exc:  # noqa: BLE001
-            log.exception("/setup: unhandled exception during deploy: %s", exc)
-            return
-
-        if dep.ok:
-            log.info("/setup: DONE — copied %d files to %s",
-                     len(dep.files), dep.target)
-            log.info(
-                "/setup: next step — relaunch Dread in Ryujinx so the new "
-                "subsdk9 loads into the game process (exefs mods apply at "
-                "process start, not at title screen)."
-            )
-        else:
-            log.error("/setup: deploy FAILED — %s", dep.error)
 
     # ---- Switch poll loop --------------------------------------------
 

@@ -32,6 +32,7 @@ from typing import Callable
 from .prereqs import (
     _prepend_path,
     _winget_python312_commands,
+    candidate_pythons,
 )
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -176,6 +177,77 @@ def install_python312(on_line: ProgressFn | None = None) -> InstallResult:
 
 
 # ---------------------------------------------------------------------------
+# open_dread_rando via pip into the first detected real Python
+# ---------------------------------------------------------------------------
+
+def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult:
+    """``{first_detected_python} -m pip install open-dread-rando``.
+
+    Targets the same first ``candidate_pythons()`` entry that
+    ``check_open_dread_rando`` uses as its install hint, so the install
+    lands in the exact interpreter the next probe will check — no
+    py.exe-default-version drift. Frozen Archipelago launcher is
+    excluded from the candidate list, so we never try to ``pip install``
+    into its bundled site-packages.
+
+    Streams pip output to ``on_line``. Re-uses ``check_internet`` for a
+    crisp "no internet" error instead of pip's deep timeout.
+    """
+    net = check_internet(on_line)
+    if not net.ok:
+        return net
+
+    candidates = candidate_pythons()
+    if not candidates:
+        msg = (
+            "no Python interpreter detected to install open-dread-rando "
+            "into. Install Python 3.12 first (auto-install row above), "
+            "then re-run this install."
+        )
+        if on_line:
+            on_line(msg)
+        return InstallResult(ok=False, returncode=127, log=msg, detail=msg)
+
+    target = candidates[0]
+    cmd = [target, "-m", "pip", "install", "--upgrade", "open-dread-rando"]
+    if on_line:
+        on_line(f"[install_open_dread_rando] {' '.join(cmd)}")
+    captured: list[str] = []
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, creationflags=_NO_WINDOW,
+        )
+    except FileNotFoundError as e:
+        msg = f"Python interpreter vanished mid-install: {e}"
+        if on_line:
+            on_line(msg)
+        return InstallResult(ok=False, returncode=127, log=msg, detail=msg)
+
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.rstrip()
+        captured.append(line)
+        if on_line:
+            on_line(line)
+    proc.wait()
+
+    log = "\n".join(captured)
+    if proc.returncode == 0:
+        return InstallResult(
+            ok=True, returncode=0, log=log,
+            detail=f"open-dread-rando installed into {target}",
+        )
+    return InstallResult(
+        ok=False, returncode=proc.returncode, log=log,
+        detail=(
+            f"pip exited {proc.returncode}; try running manually:\n"
+            f"    {target} -m pip install open-dread-rando"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Registry consumed by wizard.py
 # ---------------------------------------------------------------------------
 
@@ -184,13 +256,14 @@ def install_python312(on_line: ProgressFn | None = None) -> InstallResult:
 # missing" button iterates INSTALL_ORDER, skipping any key not in this dict.
 INSTALLERS: dict[str, Callable[[ProgressFn | None], InstallResult]] = {
     "python312": install_python312,
-    # Notably absent: devkitpro (interactive installer; user runs manually),
-    # open_dread_rando (pip-install command surfaced in the row's `note`).
+    "open_dread_rando": install_open_dread_rando,
+    # Notably absent: devkitpro (interactive installer; user runs manually).
 }
 
-# Install order — heaviest / longest first so the user isn't surprised
-# by a slow step at the end. Currently just Python 3.12; if we ever
-# script the open_dread_rando pip install we'd add it after python312.
+# Install order — Python 3.12 first because the open_dread_rando install
+# needs a real Python to target, and INSTALL_ORDER is consumed as a
+# dependency-respecting sequence by the wizard's "Install all missing".
 INSTALL_ORDER: tuple[str, ...] = (
     "python312",
+    "open_dread_rando",
 )

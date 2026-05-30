@@ -1,5 +1,9 @@
-"""Tests for PR-A3: ``/patch`` and ``/patch_python`` are now deprecation
-shims that point users at ``/setup``."""
+"""Tests for PR-A3: ``/patch`` is a deprecation shim pointing at ``/setup``.
+
+``/patch_python`` was removed entirely (no shim) once the wizard's
+auto-detect Python flow became the only configuration path — users
+typing it now get the standard "Unknown command" response, which is
+the expected behavior."""
 from __future__ import annotations
 
 import sys
@@ -51,22 +55,9 @@ def test_cmd_patch_with_args_still_emits_deprecation(proc):
     assert "/patch is deprecated" in msg
 
 
-def test_cmd_patch_python_emits_deprecation_message(proc):
-    """``/patch_python`` (no args) prints the deprecation pointer at
-    ``/setup``'s Prereqs page."""
-    assert proc._cmd_patch_python() is True
-    msg = " ".join(proc.outputs)
-    assert "/patch_python is deprecated" in msg
-    assert "/setup" in msg
-
-
-def test_cmd_patch_python_with_path_arg_still_emits_deprecation(proc):
-    """The shim accepts the legacy positional path argument so users who
-    pasted ``/patch_python C:\\Python312\\python.exe`` see the
-    deprecation message rather than a TypeError."""
-    assert proc._cmd_patch_python("C:/Python312/python.exe") is True
-    msg = " ".join(proc.outputs)
-    assert "/patch_python is deprecated" in msg
+def test_patch_python_command_is_gone(proc):
+    """``/patch_python`` was removed; the command handler must not exist."""
+    assert not hasattr(proc, "_cmd_patch_python")
 
 
 def test_help_text_advertises_setup_not_patch():

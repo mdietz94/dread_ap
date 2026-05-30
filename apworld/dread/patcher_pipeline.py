@@ -324,7 +324,7 @@ def describe_python(python_executable: Optional[str] = None) -> str:
     if "archipelagolauncher" in base or base in {"archipelago.exe", "archipelago"}:
         return f"{py}  (frozen Archipelago launcher — won't have open-dread-rando)"
     if python_executable:
-        return f"{py}  (override; set via /patch_python)"
+        return f"{py}  (auto-detected by the setup wizard)"
     return f"{py}  (sys.executable)"
 
 
@@ -349,7 +349,7 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
         except FileNotFoundError:
             return (
                 f"configured Python not found: {python_executable}\n"
-                "Set a valid interpreter with:  /patch_python <path-to-python.exe>"
+                "Re-run /setup to re-detect a usable interpreter."
             )
         except subprocess.TimeoutExpired:
             return f"dep probe timed out launching {python_executable}"
@@ -372,8 +372,9 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
             f"open_dread_rando is not installed in {describe_python()}.\n"
             "Install with:\n"
             "    pip install open-dread-rando\n"
-            "Or, if running from the frozen Archipelago launcher, point at a real Python:\n"
-            "    /patch_python <path-to-python.exe>"
+            "Or, if running from the frozen Archipelago launcher, install it "
+            "into a real Python and re-run /setup so the wizard auto-detects "
+            "the interpreter."
         )
     try:
         import mercury_engine_data_structures  # noqa: F401
@@ -457,7 +458,7 @@ def autodetect_patcher_python() -> tuple[Optional[str], str]:
     best = candidates[0]
     return None, (
         "open-dread-rando isn't installed in any detected Python. Run this, "
-        "then restart the client (or use /patch_python <path>):\n"
+        "then re-run /setup so the wizard re-detects the interpreter:\n"
         f"    {best} -m pip install open-dread-rando"
     )
 
