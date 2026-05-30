@@ -21,7 +21,7 @@ Dread Client commands (type with leading /):
   /dread_connect [ip[:port]]               (re)dial the Switch; optional ip re-points first
   /switch_host <ip>                        point the client at a Switch IP (or 'localhost' for Ryujinx)
   /switch_reconnect                        drop and re-dial the Switch (alias of /dread_connect)
-  /patch <dreadvania-dir> <vanilla-romfs>  build + deploy the AP-shaped mod from this session
+  /setup [ryujinx|sd]                      build + deploy the patched sysmodule; romfs patcher then auto-runs on connect
   /poke <lua>                              run arbitrary Lua via PACKET_REMOTE_LUA_EXEC (debug)
 
 To inject items, use the AP server console:

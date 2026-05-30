@@ -205,68 +205,40 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         return True
 
     def _cmd_patch_python(self, path: str = "") -> bool:
-        """``/patch_python [<path-to-python.exe>]`` — show or set which
-        Python the ``/patch`` subprocess invokes.
+        """``/patch_python`` is deprecated — ``/setup`` selects and
+        validates the patcher Python via its Prereqs page.
 
-        With no argument, prints the current effective Python and whether
-        ``open_dread_rando`` is importable from it. This is the diagnostic
-        for the "open-dread-rando is not installed" error from the frozen
-        Archipelago launcher: that launcher's ``sys.executable`` is
-        ``ArchipelagoLauncher.exe``, which has its own bundled
-        site-packages and will never see ``pip install``ed packages.
-
-        With a path, sets a per-session override. Point it at the Python
-        in the venv where you installed ``open-dread-rando``.
+        The per-seed romfs patcher runs automatically on AP-connect once
+        ``/setup`` has recorded your paths; if the patcher fails because
+        ``open_dread_rando`` isn't importable, the failure surfaces in
+        DreadClient's log with the exact ``pip install`` command, and
+        re-running ``/setup`` lets you point at the right interpreter.
         """
-        from ..patcher_pipeline import check_dependencies, describe_python
-
-        ctx = self.ctx
-        if path:
-            expanded = _expand(path)
-            if not Path(expanded).is_file():
-                self.output(f"err: not a file: {expanded}")
-                return True
-            ctx.dreadvania_python = expanded
-            cfg = _load_user_config()
-            cfg["dreadvania_python"] = expanded
-            _save_user_config(cfg)
-            self.output(f"dreadvania_python set to {expanded!r}")
-            self.output(f"  persisted to {_user_config_path()}")
-        self.output(f"patcher Python: {describe_python(ctx.dreadvania_python)}")
-        dep_err = check_dependencies(ctx.dreadvania_python)
-        if dep_err is None:
-            self.output("  open_dread_rando + mercury_engine_data_structures: OK")
-        else:
-            for line in dep_err.splitlines():
-                self.output(f"  {line}")
+        del path  # accepted-and-ignored so old aliases don't error
+        self.output(
+            "/patch_python is deprecated. The patcher Python is now "
+            "configured via /setup's Prereqs page; re-run /setup to "
+            "pick a different interpreter. The romfs patcher runs "
+            "automatically on AP-connect once /setup has recorded your "
+            "paths."
+        )
         return True
 
-    def _cmd_patch(self, dreadvania_dir: str = "", vanilla_romfs_dir: str = "") -> bool:
-        """``/patch <dreadvania-install-dir> <vanilla-romfs-dir>`` — build
-        the AP-shaped mod from this session's slot_data and write it on
-        top of an existing Dreadvania install.
+    def _cmd_patch(self, *args) -> bool:
+        """``/patch`` is deprecated — the romfs patcher now runs
+        automatically on AP-connect.
 
-        Run once after connecting (and any time the seed changes). The
-        Dreadvania install dir is something like
-        ``%APPDATA%/Ryujinx/mods/contents/010093801237c000/DreadRandovania``;
-        the vanilla romfs dir is your extracted Dread 2.1.0 romfs.
+        Run ``/setup ryujinx`` (or ``/setup sd``) once per machine to
+        build the sysmodule and record your romfs + deploy paths. Every
+        subsequent seed re-patches on connect — no /patch typing needed.
         """
-        ctx = self.ctx
-        if not ctx.slot_data or "placements" not in ctx.slot_data:
-            self.output(
-                "err: slot_data has no placements. Are you connected? Was this seed "
-                "generated with a recent DreadWorld build (one that bundles "
-                "placements in fill_slot_data)?"
-            )
-            return True
-        if dreadvania_dir and vanilla_romfs_dir:
-            # Explicit paths given (scripts / power users) — run directly.
-            asyncio.ensure_future(ctx._run_patch(dreadvania_dir, vanilla_romfs_dir))
-            return True
-        # No (or partial) args: pop native folder pickers, pre-filled with the
-        # folders used last time. Runs the orchestration in a thread so the
-        # asyncio loop isn't blocked by the patcher's ~3s subprocess call.
-        asyncio.ensure_future(ctx._patch_interactive())
+        del args  # accepted-and-ignored so old aliases don't error
+        self.output(
+            "/patch is deprecated. The romfs patcher now runs "
+            "automatically on AP-connect once /setup has recorded your "
+            "paths. Run /setup ryujinx (or /setup sd) once per machine; "
+            "subsequent seeds patch on connect."
+        )
         return True
 
     def _cmd_setup(self, target: str = "ryujinx") -> bool:
