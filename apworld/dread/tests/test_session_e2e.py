@@ -263,3 +263,71 @@ async def test_cutscene_delivery_is_deferred_not_dropped():
     finally:
         await ctx.executor.close()
         await fake.stop()
+
+
+@pytest.mark.asyncio
+async def test_game_restart_without_save_redelivers_lost_items():
+    """Player gets 3 AP items, saves at item 1, then restarts WITHOUT saving.
+    The game's Blackboard reverts to the save snapshot (ReceivedPickups=1,
+    InventoryIndex=1, missile count=2). The PC client must accept the regression
+    and re-deliver items 1 and 2, leaving the saved item 0 alone."""
+    fake = FakeDreadGame()
+    await fake.start()
+    ctx, dp = await _connect(fake)
+    try:
+        missile = _ap_id_for(dp, "Missile Tank")
+        items = [_network_item(missile) for _ in range(3)]
+        await ctx._on_received_items({"index": 0, "items": items})
+        await _drive(ctx, fake, target=3)
+        assert fake.received_pickups == 3
+        assert fake.inventory_of(MISSILE_ITEM) == 6
+        assert len(fake.onpickedup_calls) == 3
+
+        # Simulate the save snapshot at received_pickups=1 (one AP missile
+        # already saved), then a restart-without-save: Blackboard reverts to
+        # that snapshot, collected bitfield clears.
+        fake.received_pickups = 1
+        fake.inventory_index = 1
+        fake.inventory[MISSILE_ITEM] = 2
+        fake.collected_pickup_indices.clear()
+
+        # Drive polls. Items 1 and 2 should re-deliver; item 0 must NOT.
+        await _drive(ctx, fake, target=3)
+        assert fake.received_pickups == 3
+        assert fake.inventory_of(MISSILE_ITEM) == 6
+        assert len(fake.onpickedup_calls) == 5  # 3 pre-restart + 2 re-delivered
+    finally:
+        await ctx.executor.close()
+        await fake.stop()
+
+
+@pytest.mark.asyncio
+async def test_inventory_index_regression_alone_resumes_delivery():
+    """Inventory-only regression (player saved an AP item, then collected and
+    lost a Dread-local pickup): ReceivedPickups unchanged, InventoryIndex drops.
+    Subsequent AP item must still deliver once the mirror catches up."""
+    fake = FakeDreadGame()
+    await fake.start()
+    ctx, dp = await _connect(fake)
+    try:
+        missile = _ap_id_for(dp, "Missile Tank")
+        await ctx._on_received_items({"index": 0, "items": [_network_item(missile)]})
+        await _drive(ctx, fake, target=1)
+        assert fake.received_pickups == 1
+        assert fake.inventory_index == 1
+
+        # Player collects a local pickup in-world (InventoryIndex bumps to 2),
+        # then restarts without saving — InventoryIndex reverts to 1, but
+        # ReceivedPickups stayed at the saved value of 1.
+        fake.inventory_index = 2
+        fake.inventory_index = 1
+
+        # A second AP item arrives.
+        await ctx._on_received_items({"index": 1, "items": [_network_item(missile)]})
+        await _drive(ctx, fake, target=2)
+        assert fake.received_pickups == 2
+        assert fake.inventory_of(MISSILE_ITEM) == 4
+        assert len(fake.onpickedup_calls) == 2
+    finally:
+        await ctx.executor.close()
+        await fake.stop()

@@ -844,6 +844,11 @@ class DreadContext(CommonContext):
                         item=dread_item, sender=sender, inventory_index=idx))
             log.debug("game ReceivedPickups advanced %d -> %d", previous, count)
         self.state.set_game_received_pickups(count)
+        if count < previous:
+            # Regression — drive a delivery now so we don't wait up to one
+            # poll for the inventory-index push + next tick. Lua's index match
+            # silently drops anything the player still has.
+            await self._attempt_delivery()
 
     def _resolve_item(self, network_item: Any) -> tuple[Optional[DreadItem], str]:
         """Map an AP NetworkItem to its DreadItem + sender display name.
