@@ -10,10 +10,18 @@ base class, ``ClientCommandProcessor``, ``ClientStatus``) for our code
 to import, without pulling in the full AP repo. Tests that exercise
 behavior beyond that surface should monkey-patch ``send_msgs``/``send_connect``
 on the constructed context as needed.
+
+Regenerates the compiled rule artifacts at session start if they are
+missing or older than the compiler / its input cache. The artifacts are
+gitignored (each is 150-240k lines), so a fresh checkout has nothing on
+disk; this ensures tests can still load them via ``_data_loader`` without
+the contributor running the regen command manually.
 """
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 import sys
 import types
 from enum import IntEnum
@@ -22,6 +30,79 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT.parent) not in sys.path:
     sys.path.insert(0, str(ROOT.parent))
+
+
+def _ensure_compiled_rules() -> None:
+    """Run ``scripts/extract_dread_rules.py`` for each trick level if the
+    on-disk artifact is missing or stale.
+
+    Stale = older than the compiler script itself, or older than the pinned
+    Randovania logic cache (``PINNED_COMMIT.txt``). Either signal means
+    something upstream changed and the on-disk JSON no longer matches.
+
+    Total regen cost is ~10s for all three levels; only pays it when the
+    artifacts actually need updating, so warm runs are free."""
+    repo_root = ROOT.parent.parent
+    data_dir = ROOT / "data"
+    extract = repo_root / "scripts" / "extract_dread_rules.py"
+    cache = repo_root / ".dread-cache" / "randovania-logic"
+    pinned = cache / "PINNED_COMMIT.txt"
+
+    if not extract.exists():
+        return  # not in the dev tree (e.g. running from an installed apworld)
+
+    if not cache.exists():
+        # Without the cache we cannot regen; let the individual tests fail with
+        # a clear FileNotFoundError pointing at the missing artifact.
+        return
+
+    # Newest input mtime — if any output is older than this, regen.
+    input_mtime = max(extract.stat().st_mtime,
+                      pinned.stat().st_mtime if pinned.exists() else 0)
+
+    targets = {
+        1: data_dir / "compiled_rules.json",
+        2: data_dir / "compiled_rules_l2.json",
+        3: data_dir / "compiled_rules_l3.json",
+    }
+
+    stale = [
+        (level, path) for level, path in targets.items()
+        if not path.exists() or path.stat().st_mtime < input_mtime
+    ]
+    if not stale:
+        return
+
+    # Each level takes ~3.5 minutes on a single core. The three are
+    # independent (no shared state, separate output files), so launch all
+    # three in parallel and the wall-clock cost is ~3.5 min instead of ~10.
+    sys.stderr.write(
+        f"\n[conftest] regenerating {len(stale)} compiled-rule artifact(s) "
+        f"in parallel (~3-4 minutes; cached afterward)...\n"
+    )
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    procs = []
+    for level, path in stale:
+        cmd = [sys.executable, str(extract), "--all",
+               "--trick-level", str(level), "--out", str(path)]
+        procs.append((level, path, subprocess.Popen(
+            cmd, cwd=str(repo_root), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)))
+
+    failed = []
+    for level, path, proc in procs:
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            failed.append((path.name, err.decode("utf-8", errors="replace")))
+
+    if failed:
+        for name, err in failed:
+            sys.stderr.write(f"\n[conftest] regen of {name} failed:\n{err}\n")
+        # Don't raise — let the individual tests fail loudly with their own
+        # assertion (focused error vs. bare CalledProcessError).
+
+
+_ensure_compiled_rules()
 
 
 def _install_common_client_stub() -> None:
