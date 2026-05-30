@@ -61,25 +61,62 @@ def _spawn_setup_wizard() -> None:
 
     Subprocess (not in-process) because ``run_setup_wizard`` blocks on
     its own ``App().run()`` — running it inline would freeze the AP
-    Launcher until the user closes the wizard. Failures here are
+    Launcher until the user closes the wizard. Goes through Archipelago's
+    ``launch_subprocess`` (the same path the ``/setup`` slash command
+    uses) so there's one canonical wizard-spawn flow and the
+    multiprocessing.Process child inherits Kivy's data-dir setup that
+    the bare ``subprocess.Popen([sys.executable, "-c", ...])`` form lacks
+    under the PyInstaller-frozen Launcher. Failures here are
     logged-and-swallowed: a broken wizard launch must not block
     DreadClient from coming up.
     """
     import logging
-    import subprocess
-    import sys
-    code = (
-        "try:\n"
-        "    from worlds.dread._setup.wizard import run_setup_wizard\n"
-        "except ImportError:\n"
-        "    from dread._setup.wizard import run_setup_wizard\n"
-        "run_setup_wizard(None)\n"
-    )
     try:
-        subprocess.Popen([sys.executable, "-c", code])
-    except OSError as e:
+        from worlds.LauncherComponents import launch_subprocess
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "could not import launch_subprocess for wizard spawn: %s", e)
+        return
+    try:
+        launch_subprocess(_run_setup_wizard_no_dreadap, name="DreadSetup")
+    except Exception as e:  # noqa: BLE001
         logging.getLogger(__name__).warning(
             "could not spawn setup wizard subprocess: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Wizard subprocess entry point
+# ---------------------------------------------------------------------------
+
+# Imported here (not lazily) so module-level decoration runs at import time
+# — without it the decorated function below couldn't be looked up by
+# qualified name when ``launch_subprocess`` pickles the target.
+from ._setup.launcher_errors import visible_errors as _visible_errors
+
+
+@_visible_errors("Setup wizard")
+def _run_setup_wizard_no_dreadap() -> None:
+    """Module-level subprocess entry: open the Kivy setup wizard.
+
+    Mirrors smo_archipelago's ``_run_setup_wizard_no_smoap`` shape so
+    the ``/setup`` slash command and the first-run gate both target the
+    same callable. Must stay module-level (not a closure) because
+    ``worlds.LauncherComponents.launch_subprocess`` pickles its target
+    by qualified name — closures would fail to import in the child.
+
+    Invoked by:
+      - ``DreadClientCommandProcessor._cmd_setup`` (the ``/setup``
+        slash command in DreadClient)
+      - ``_spawn_setup_wizard`` (the first-run gate on
+        ``launch_dread_client``)
+
+    The ``@visible_errors`` wrapper surfaces import-time / Kivy-launch
+    crashes via a Tk messagebox + ``%APPDATA%/dread_ap/launch-crash.log``
+    so a wizard that explodes during early init doesn't just vanish into
+    the windowed-Launcher void.
+    """
+    from ._setup.wizard import run_setup_wizard
+    run_setup_wizard()
 
 
 def launch_dread_client(*args: str) -> None:

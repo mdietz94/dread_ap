@@ -186,12 +186,44 @@ def test_open_dread_rando_not_importable_surfaces_pip_command(monkeypatch):
 def test_open_dread_rando_no_python_returns_install_python312_hint(monkeypatch):
     """When no Python is detected, the row suggests installing Python 3.12
     first."""
-    monkeypatch.setattr(prereqs, "_winget_python312_commands", lambda: [])
-    monkeypatch.setattr(prereqs, "_safe_run", lambda _cmd: None)
-    monkeypatch.setattr(prereqs.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(prereqs, "candidate_pythons", lambda: [])
     r = prereqs.check_open_dread_rando(python=None)
     assert r.ok is False
     assert "Python 3.12" in r.detail
+
+
+def test_open_dread_rando_enumerates_multiple_pythons(monkeypatch):
+    """When multiple Pythons are detected and ANY has open-dread-rando, the
+    row goes OK pointing at that interpreter — the user may have installed
+    into a Python the wizard wouldn't have picked as its first choice."""
+    candidates = ["/fake/badpy.exe", "/fake/goodpy.exe", "/fake/otherpy.exe"]
+    monkeypatch.setattr(prereqs, "candidate_pythons", lambda: candidates)
+
+    def _fake_safe_run(cmd):
+        # cmd is [python, "-c", probe_source]; succeed only for goodpy.
+        if cmd[0] == "/fake/goodpy.exe":
+            return (0, "0.10.4\n", "")
+        return (1, "", "ModuleNotFoundError: open_dread_rando")
+
+    monkeypatch.setattr(prereqs, "_safe_run", _fake_safe_run)
+    r = prereqs.check_open_dread_rando(python=None)
+    assert r.ok is True
+    assert "/fake/goodpy.exe" in r.detail
+
+
+def test_open_dread_rando_miss_targets_first_candidate(monkeypatch):
+    """When none of the detected Pythons has it, the install hint targets
+    the first (highest-priority) candidate so re-probe lands on the same
+    interpreter pip installed into."""
+    candidates = ["/fake/firstpy.exe", "/fake/secondpy.exe"]
+    monkeypatch.setattr(prereqs, "candidate_pythons", lambda: candidates)
+    monkeypatch.setattr(
+        prereqs, "_safe_run",
+        lambda _cmd: (1, "", "ModuleNotFoundError: open_dread_rando"),
+    )
+    r = prereqs.check_open_dread_rando(python=None)
+    assert r.ok is False
+    assert "/fake/firstpy.exe -m pip install open-dread-rando" in r.note
 
 
 # ---- check_all + all_ok -------------------------------------------------

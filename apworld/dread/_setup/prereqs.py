@@ -345,72 +345,175 @@ def _verify_devkitpro_gxx(gxx: Path, root: str) -> PrereqResult:
 # open_dread_rando — the per-seed romfs patcher (runs at AP-connect)
 # ---------------------------------------------------------------------------
 
-def check_open_dread_rando(python: Path | str | None = None) -> PrereqResult:
-    """`open_dread_rando` + `mercury_engine_data_structures` importable
-    from the user's selected Python interpreter.
+# Probe source — kept as a single -c arg. Uses ``importlib.metadata`` (stdlib
+# since 3.8) to read the pip-installed version, which is reliable regardless
+# of whether the package exports ``__version__`` (open-dread-rando does not;
+# the old probe used ``open_dread_rando.__version__`` and tripped
+# ``AttributeError`` for users with the package actually installed).
+_ODR_PROBE_SOURCE = (
+    "import open_dread_rando, mercury_engine_data_structures\n"
+    "try:\n"
+    "    from importlib.metadata import version\n"
+    "    print(version('open-dread-rando'))\n"
+    "except Exception:\n"
+    "    print('ok')\n"
+)
 
-    `python` is the executable path the wizard picked on the Python 3.12
-    row (None falls back to detecting one). We probe via subprocess —
-    importing in-process would pin oead's C extension into our process,
-    risking incompatible ABI when the wizard subprocess restarts.
 
-    The error message includes the exact `pip install` command so a user
-    who knows their way around pip can fix it without leaving the wizard.
+def candidate_pythons() -> list[str]:
+    """Enumerate Python interpreters worth probing for ``open-dread-rando``.
+
+    Returns absolute, deduped paths to real ``python.exe`` files (NOT
+    ``py.exe`` launchers — those are resolved through ``-3.x`` to the
+    underlying interpreter so callers don't have to know about the
+    launcher argv shape later). Order is preference: per-user winget
+    installs first (newest version first), then PATH lookups, then
+    ``py -3.12`` / ``py -3.13`` / ``py -3`` resolutions.
+
+    **The frozen Archipelago launcher is excluded by design.** Its
+    bundled site-packages never sees a user's ``pip install``, so it
+    can't satisfy this prereq — including it in the candidate list
+    would surface a false MISS even when the user has open-dread-rando
+    installed in a real Python. Matches the
+    ``patcher_pipeline._candidate_pythons`` filter so the wizard's
+    prereq probe and the runtime patcher subprocess agree on what
+    counts as "a Python that has it".
     """
-    if python is None:
-        # Best-effort: prefer whichever Python we resolved on the row above.
-        for cmd in _winget_python312_commands():
-            r = _safe_run(cmd)
-            if r is not None and r[0] == 0:
-                python = cmd[0]
-                break
-        if python is None:
-            for candidate in ("py", "python3.12", "python3", "python"):
-                exe = shutil.which(candidate)
-                if exe:
-                    python = exe
-                    break
-    if python is None:
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(path: str | None) -> None:
+        if not path:
+            return
+        try:
+            resolved = str(Path(path).resolve())
+        except OSError:
+            return
+        if not Path(resolved).is_file():
+            return
+        base = Path(resolved).name.lower()
+        if "archipelagolauncher" in base or base in {"archipelago.exe", "archipelago"}:
+            return
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        out.append(resolved)
+
+    # Winget-deterministic per-user installs, newest version first so 3.12
+    # outranks 3.10 if both exist.
+    localapp = os.environ.get("LOCALAPPDATA")
+    if localapp:
+        base = Path(localapp) / "Programs" / "Python"
+        if base.is_dir():
+            for child in sorted(base.glob("Python*"), reverse=True):
+                _add(str(child / "python.exe"))
+    # PATH lookups for direct interpreter names.
+    for name in ("python3.12", "python3.13", "python3", "python"):
+        _add(shutil.which(name))
+    # The Windows py launcher can resolve specific versions — ask it to
+    # name the underlying exe so we add the real interpreter, not the
+    # launcher itself (which would force callers to track the -3.x arg).
+    py = shutil.which("py")
+    if py:
+        for flag in ("-3.12", "-3.13", "-3"):
+            try:
+                proc = subprocess.run(
+                    [py, flag, "-c", "import sys; print(sys.executable)"],
+                    capture_output=True, text=True, timeout=5,
+                    creationflags=_NO_WINDOW,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if proc.returncode == 0:
+                _add(proc.stdout.strip())
+    return out
+
+
+def _probe_open_dread_rando(python: str) -> tuple[bool, str]:
+    """Run the ``_ODR_PROBE_SOURCE`` against ``python``. Returns
+    ``(ok, detail)`` — ``detail`` is the version string on success or
+    the last error line on failure."""
+    r = _safe_run([python, "-c", _ODR_PROBE_SOURCE])
+    if r is None:
+        return False, "failed to launch interpreter"
+    rc, out, err = r
+    if rc == 0:
+        line = (out or "ok").strip().splitlines()
+        return True, line[0] if line else "ok"
+    lines = (err or out).strip().splitlines()
+    return False, lines[-1] if lines else f"exit {rc}"
+
+
+def check_open_dread_rando(python: Path | str | None = None) -> PrereqResult:
+    """``open_dread_rando`` + ``mercury_engine_data_structures`` importable
+    from at least one detected Python interpreter.
+
+    When called with no explicit ``python``, enumerates all candidate
+    interpreters via :func:`candidate_pythons` and probes each in turn.
+    **OK if ANY candidate has it** — the user may have pip-installed
+    open-dread-rando into a different real Python than the wizard
+    happens to prefer for the Python 3.12 row, and that should still
+    count as "installed". MISS only when no candidate has it.
+
+    The install hint targets the first candidate (the highest-priority
+    interpreter), and uses its full resolved exe path — copying the
+    hint pastes a command that installs into the exact Python the next
+    probe will check, avoiding the ``py.exe -m pip install`` /
+    ``py.exe -3.12 -c`` mismatch where pip targets a default version
+    that doesn't match the version the probe runs against.
+
+    The single-Python form (``check_open_dread_rando(python)``) is kept
+    for tests + the wizard's row-rerun path; it short-circuits the
+    enumeration to one explicit interpreter.
+    """
+    if python is not None:
+        ok, detail = _probe_open_dread_rando(str(python))
+        if ok:
+            return PrereqResult(
+                "open_dread_rando", "open-dread-rando (Python patcher)", True,
+                f"{detail} ({python})",
+                auto_installable=True,
+            )
+        return PrereqResult(
+            "open_dread_rando", "open-dread-rando (Python patcher)", False,
+            f"not importable from {python}: {detail}",
+            note=f"Install with:  {python} -m pip install open-dread-rando",
+            auto_installable=True,
+        )
+
+    candidates = candidate_pythons()
+    if not candidates:
         return PrereqResult(
             "open_dread_rando", "open-dread-rando (Python patcher)", False,
             "no Python interpreter found — install Python 3.12 first",
-            "",
             auto_installable=True,
         )
 
-    # `py` and `py.exe` need the `-3.12` switch to disambiguate; everything
-    # else is a direct exe path that just runs.
-    base = Path(str(python)).name.lower()
-    cmd = [str(python)]
-    if base in ("py.exe", "py"):
-        cmd.append("-3.12")
-    cmd += ["-c",
-            "import open_dread_rando, mercury_engine_data_structures; "
-            "print(open_dread_rando.__version__)"]
+    last_failure: tuple[str, str] | None = None
+    for cand in candidates:
+        ok, detail = _probe_open_dread_rando(cand)
+        if ok:
+            return PrereqResult(
+                "open_dread_rando", "open-dread-rando (Python patcher)", True,
+                f"{detail} ({cand})",
+                auto_installable=True,
+            )
+        last_failure = (cand, detail)
 
-    r = _safe_run(cmd)
-    if r is None:
-        return PrereqResult(
-            "open_dread_rando", "open-dread-rando (Python patcher)", False,
-            f"failed to invoke {python}",
-            "",
-            auto_installable=True,
-        )
-    rc, out, err = r
-    if rc == 0:
-        ver = (out or err).strip().splitlines()[0] if (out or err).strip() else "ok"
-        return PrereqResult(
-            "open_dread_rando", "open-dread-rando (Python patcher)", True,
-            f"{ver} ({python})",
-            auto_installable=True,
-        )
-    last = (err or out).strip().splitlines()
-    detail = last[-1] if last else "import failed"
+    # None of the detected Pythons satisfied the import. Surface the
+    # first candidate as the install target since it's the
+    # highest-priority interpreter the user likely wants the package
+    # in. Including the exact resolved path means the hint and the
+    # auto-installer (which targets the same `candidates[0]`) install
+    # into the same Python the next probe will check — no version /
+    # launcher-flag mismatch.
+    target = candidates[0]
+    last_msg = f" — last failure on {last_failure[0]}: {last_failure[1]}" if last_failure else ""
     return PrereqResult(
         "open_dread_rando", "open-dread-rando (Python patcher)", False,
-        f"not importable from {python}: {detail}",
-        "",
-        note=f"Install with:  {python} -m pip install open-dread-rando",
+        f"not importable from any of {len(candidates)} detected Python "
+        f"interpreter(s){last_msg}",
+        note=f"Install with:  {target} -m pip install open-dread-rando",
         auto_installable=True,
     )
 
