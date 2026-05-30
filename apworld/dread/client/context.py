@@ -42,6 +42,8 @@ from .protocol import (
 )
 from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
+from .._setup import setup_state_path
+from .._setup.deploy import DREAD_TITLE_ID, RYU_MOD_NAME
 
 log = logging.getLogger(__name__)
 
@@ -572,6 +574,13 @@ class DreadContext(CommonContext):
         sd = args.get("slot_data")
         if isinstance(sd, dict):
             self.slot_data = sd
+        # Auto-run the per-seed romfs patcher if /setup recorded the romfs
+        # path and a deploy target. Schedule it rather than await — the
+        # ~3s patcher subprocess shouldn't delay the rest of the connect
+        # handshake. _maybe_auto_patch logs a clear actionable line if the
+        # setup state is missing or stale, so the AP session is never
+        # blocked nor crashed by a misconfiguration.
+        asyncio.ensure_future(self._maybe_auto_patch())
         # Phase 1.5 — once we have all_location_ids from datapackage, scout
         # them all so we know which AP item lives at each pickup before the
         # player collects it (used to compose in-game popup text).
@@ -646,6 +655,110 @@ class DreadContext(CommonContext):
         if slot_idx == self.slot:
             return "yourself"
         return f"Player {slot_idx}"
+
+    # ---- /setup auto-run hookup --------------------------------------
+
+    def _dreadvania_install_dir_from_state(self, state: dict) -> Optional[Path]:
+        """Compute the dreadvania mod-install dir (where the patcher writes
+        romfs overlays) from the /setup wizard's persisted state.
+
+        Mirrors the layouts in `_setup.deploy`:
+          - ryujinx -> ``<ryu>/mods/contents/<title>/DreadRandovania``
+          - sd      -> ``<sd>/atmosphere/contents/<title>``
+          - custom  -> ``<custom>/atmosphere/contents/<title>``
+
+        Returns ``None`` if ``deploy_target`` is unset/unknown, or the
+        corresponding root key is missing/empty in the state. The caller
+        logs a clear remediation hint rather than crashing.
+        """
+        target = state.get("deploy_target")
+        if target == "ryujinx":
+            root = state.get("ryujinx_root") or ""
+            return (Path(root) / "mods" / "contents" / DREAD_TITLE_ID
+                    / RYU_MOD_NAME) if root else None
+        if target == "sd":
+            root = state.get("sd_root") or ""
+            return (Path(root) / "atmosphere" / "contents"
+                    / DREAD_TITLE_ID) if root else None
+        if target == "custom":
+            root = state.get("custom_root") or ""
+            return (Path(root) / "atmosphere" / "contents"
+                    / DREAD_TITLE_ID) if root else None
+        return None
+
+    async def _maybe_auto_patch(self) -> None:
+        """Run the per-seed romfs patcher if /setup has recorded the paths.
+
+        Hand-off contract: when setup_state.json is missing, the romfs path
+        is stale, the deploy dir can't be computed, or slot_data has no
+        placements, log a clear actionable message on the Archipelago tab
+        and return. We never raise — a misconfiguration must not crash or
+        even slow the AP connect path.
+
+        When everything lines up, schedule ``_run_patch`` via
+        ``asyncio.ensure_future`` so the patcher's ~3s subprocess overlaps
+        with the rest of the connect handshake (scout absorb, Switch dial).
+        """
+        state_path = setup_state_path()
+        if not state_path.is_file():
+            _ap_log.info(
+                "Auto-patch skipped: %s not found. Run /setup once per "
+                "machine to record your romfs + deploy paths; subsequent "
+                "seeds patch automatically on connect.",
+                state_path,
+            )
+            return
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            _ap_log.warning(
+                "Auto-patch skipped: %s unreadable (%s). Re-run /setup to "
+                "refresh the state file.",
+                state_path, exc,
+            )
+            return
+
+        romfs_raw = state.get("romfs_path")
+        if not romfs_raw or not isinstance(romfs_raw, str):
+            _ap_log.info(
+                "Auto-patch skipped: romfs_path not recorded in %s. Re-run "
+                "/setup to pick your extracted Dread 2.1.0 romfs folder.",
+                state_path,
+            )
+            return
+        romfs_path = Path(romfs_raw)
+        if not romfs_path.is_dir():
+            _ap_log.warning(
+                "Auto-patch skipped: romfs path %s no longer exists. "
+                "Re-run /setup and re-pick your extracted romfs folder.",
+                romfs_path,
+            )
+            return
+
+        deploy_dir = self._dreadvania_install_dir_from_state(state)
+        if deploy_dir is None:
+            _ap_log.info(
+                "Auto-patch skipped: deploy target not recorded in %s. "
+                "Re-run /setup to pick Ryujinx / SD / Custom folder.",
+                state_path,
+            )
+            return
+        if not self.slot_data or "placements" not in self.slot_data:
+            _ap_log.info(
+                "Auto-patch skipped: slot_data has no placements. Older "
+                "seeds (generated before fill_slot_data bundled placements) "
+                "need the /patch command run manually with the seed zip.",
+            )
+            return
+
+        _ap_log.info(
+            "Auto-patch: writing per-seed romfs overlay to %s (vanilla "
+            "romfs: %s)",
+            deploy_dir, romfs_path,
+        )
+        asyncio.ensure_future(
+            self._run_patch(str(deploy_dir), str(romfs_path))
+        )
 
     # ---- /patch implementation ---------------------------------------
 
