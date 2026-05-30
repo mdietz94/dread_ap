@@ -107,15 +107,20 @@ ITEM_TABLE: list[tuple[str, str, int, int, str]] = [
     #     mixed classification is handled in World.create_items via
     #     MIXED_CLASSIFICATION_FIRST_N (this row is "progression" — the World
     #     uses that for the first copy, useful for the rest).
-    #   - Flash Shift Upgrade / Speed Booster Upgrade: rules want amount=2 but
-    #     we only have 1 in pool (pre-existing logic-data quirk; pickups don't
-    #     exist in the vanilla starter preset, AP places them ex nihilo). Left
-    #     as progression — gen succeeds because the amount=2 atoms live in
-    #     disjuncts with other paths.
+    #   - Flash Shift Upgrade / Speed Booster Upgrade: rules reference both
+    #     items up to amount=2 (verified by walking compiled_rules.json:
+    #     max amount = 2 for both). Vanilla Dread ships 2 pickups of each
+    #     (chain-extension / faster-charge respectively). The Randovania
+    #     starter preset has 0 actor pickups for either — the rules are
+    #     faithful to game mechanics, not preset content. Pool count = 2 to
+    #     match real Dread + give AP placement room to satisfy the amount=2
+    #     paths. Like Missile+ Tank, only the FIRST copy is logic-gating; the
+    #     second is QoL. The mixed-classification split is handled by
+    #     MIXED_CLASSIFICATION_FIRST_N in World.create_items.
     ("Energy Tank",         "ITEM_ENERGY_TANKS",        1, 8, "useful"),
     ("Missile+ Tank",       "ITEM_WEAPON_MISSILE_MAX",  10, 12, "progression"),
-    ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 1, 1, "progression"),
-    ("Speed Booster Upgrade","ITEM_UPGRADE_SPEED_BOOST_CHARGE", 1, 1, "progression"),
+    ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 1, 2, "progression"),
+    ("Speed Booster Upgrade","ITEM_UPGRADE_SPEED_BOOST_CHARGE", 1, 2, "progression"),
     ("Missile Tank",        "ITEM_WEAPON_MISSILE_MAX",  2, 60, "useful"),
     # Each Power Bomb Tank pickup grants +1 PB capacity (vanilla).
     ("Power Bomb Tank",     "ITEM_WEAPON_POWER_BOMB_MAX", 1, 13, "filler"),
