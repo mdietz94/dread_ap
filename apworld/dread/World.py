@@ -33,6 +33,7 @@ Skipped for now (later phases):
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,12 @@ from .Rules import set_rules
 
 
 GAME_NAME = "Metroid Dread"
+
+# Number of in-game Nav Station hint plaques baked into the starter template.
+# _generate_nav_hints fills up to this many with real AP placement hints;
+# patcher_pipeline._apply_nav_hints maps them onto the template plaques and
+# falls back to neutral filler for any shortfall.
+NAV_HINT_COUNT = 11
 
 
 class DreadWebWorld(WebWorld):
@@ -410,8 +417,122 @@ class DreadWorld(World):
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,
+            # Real AP placement hints baked into the in-game Nav Station
+            # plaques. Computed in pre_output (post-fill, pre-multidata) and
+            # stashed there so it's already set when this method runs later in
+            # generate_output / fill_slot_data. Empty in offline / direct-call
+            # flows that skip pre_output ⇒ patcher falls back to neutral filler.
+            "nav_hints": getattr(self, "_nav_hints", []),
             "placements": placements,
         }
+
+    def pre_output(self) -> None:
+        """Generate the in-game Nav Station hints and register them as real AP
+        server hints.
+
+        This runs after fill (every location has its item) and before AP builds
+        the multidata — the only window where mutating ``start_location_hints``
+        / ``start_hints`` still feeds AP's precollected-hint pass (so the picks
+        also show in the tracker and notify recipients). The rendered text is
+        stashed on ``self`` for :meth:`_build_placements_payload`, which runs
+        later (and concurrently) inside ``generate_output`` / ``fill_slot_data``
+        and bakes it into the patcher output."""
+        self._nav_hints = self._generate_nav_hints()
+
+    def _generate_nav_hints(self) -> list[dict[str, Any]]:
+        """Pick real cross-world placement facts and render them as Nav Station
+        hint text, registering each as a real AP server hint as we go.
+
+        Half are "location" hints (what sits at one of THIS slot's own pickups);
+        half are "item" hints (where one of THIS slot's own items ended up).
+        Both flavours are scoped to this slot so they're registrable through
+        this slot's own options: location hints via ``start_location_hints``
+        (the location is ours), item hints via ``start_hints`` (the item is
+        ours, restricted to item names unique in our pool so the entry resolves
+        to exactly one location). Deterministic under ``self.random``. ``{c1}``
+        / ``{c5}`` / ``{c0}`` are the game's colour escapes, kept so the lines
+        render like the starter preset's originals."""
+        mw = self.multiworld
+        me = self.player
+        rng = self.random
+
+        def place(loc: Any) -> str:
+            if loc.player == me:
+                return f"{{c5}}{loc.name}{{c0}}"
+            return f"{{c5}}{mw.get_player_name(loc.player)}{{c0}}'s {{c5}}{loc.name}{{c0}}"
+
+        # "location" candidates: this slot's own filled pickups.
+        my_locs = [loc for loc in mw.get_filled_locations(me)
+                   if loc.address is not None and loc.item is not None]
+        # "item" candidates: where this slot's own items landed, anywhere in the
+        # multiworld. Keep only item names unique in our pool, so the matching
+        # start_hints entry maps to a single location.
+        mine_anywhere = [loc for loc in mw.get_filled_locations()
+                         if loc.item is not None and loc.item.player == me
+                         and loc.address is not None]
+        name_counts = Counter(loc.item.name for loc in mine_anywhere)
+        item_locs = [loc for loc in mine_anywhere if name_counts[loc.item.name] == 1]
+
+        def prefer_advancement(locs: list[Any]) -> list[Any]:
+            adv = [loc for loc in locs if loc.item.advancement]
+            rest = [loc for loc in locs if not loc.item.advancement]
+            rng.shuffle(adv)
+            rng.shuffle(rest)
+            return adv + rest
+
+        loc_pool = prefer_advancement(my_locs)
+        item_pool = prefer_advancement(item_locs)
+
+        used: set[tuple[int, str]] = set()  # (player, location name) already hinted
+        hints: list[dict[str, Any]] = []
+
+        def take_location_hint() -> dict[str, Any] | None:
+            for loc in loc_pool:
+                key = (loc.player, loc.name)
+                if key in used:
+                    continue
+                used.add(key)
+                item = loc.item
+                if item.player == me:
+                    text = f"{place(loc)} holds your {{c1}}{item.name}{{c0}}."
+                else:
+                    who = mw.get_player_name(item.player)
+                    text = (f"{place(loc)} holds {{c1}}{item.name}{{c0}} "
+                            f"for {{c5}}{who}{{c0}}.")
+                self.options.start_location_hints.value.add(loc.name)
+                return {"text": text}
+            return None
+
+        def take_item_hint() -> dict[str, Any] | None:
+            for loc in item_pool:
+                key = (loc.player, loc.name)
+                if key in used:
+                    continue
+                used.add(key)
+                text = f"Your {{c1}}{loc.item.name}{{c0}} is at {place(loc)}."
+                self.options.start_hints.value.add(loc.item.name)
+                return {"text": text}
+            return None
+
+        n_item = NAV_HINT_COUNT // 2
+        n_loc = NAV_HINT_COUNT - n_item
+        for _ in range(n_loc):
+            h = take_location_hint()
+            if h:
+                hints.append(h)
+        for _ in range(n_item):
+            h = take_item_hint()
+            if h:
+                hints.append(h)
+        # Top up from whichever pool still has unused material if one ran short.
+        while len(hints) < NAV_HINT_COUNT:
+            h = take_location_hint() or take_item_hint()
+            if h is None:
+                break
+            hints.append(h)
+
+        rng.shuffle(hints)
+        return hints
 
     def fill_slot_data(self) -> dict[str, Any]:
         # Bundle the full placements payload so the in-client /patch command

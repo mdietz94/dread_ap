@@ -182,6 +182,7 @@ def placements_to_overrides(
         "starting_items": starting_items,
         "cosmetic_combat": placements.get("cosmetic_combat", {}),
         "required_artifacts": placements.get("required_artifacts"),
+        "nav_hints": placements.get("nav_hints", []),
         "pickup_resources": pickup_resources,
         "pickup_captions": pickup_captions,
         "pickup_models": pickup_models,
@@ -209,18 +210,31 @@ def _pickup_key(pickup: dict[str, Any]) -> Optional[str]:
 NAV_HINT_AP_TEXT = "You're playing Archipelago! There's already a hint system!"
 
 
-def _neutralize_nav_hints(hints: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Replace each Nav Station hint's spoiler text with the AP-aware filler,
-    keeping ``accesspoint_actor`` / ``hint_id`` intact so the patcher's
+def _apply_nav_hints(
+    hints: list[dict[str, Any]],
+    generated: list[Any],
+) -> list[dict[str, Any]]:
+    """Fill each Nav Station hint plaque's text from the AP-generated hint
+    list, keeping ``accesspoint_actor`` / ``hint_id`` intact so the patcher's
     ``patch_hints`` still resolves the actor and applies the door-unlock
     side-effects (``vDoorsToChange=[]``, ``wpThermalDevice=""``).
 
     The starter preset bakes ~11 entries pointing at Randovania's own
-    placement (e.g. "A Progressive Beam can be found in Cataris"); those
-    are false under AP shuffling. Symmetric to :func:`_objective_hints_for`."""
+    placement (e.g. "A Progressive Beam can be found in Cataris"); those are
+    false under AP shuffling. ``DreadWorld`` instead generates real cross-world
+    placement hints at generation time (see ``DreadWorld._generate_nav_hints``,
+    which also registers each as a real AP server hint). Slots beyond the
+    generated count — or every slot when ``generated`` is empty, e.g. the
+    offline / template-passthrough flows — fall back to the AP-aware filler so
+    nothing keeps leaking the stale Randovania placement."""
     out = []
-    for hint in hints:
-        out.append({**hint, "text": [NAV_HINT_AP_TEXT]})
+    for i, hint in enumerate(hints):
+        if i < len(generated):
+            entry = generated[i]
+            text = entry["text"] if isinstance(entry, dict) else entry
+        else:
+            text = NAV_HINT_AP_TEXT
+        out.append({**hint, "text": [text]})
     return out
 
 
@@ -281,10 +295,12 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
         obj["hints"] = _objective_hints_for(int(required_artifacts))
 
     # Nav Station hints: the starter preset bakes ~11 entries pointing at
-    # Randovania's own placement, false under AP shuffling. Neutralize text
-    # while preserving entries so patch_hints still unlocks the doors.
+    # Randovania's own placement, false under AP shuffling. Fill them with the
+    # AP-generated cross-world hints (falling back to neutral filler for any
+    # plaque past the generated count) while preserving entries so patch_hints
+    # still unlocks the doors.
     if out.get("hints"):
-        out["hints"] = _neutralize_nav_hints(out["hints"])
+        out["hints"] = _apply_nav_hints(out["hints"], overrides.get("nav_hints") or [])
 
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})
