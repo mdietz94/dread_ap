@@ -177,15 +177,15 @@ index b83b2dd..e10e117 100644
 +                        peer_dead = true; break;
 +                    }
 +                    if (pfd.revents & PollEvIn) {
++                        // POLLIN = peer is alive (or FIN'd). Reset the
++                        // keep-alive backstop here so a slow game thread
++                        // reading our replies can't tear down a healthy
++                        // connection — a wedged game thread is our problem,
++                        // and the PC times out its own run_lua await regardless.
++                        keepAlive = ResetValueAliveTimer;
 +                        if (readyForGameThread.load()) {
-+                            // RecvBuffer in use by game thread; defer the
-+                            // read until next tick. Sleep one tick so we
-+                            // don't busy-loop on the buffered data, and
-+                            // tick the keep-alive backstop — 50 ms has
-+                            // elapsed and a sustained game-thread stall
-+                            // shouldn't keep the connection alive forever.
++                            // RecvBuffer busy; defer the read one tick.
 +                            svcSleepThread(PollTimeoutMs * 1000000ll);
-+                            keepAlive--;
 +                        } else {
 +                            // Catches recv == 0 (graceful FIN); see
 +                            // ReceiveLogic comment.
