@@ -379,6 +379,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 log_widget.text = "\n".join(log_lines[-400:])
 
             def on_line(line: str) -> None:
+                wizard_log(line)
                 from kivy.clock import Clock as _Clock
                 _Clock.schedule_once(lambda dt: append_log(line))
 
@@ -695,6 +696,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             log_box.text = "\n".join(log_lines[-400:])
 
         def on_line(line: str) -> None:
+            wizard_log(line)
             from kivy.clock import Clock as _Clock
             _Clock.schedule_once(lambda dt: append_line(line))
 
