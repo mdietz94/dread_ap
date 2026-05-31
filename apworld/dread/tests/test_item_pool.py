@@ -235,9 +235,15 @@ class _FakeMultiWorld:
     """Bare-minimum MultiWorld stand-in for create_items."""
 
     def __init__(self, seed_name: str = "TEST"):
+        from random import Random
+
         self.itempool: list = []
         self.precollected_items: list = []
         self.seed_name = seed_name
+        # AutoWorld.World.__init__ seeds its per-world RNG from this and
+        # records it back into per_slot_randoms.
+        self.random = Random(0)
+        self.per_slot_randoms: dict = {}
 
     def push_precollected(self, item) -> None:
         self.precollected_items.append(item)
@@ -246,13 +252,18 @@ class _FakeMultiWorld:
 def _build_world(**option_overrides):
     """Construct a DreadWorld bound to a fake multiworld, with the given
     option overrides applied. Returns (world, multiworld)."""
+    import typing
+
     from dread.Options import DreadOptions
     from dread.World import DreadWorld
 
     mw = _FakeMultiWorld()
 
     # Build a DreadOptions instance with defaults, then override.
-    opts = DreadOptions.from_any({})  # type: ignore[attr-defined]
+    # ``from_any`` is a classmethod on each Option *subclass*, not on the
+    # options dataclass — instantiate every field from its own default.
+    hints = typing.get_type_hints(DreadOptions)
+    opts = DreadOptions(**{name: cls.from_any(cls.default) for name, cls in hints.items()})
     for key, value in option_overrides.items():
         getattr(opts, key).value = value
 
