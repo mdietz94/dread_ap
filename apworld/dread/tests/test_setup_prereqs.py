@@ -64,7 +64,7 @@ def test_python312_falls_through_to_py_dash_three_twelve(tmp_path, monkeypatch):
 def test_python312_nothing_resolves_returns_not_found(tmp_path, monkeypatch):
     """Every probe returns None: row is failed, install URL surfaced."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(prereqs, "_safe_run", lambda _cmd: None)
+    monkeypatch.setattr(prereqs, "_safe_run", lambda _cmd, **_kw: None)
     r = prereqs.check_python312()
     assert r.ok is False
     assert r.key == "python312"
@@ -151,7 +151,7 @@ def test_devkitpro_nothing_found_returns_install_url(tmp_path, monkeypatch):
     monkeypatch.delenv("DEVKITPRO", raising=False)
     monkeypatch.setattr(prereqs, "_DEVKITPRO_DEFAULT_ROOTS",
                         (tmp_path / "does-not-exist",))
-    monkeypatch.setattr(prereqs, "_safe_run", lambda _cmd: None)
+    monkeypatch.setattr(prereqs, "_safe_run", lambda _cmd, **_kw: None)
     r = prereqs.check_devkitpro()
     assert r.ok is False
     assert r.install_url == prereqs.INSTALL_URLS["devkitpro"]
@@ -163,19 +163,25 @@ def test_devkitpro_nothing_found_returns_install_url(tmp_path, monkeypatch):
 def test_open_dread_rando_importable(monkeypatch):
     """The probe subprocess returns 0 + a version: row is OK."""
     monkeypatch.setattr(prereqs, "_safe_run",
-                        lambda _cmd: (0, "0.10.4\n", ""))
+                        lambda _cmd, **_kw: (0, "0.10.4\n", ""))
     r = prereqs.check_open_dread_rando(python="/fake/python.exe")
     assert r.ok is True
     assert r.key == "open_dread_rando"
     assert "0.10.4" in r.detail
 
 
-def test_open_dread_rando_not_importable_surfaces_pip_command(monkeypatch):
+def test_open_dread_rando_not_importable_surfaces_pip_command(monkeypatch, tmp_path):
     """The subprocess exits non-zero: failure includes a pip-install note
-    pointing at the chosen Python."""
+    pointing at the chosen Python. Mocks the vendor probe so the test is
+    deterministic regardless of whether ``vendor/open-dread-rando`` is
+    initialized in the host environment (a submodule-missing run would
+    take the ``git submodule update`` diagnostic branch instead)."""
     monkeypatch.setattr(
         prereqs, "_safe_run",
-        lambda _cmd: (1, "", "ModuleNotFoundError: open_dread_rando"),
+        lambda _cmd, **_kw: (1, "", "ModuleNotFoundError: open_dread_rando"),
+    )
+    monkeypatch.setattr(
+        prereqs, "vendored_open_dread_rando_src", lambda: tmp_path,
     )
     r = prereqs.check_open_dread_rando(python="/fake/python.exe")
     assert r.ok is False
@@ -199,7 +205,7 @@ def test_open_dread_rando_enumerates_multiple_pythons(monkeypatch):
     candidates = ["/fake/badpy.exe", "/fake/goodpy.exe", "/fake/otherpy.exe"]
     monkeypatch.setattr(prereqs, "candidate_pythons", lambda: candidates)
 
-    def _fake_safe_run(cmd):
+    def _fake_safe_run(cmd, **_kw):
         # cmd is [python, "-c", probe_source]; succeed only for goodpy.
         if cmd[0] == "/fake/goodpy.exe":
             return (0, "0.10.4\n", "")
@@ -211,19 +217,28 @@ def test_open_dread_rando_enumerates_multiple_pythons(monkeypatch):
     assert "/fake/goodpy.exe" in r.detail
 
 
-def test_open_dread_rando_miss_targets_first_candidate(monkeypatch):
+def test_open_dread_rando_miss_targets_first_candidate(monkeypatch, tmp_path):
     """When none of the detected Pythons has it, the install hint targets
     the first (highest-priority) candidate so re-probe lands on the same
-    interpreter pip installed into."""
+    interpreter pip installed into. Mocks the vendor probe so the test
+    doesn't fall through to the ``git submodule update`` branch when the
+    host environment lacks the checkout."""
     candidates = ["/fake/firstpy.exe", "/fake/secondpy.exe"]
     monkeypatch.setattr(prereqs, "candidate_pythons", lambda: candidates)
     monkeypatch.setattr(
         prereqs, "_safe_run",
-        lambda _cmd: (1, "", "ModuleNotFoundError: open_dread_rando"),
+        lambda _cmd, **_kw: (1, "", "ModuleNotFoundError: open_dread_rando"),
+    )
+    monkeypatch.setattr(
+        prereqs, "vendored_open_dread_rando_src", lambda: tmp_path,
     )
     r = prereqs.check_open_dread_rando(python=None)
     assert r.ok is False
-    assert "/fake/firstpy.exe -m pip install open-dread-rando" in r.note
+    # Now installs the runtime deps (open-dread-rando itself is vendored);
+    # the install command names the first candidate so re-probe lands on
+    # the same interpreter.
+    assert "/fake/firstpy.exe -m pip install" in r.note
+    assert "mercury-engine-data-structures" in r.note
 
 
 # ---- check_all + all_ok -------------------------------------------------
