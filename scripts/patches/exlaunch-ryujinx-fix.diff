@@ -45,10 +45,10 @@ index b83b2dd..e10e117 100644
 +    // nn::socket::Poll for PollTimeoutMs, then if no readable / hangup event
 +    // arrived it decrements keepAlive. Once keepAlive reaches 0 the
 +    // connection is torn down. Client sends PACKET_KEEP_ALIVE every 2 s; the
-+    // 10 s window here tolerates Ryujinx delivery jitter (5x the 2 s keep-alive
-+    // cadence); real drops still short-circuit via POLLHUP/POLLERR + recv<=0.
++    // 3 s window here allows ~1 s of jitter. POLLHUP / POLLERR short-circuit
++    // this for the common case where the peer cleanly drops.
 +    constexpr inline auto PollTimeoutMs = 50;
-+    constexpr inline auto ResetValueAliveTimer = 200; // 200 * 50 ms = 10 s idle window (upstream default)
++    constexpr inline auto ResetValueAliveTimer = 60; // 60 * 50 ms = 3 s idle window
 +
 +    // Per-call deadline for ParseClientPacket payload reads. Bounds how long
 +    // a single ParseClientPacket invocation may stall when the client sends
