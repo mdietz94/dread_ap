@@ -221,6 +221,42 @@ def test_objective_absent_when_not_supplied():
     assert out["objective"]["required_artifacts"] == 3
 
 
+def test_nav_station_hints_neutralized():
+    """Top-level `hints[]` are the Nav Station entries the starter preset
+    bakes against Randovania's own placement; under AP they're false.
+    merge_overrides must replace each `text` with the AP-aware filler while
+    preserving accesspoint_actor/hint_id so patch_hints still unlocks doors."""
+    t = _template()
+    t["hints"] = [
+        {
+            "accesspoint_actor": {"scenario": "s010_cave", "actor": "PRP_CV_AccessPoint002"},
+            "hint_id": "CAVE_2",
+            "text": ["A {c1}Progressive Beam{c0} can be found in {c5}Cataris{c0}."],
+        },
+        {
+            "accesspoint_actor": {"scenario": "s020_magma", "actor": "accesspoint"},
+            "hint_id": "MAGMA_1",
+            "text": ["A {c1}Progressive Bomb{c0} can be found in {c5}Artaria{c0}."],
+        },
+    ]
+    out = merge_overrides(t, {})
+    assert len(out["hints"]) == 2
+    expected_text = ["You're playing Archipelago! There's already a hint system!"]
+    for src, patched in zip(t["hints"], out["hints"]):
+        assert patched["accesspoint_actor"] == src["accesspoint_actor"]
+        assert patched["hint_id"] == src["hint_id"]
+        assert patched["text"] == expected_text
+
+
+def test_nav_station_hints_absent_round_trips():
+    """Templates without top-level hints (e.g. the synthetic test template)
+    must round-trip unchanged — the neutralizer only fires when entries exist."""
+    t = _template()
+    assert "hints" not in t
+    out = merge_overrides(t, {})
+    assert "hints" not in out
+
+
 def test_non_actor_pickup_resource_override():
     """A pickup with pickup_actor=None is keyed by its pickup_lua_callback
     (scenario/function), so AP-placed DNA lands on the boss."""
