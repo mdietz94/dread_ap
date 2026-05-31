@@ -119,16 +119,10 @@ jobs:
                **Switch-status pill** for pointing the client at your Switch or
                Ryujinx. Click the pill → edit the IP → **Reconnect** (or use
                `/dread_connect <ip>` in the command bar).
-
-               Headless alternative (no display server / CI):
-               ```
-               DREAD_NOGUI=1 python -m worlds.dread.client.main \
-                 --connect <server>:<port> --name <slot> --switch-host <switch-ip>
-               ```
-            4. Build and deploy the patched RomFS — see the
-               [e2e runbook](https://github.com/${{ github.repository }}/blob/main/docs/e2e-runbook.md)
-               (steps 3–6) for the `seed_to_patcher_overrides` → `build_patcher_json`
-               → `open_dread_rando` → SD-card deploy pipeline.
+            4. Run `/setup` in the client to build and deploy the patched
+               RomFS — see the
+               [first-time setup walkthrough](https://github.com/${{ github.repository }}/blob/main/docs/first-time-setup.md)
+               for the click-by-click guide.
 
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md)
             for prerequisites (Switch hardware, Atmosphere CFW, Dread 2.1.0 RomFS, etc.).
