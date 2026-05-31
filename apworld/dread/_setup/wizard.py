@@ -14,9 +14,11 @@ Pages (sequenced; each calls ``goto("next-page")`` when its work completes):
                         Python 3.12 via winget; link to devkitPro installer;
                         pip-install hint for ``open_dread_rando``
   3. RomFSPickerPage  — folder picker for the user's pre-extracted vanilla
-                        Dread 2.1.0 romfs; persisted as ``romfs_path`` in
-                        ``setup_state.json``. The per-seed patcher reads
-                        it at AP-connect time (PR-A2 wires that path)
+                        Dread romfs (1.0.0 or 2.1.0 — both supported by
+                        upstream; a single subsdk9 binary runs on either);
+                        persisted as ``romfs_path`` in ``setup_state.json``.
+                        The per-seed patcher reads it at AP-connect time
+                        and auto-detects the romfs version.
   4. BuildPage        — drives ``ensure_exlaunch_checkout`` →
                         ``apply_ryujinx_patch`` → ``run_exlaunch_build``;
                         streams each subprocess's log line-by-line
@@ -28,8 +30,8 @@ Smo-baseline pages this wizard intentionally drops:
 
   - ``DumpPickerPage``/``ExtractPage``: dread has no NSP extraction step.
     ``open_dread_rando`` overlays an already-extracted romfs at AP-connect.
-  - ``BridgeIpPage``: dread inverts the wire topology — the PC dials the
-    Switch on :6969, so the PC's LAN IP is never baked into the build.
+  - ``BridgeIpPage``: the PC dials the Switch on :6969, so the PC's
+    LAN IP is never baked into the build — no bridge-IP page needed.
 
 Kivy is imported lazily INSIDE this module — never at apworld-import time —
 because AP generation hosts (Linux servers running ``ap_generate.py``)
@@ -53,10 +55,12 @@ from typing import Any
 from . import appdata_root, setup_state_path
 from .build import (
     apply_ryujinx_patch,
+    build_current,
     build_ready,
     collect_build_outputs,
     ensure_exlaunch_checkout,
     run_exlaunch_build,
+    write_build_manifest,
 )
 from .deploy import (
     DeployResult,
@@ -257,16 +261,18 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         root.add_widget(_h1("Dread Archipelago — Setup"))
         msg = (
             "This wizard prepares everything DreadClient needs to run a "
-            "Metroid Dread 2.1.0 Archipelago seed against Ryujinx or a "
-            "modded Switch. Run it the first time you set up the client, "
-            "and again whenever you switch deploy targets or update the "
+            "Metroid Dread Archipelago seed against Ryujinx or a modded "
+            "Switch. Run it the first time you set up the client, and "
+            "again whenever you switch deploy targets or update the "
             "apworld.\n\n"
             "REQUIREMENTS — confirm these BEFORE continuing:\n"
-            "  - Metroid Dread version 2.1.0 (the newest retail patch). The "
-            "Ryujinx + Atmosphere CFW path both expect 2.1.0 — patcher "
-            "outputs against other versions are not supported.\n"
-            "  - A pre-extracted vanilla Dread 2.1.0 romfs folder on this PC. "
-            "If you do not have one yet, dump from a clean retail source with "
+            "  - Metroid Dread version 1.0.0 or 2.1.0. Both are supported "
+            "long-term by upstream open-dread-rando + open-dread-rando-"
+            "exlaunch; a single sysmodule binary runs on either. Other "
+            "versions may work transiently but are not promised.\n"
+            "  - A pre-extracted vanilla Dread romfs folder on this PC, "
+            "matching the version your Switch / Ryujinx will run. If you "
+            "do not have one yet, dump from a clean retail source with "
             "NXDumpTool and extract with hactool / nxgameuncomp before "
             "running this wizard. (We never read your NSP/XCI directly — "
             "the per-seed patcher overlays the extracted romfs.)\n"
@@ -276,10 +282,11 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "from scratch.\n\n"
             "This wizard will:\n"
             "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
-            "Python 3.12 with open-dread-rando importable.\n"
-            "  - Record the path to your extracted Dread 2.1.0 romfs so the "
-            "per-seed patcher can run automatically when you connect to an "
-            "Archipelago server.\n"
+            "Python 3.12 with the open-dread-rando runtime deps installed "
+            "(the patcher itself is vendored as a git submodule).\n"
+            "  - Record the path to your extracted Dread romfs so the "
+            "per-seed patcher can run automatically when you connect to "
+            "an Archipelago server.\n"
             "  - Clone open-dread-rando-exlaunch at the pinned commit, apply "
             "our Ryujinx-fix patch, and build the subsdk9 sysmodule under "
             "devkitPro's msys2 bash (~30-60 seconds on a warm cache).\n"
@@ -546,7 +553,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             run_installer_popup(ordered, preflight=True)
 
         install_all_btn = Button(
-            text="Install all missing (Python 3.12 via winget + open-dread-rando via pip)",
+            text="Install all missing (Python 3.12 via winget + open-dread-rando deps via pip)",
             size_hint_y=None, height=40,
             disabled=(persisted_mode != "auto"),
         )
@@ -585,16 +592,18 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     def build_romfs() -> Screen:
         s = Screen(name="romfs")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
-        root.add_widget(_h1("Pick your extracted Dread 2.1.0 romfs"))
+        root.add_widget(_h1("Pick your extracted Dread romfs"))
         root.add_widget(_label(
-            "Browse to your pre-extracted Dread 2.1.0 romfs folder — the "
-            "directory that contains ``system/`` and ``packs/``. The per-seed "
+            "Browse to your pre-extracted Dread romfs folder — the directory "
+            "that contains ``system/`` and ``packs/``. Both Dread 1.0.0 and "
+            "2.1.0 are supported (upstream open-dread-rando reads either, and "
+            "the same sysmodule binary runs on both ROMs). The per-seed "
             "patcher reads this at AP-connect time and overlays placements / "
             "options into your Ryujinx (or Switch) mod install.\n\n"
             "If you haven't extracted yet, dump from a clean retail source "
             "with NXDumpTool and extract with hactool / nxgameuncomp; we "
             "never read the NSP/XCI directly.",
-            height=128,
+            height=160,
         ))
 
         picker_row = BoxLayout(orientation="horizontal", size_hint_y=None,
@@ -623,7 +632,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         def on_browse(_i) -> None:
             current = wizard_state.get("romfs_path")
             picked = _ask_directory(
-                "Select your extracted Dread 2.1.0 romfs folder",
+                "Select your extracted Dread romfs folder",
                 str(current) if current else None,
             )
             if not picked:
@@ -632,10 +641,9 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             if not picked_path.is_dir():
                 err_label.text = f"Not a folder: {picked}"
                 return
-            # Light sanity check — a Dread 2.1.0 romfs has these subdirs.
-            # We warn (not block) because a user with an unusual extractor
-            # layout (subfolder, hardlink farm) might still produce a tree
-            # that works with the patcher.
+            # Light sanity check — a Dread romfs has these subdirs.
+            # Same layout on both 1.0.0 and 2.1.0; this isn't a version
+            # check, just a "does this look like a romfs at all" guard.
             warn_missing = [
                 name for name in ("system", "packs")
                 if not (picked_path / name).is_dir()
@@ -745,6 +753,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 _Clock.schedule_once(lambda dt: setattr(retry_btn, "disabled", False))
                 return
             wizard_state["build_done"] = True
+            write_build_manifest()
             update_status(
                 f"Build complete: subsdk9 ({outputs['subsdk9'].stat().st_size} bytes), "
                 f"main.npdm ({outputs['main.npdm'].stat().st_size} bytes)."
@@ -784,17 +793,18 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
 
         def _reset_and_start(*_):
             # Fresh page entry resets the attempt counter so navigating
-            # Back→Forward doesn't immediately hit the cap. If a previous
-            # wizard run already produced build outputs (build_done was
-            # carried in from build_ready()), skip the worker and let the
-            # user proceed straight to Deploy — re-running the build wastes
-            # 30-60s on a no-op.
+            # Back→Forward doesn't immediately hit the cap. Skip the build
+            # only when the outputs are provably current — i.e. the pinned
+            # exlaunch commit + bundled patch files haven't changed since the
+            # last successful build (build_current() hash check). This means
+            # an apworld update (new patches or new pinned commit) always
+            # triggers a fresh build automatically.
             build_state["attempt_count"] = 0
-            if wizard_state.get("build_done") and build_ready():
+            if wizard_state.get("build_done") and build_current():
                 outputs = collect_build_outputs()
                 msg = (
-                    f"Build already complete from a previous wizard run "
-                    f"(subsdk9 + main.npdm present at "
+                    f"Build is current (outputs match the installed apworld "
+                    f"version; subsdk9 + main.npdm at "
                     f"{outputs['subsdk9'].parent}). Click Next to deploy, "
                     f"or Retry to rebuild from scratch."
                 )
