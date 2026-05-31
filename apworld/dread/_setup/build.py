@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import build_dir
-from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under
+from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under, _prepend_path
 
 # Suppress per-child console window under the AP Launcher (no parent console
 # → Windows would otherwise open a fresh console for each CONSOLE-subsystem
@@ -259,6 +259,44 @@ def _exlaunch_checkout_dir() -> Path:
     return build_dir() / "exlaunch-checkout"
 
 
+# Git-for-Windows default install locations probed when `shutil.which("git")`
+# misses. The installer adds `C:\Program Files\Git\cmd` to PATH, but the
+# running launcher process inherits its PATH snapshot from launch time, so a
+# fresh install isn't visible until the user restarts. Probing the defaults
+# and `_prepend_path`-ing the hit lets a manual-mode user install Git in a
+# separate window and immediately hit Retry without a launcher restart —
+# same pattern as `check_python312` / `check_devkitpro` in prereqs.py.
+def _git_default_install_candidates() -> list[Path]:
+    cands: list[Path] = [
+        Path("C:/Program Files/Git/cmd/git.exe"),
+        Path("C:/Program Files/Git/bin/git.exe"),
+        Path("C:/Program Files (x86)/Git/cmd/git.exe"),
+    ]
+    localapp = os.environ.get("LOCALAPPDATA")
+    if localapp:
+        # winget per-user install of Git.Git
+        cands.append(Path(localapp) / "Programs" / "Git" / "cmd" / "git.exe")
+    return cands
+
+
+def _resolve_git() -> str | None:
+    """Locate `git` for the build pipeline. Returns the resolved path or None.
+
+    Order: `shutil.which("git")` (covers any setup that already has it on PATH,
+    including PATH mutated by an earlier call here), then well-known Git-for-
+    Windows install locations. On a default-path hit, prepends the binary's
+    parent dir to `os.environ["PATH"]` so subsequent `shutil.which` calls in
+    this process see git too (mirrors prereqs.py:_prepend_path usage)."""
+    found = shutil.which("git")
+    if found:
+        return found
+    for cand in _git_default_install_candidates():
+        if cand.is_file():
+            _prepend_path(cand.parent)
+            return str(cand)
+    return None
+
+
 def _build_output_dir() -> Path:
     """Where exlaunch.sh writes its outputs (subsdk9 + main.npdm)."""
     return _exlaunch_checkout_dir() / "src" / "open_dread_rando_exlaunch" / "deploy"
@@ -276,10 +314,11 @@ def ensure_exlaunch_checkout(on_line: ProgressFn | None = None) -> BuildResult:
     so a previous failed `git apply` doesn't leave it in a state where
     subsequent applies fail with "patch already applied / conflicts".
     """
-    git = shutil.which("git")
+    git = _resolve_git()
     if git is None:
-        msg = ("git not found on PATH. Install git from "
-               "https://git-scm.com/download/win and click Re-check.")
+        msg = ("git not found on PATH or in the default Git-for-Windows "
+               "install locations. Install git from "
+               "https://git-scm.com/download/win and click Retry.")
         if on_line:
             on_line(msg)
         return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
@@ -392,9 +431,9 @@ def _apply_one_patch(
                     on_line(msg)
                 return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
 
-    git = shutil.which("git")
+    git = _resolve_git()
     if git is None:
-        msg = "git not found on PATH"
+        msg = "git not found on PATH or in default Git-for-Windows locations"
         if on_line:
             on_line(msg)
         return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
