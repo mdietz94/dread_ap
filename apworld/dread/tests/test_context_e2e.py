@@ -55,9 +55,7 @@ def ctx():
         password=None,
         state=state,
         datapackage=dp,
-        listen_host="127.0.0.1",
-        listen_port=0,
-        discovery_port=0,
+        switch_host="127.0.0.1",
     )
     # Replace send_msgs with an awaitable mock that records calls.
     c.send_msgs = unittest.mock.AsyncMock()  # type: ignore[method-assign]

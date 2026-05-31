@@ -14,30 +14,22 @@ Pages (sequenced; each calls ``goto("next-page")`` when its work completes):
                         Python 3.12 via winget; link to devkitPro installer;
                         pip-install hint for ``open_dread_rando``
   3. RomFSPickerPage  — folder picker for the user's pre-extracted vanilla
-                        Dread romfs (1.0.0 or 2.1.0 — both supported by
-                        upstream; a single subsdk9 binary runs on either);
-                        persisted as ``romfs_path`` in ``setup_state.json``.
-                        The per-seed patcher reads it at AP-connect time
-                        and auto-detects the romfs version.
-  4. BridgeIpPage     — optional seed IP for the Switch's /24 sweep. The
-                        topology was inverted (PC listens, Switch dials),
-                        so the sysmodule needs a baked-in seed to find
-                        the PC on real hardware. Defaults to the
-                        auto-detected LAN IP; user can edit. Loopback +
-                        Ryujinx don't need this (loopback is always
-                        tried first).
-  5. BuildPage        — drives ``ensure_exlaunch_checkout`` →
-                        ``apply_patches`` → ``write_bridge_config`` →
-                        ``run_exlaunch_build``; streams each
-                        subprocess's log line-by-line
-  6. DeployPage       — radio: Ryujinx / SD card / Custom folder;
+                        Dread 2.1.0 romfs; persisted as ``romfs_path`` in
+                        ``setup_state.json``. The per-seed patcher reads
+                        it at AP-connect time (PR-A2 wires that path)
+  4. BuildPage        — drives ``ensure_exlaunch_checkout`` →
+                        ``apply_ryujinx_patch`` → ``run_exlaunch_build``;
+                        streams each subprocess's log line-by-line
+  5. DeployPage       — radio: Ryujinx / SD card / Custom folder;
                         auto-detects each; calls ``deploy_to_*``
-  7. DonePage         — success banner + "Launch DreadClient" handoff
+  6. DonePage         — success banner + "Launch DreadClient" handoff
 
 Smo-baseline pages this wizard intentionally drops:
 
   - ``DumpPickerPage``/``ExtractPage``: dread has no NSP extraction step.
     ``open_dread_rando`` overlays an already-extracted romfs at AP-connect.
+  - ``BridgeIpPage``: dread inverts the wire topology — the PC dials the
+    Switch on :6969, so the PC's LAN IP is never baked into the build.
 
 Kivy is imported lazily INSIDE this module — never at apworld-import time —
 because AP generation hosts (Linux servers running ``ap_generate.py``)
@@ -60,14 +52,11 @@ from typing import Any
 
 from . import appdata_root, setup_state_path
 from .build import (
-    apply_patches,
-    build_current,
+    apply_ryujinx_patch,
     build_ready,
     collect_build_outputs,
     ensure_exlaunch_checkout,
     run_exlaunch_build,
-    write_bridge_config,
-    write_build_manifest,
 )
 from .deploy import (
     DeployResult,
@@ -79,9 +68,6 @@ from .deploy import (
 )
 from .prereqs import PrereqResult, all_ok, check_all
 from .dreadap_file import parse_dreadap
-# net_util ships under apworld/dread/client/. Pulling it from there keeps
-# the wizard from re-implementing LAN-IP detection.
-from ..client.net_util import detect_lan_ip, is_plausible_ipv4
 
 log = logging.getLogger(__name__)
 
@@ -240,22 +226,10 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     initial_romfs = (
         Path(saved_romfs) if saved_romfs and Path(saved_romfs).is_dir() else None
     )
-    # Bridge seed IP. The Switch sweeps this address's /24 looking for the
-    # PC bridge; loopback (Ryujinx-on-same-host) is tried first regardless.
-    # On first wizard run we suggest the auto-detected LAN IP; subsequent
-    # runs reuse whatever the user committed. Empty string == "leave the
-    # patch default in place" (useful for Ryujinx-only setups).
-    saved_bridge_ip = saved_state.get("bridge_ip")
-    if saved_bridge_ip is None:
-        try:
-            saved_bridge_ip = detect_lan_ip()
-        except Exception:
-            saved_bridge_ip = ""
     wizard_state: dict[str, Any] = {
         "dreadap_path": dreadap_path,
         "dreadap": parse_dreadap(Path(dreadap_path)) if dreadap_path else None,
         "romfs_path": initial_romfs,
-        "bridge_ip": saved_bridge_ip,
         "build_done": build_ready(),  # carry across pages; reflect prior runs
         "deploy_target": saved_state.get("deploy_target", "ryujinx"),
         "ryujinx_root": str(detect_ryujinx_path() or saved_state.get("ryujinx_root", "")),
@@ -283,18 +257,16 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         root.add_widget(_h1("Dread Archipelago — Setup"))
         msg = (
             "This wizard prepares everything DreadClient needs to run a "
-            "Metroid Dread Archipelago seed against Ryujinx or a modded "
-            "Switch. Run it the first time you set up the client, and "
-            "again whenever you switch deploy targets or update the "
+            "Metroid Dread 2.1.0 Archipelago seed against Ryujinx or a "
+            "modded Switch. Run it the first time you set up the client, "
+            "and again whenever you switch deploy targets or update the "
             "apworld.\n\n"
             "REQUIREMENTS — confirm these BEFORE continuing:\n"
-            "  - Metroid Dread version 1.0.0 or 2.1.0. Both are supported "
-            "long-term by upstream open-dread-rando + open-dread-rando-"
-            "exlaunch; a single sysmodule binary runs on either. Other "
-            "versions may work transiently but are not promised.\n"
-            "  - A pre-extracted vanilla Dread romfs folder on this PC, "
-            "matching the version your Switch / Ryujinx will run. If you "
-            "do not have one yet, dump from a clean retail source with "
+            "  - Metroid Dread version 2.1.0 (the newest retail patch). The "
+            "Ryujinx + Atmosphere CFW path both expect 2.1.0 — patcher "
+            "outputs against other versions are not supported.\n"
+            "  - A pre-extracted vanilla Dread 2.1.0 romfs folder on this PC. "
+            "If you do not have one yet, dump from a clean retail source with "
             "NXDumpTool and extract with hactool / nxgameuncomp before "
             "running this wizard. (We never read your NSP/XCI directly — "
             "the per-seed patcher overlays the extracted romfs.)\n"
@@ -304,11 +276,10 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "from scratch.\n\n"
             "This wizard will:\n"
             "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
-            "Python 3.12 with the open-dread-rando runtime deps installed "
-            "(the patcher itself is vendored as a git submodule).\n"
-            "  - Record the path to your extracted Dread romfs so the "
-            "per-seed patcher can run automatically when you connect to "
-            "an Archipelago server.\n"
+            "Python 3.12 with open-dread-rando importable.\n"
+            "  - Record the path to your extracted Dread 2.1.0 romfs so the "
+            "per-seed patcher can run automatically when you connect to an "
+            "Archipelago server.\n"
             "  - Clone open-dread-rando-exlaunch at the pinned commit, apply "
             "our Ryujinx-fix patch, and build the subsdk9 sysmodule under "
             "devkitPro's msys2 bash (~30-60 seconds on a warm cache).\n"
@@ -575,7 +546,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             run_installer_popup(ordered, preflight=True)
 
         install_all_btn = Button(
-            text="Install all missing (Python 3.12 via winget + open-dread-rando deps via pip)",
+            text="Install all missing (Python 3.12 via winget + open-dread-rando via pip)",
             size_hint_y=None, height=40,
             disabled=(persisted_mode != "auto"),
         )
@@ -614,18 +585,16 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     def build_romfs() -> Screen:
         s = Screen(name="romfs")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
-        root.add_widget(_h1("Pick your extracted Dread romfs"))
+        root.add_widget(_h1("Pick your extracted Dread 2.1.0 romfs"))
         root.add_widget(_label(
-            "Browse to your pre-extracted Dread romfs folder — the directory "
-            "that contains ``system/`` and ``packs/``. Both Dread 1.0.0 and "
-            "2.1.0 are supported (upstream open-dread-rando reads either, and "
-            "the same sysmodule binary runs on both ROMs). The per-seed "
+            "Browse to your pre-extracted Dread 2.1.0 romfs folder — the "
+            "directory that contains ``system/`` and ``packs/``. The per-seed "
             "patcher reads this at AP-connect time and overlays placements / "
             "options into your Ryujinx (or Switch) mod install.\n\n"
             "If you haven't extracted yet, dump from a clean retail source "
             "with NXDumpTool and extract with hactool / nxgameuncomp; we "
             "never read the NSP/XCI directly.",
-            height=160,
+            height=128,
         ))
 
         picker_row = BoxLayout(orientation="horizontal", size_hint_y=None,
@@ -646,7 +615,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         root.add_widget(err_label)
 
         nav, _, next_btn = _nav_row(lambda: goto("prereqs"),
-                                    lambda: goto("bridge_ip"))
+                                    lambda: goto("build"))
         # If a valid romfs path was restored from saved state, the user can
         # advance immediately without re-Browsing.
         next_btn.disabled = initial_path is None
@@ -654,7 +623,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         def on_browse(_i) -> None:
             current = wizard_state.get("romfs_path")
             picked = _ask_directory(
-                "Select your extracted Dread romfs folder",
+                "Select your extracted Dread 2.1.0 romfs folder",
                 str(current) if current else None,
             )
             if not picked:
@@ -663,9 +632,10 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             if not picked_path.is_dir():
                 err_label.text = f"Not a folder: {picked}"
                 return
-            # Light sanity check — a Dread romfs has these subdirs.
-            # Same layout on both 1.0.0 and 2.1.0; this isn't a version
-            # check, just a "does this look like a romfs at all" guard.
+            # Light sanity check — a Dread 2.1.0 romfs has these subdirs.
+            # We warn (not block) because a user with an unusual extractor
+            # layout (subfolder, hardlink farm) might still produce a tree
+            # that works with the patcher.
             warn_missing = [
                 name for name in ("system", "packs")
                 if not (picked_path / name).is_dir()
@@ -692,59 +662,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         s.add_widget(root)
         return s
 
-    # --- 4. Bridge IP (seed for the Switch's /24 sweep)
-    def build_bridge_ip() -> Screen:
-        s = Screen(name="bridge_ip")
-        root = BoxLayout(orientation="vertical", padding=20, spacing=12)
-        root.add_widget(_h1("Bridge PC IP"))
-        root.add_widget(_label(
-            "Enter the LAN IP your Switch will use to reach this PC. We've "
-            "guessed your primary adapter's IP. The Switch sysmodule sweeps "
-            "this IP's /24 looking for the DreadClient bridge, so it should "
-            "be the same subnet your Switch is on.\n\n"
-            "This IP gets baked into the compiled sysmodule; if your PC "
-            "moves to a different subnet later, re-run setup. "
-            "Ryujinx-on-this-PC works regardless — loopback is always "
-            "tried first.\n\n"
-            "Leave blank to keep the patch default and rely on loopback "
-            "discovery only (Ryujinx-only setups).",
-            height=160,
-        ))
-        ip_input = TextInput(text=wizard_state["bridge_ip"], multiline=False,
-                             size_hint_y=None, height=48)
-        root.add_widget(ip_input)
-        err_label = _label("", color=(0.8, 0.1, 0.1, 1))
-        root.add_widget(err_label)
-
-        nav, _, next_btn = _nav_row(lambda: goto("romfs"),
-                                    lambda: (commit(), goto("build")))
-
-        def commit() -> None:
-            wizard_state["bridge_ip"] = ip_input.text.strip()
-            # Persist so the next wizard run pre-fills this value.
-            state = load_setup_state()
-            state["bridge_ip"] = wizard_state["bridge_ip"]
-            save_setup_state(state)
-
-        def validate(*_):
-            txt = ip_input.text.strip()
-            # Empty = "use patch default"; we allow that explicitly.
-            if txt == "":
-                next_btn.disabled = False
-                err_label.text = ("No IP set — Ryujinx loopback will still "
-                                  "work, but real-Switch discovery won't.")
-                return
-            ok = is_plausible_ipv4(txt)
-            next_btn.disabled = not ok
-            err_label.text = "" if ok else "Not a valid IPv4 address (a.b.c.d)"
-
-        ip_input.bind(text=validate)
-        validate()
-        root.add_widget(nav)
-        s.add_widget(root)
-        return s
-
-    # --- 5. Build
+    # --- 4. Build
     def build_build() -> Screen:
         s = Screen(name="build")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
@@ -755,8 +673,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         log_box = TextInput(text="", readonly=True, size_hint=(1, 1))
         root.add_widget(log_box)
 
-        nav, _, next_btn = _nav_row(lambda: goto("bridge_ip"),
-                                    lambda: goto("deploy"))
+        nav, _, next_btn = _nav_row(lambda: goto("romfs"), lambda: goto("deploy"))
         next_btn.disabled = True
         retry_btn = Button(text="Retry", size_hint_y=None, height=40, disabled=True)
         root.add_widget(retry_btn)
@@ -778,18 +695,11 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             _Clock.schedule_once(lambda dt: status.setter("text")(status, text))
 
         def run_in_worker() -> None:
-            # Resolve the wizard's seed-IP at worker-start (not closure
-            # capture) so a Back→edit→Forward round trip picks up the
-            # new value without rebuilding the BuildPage.
-            seed_ip = wizard_state.get("bridge_ip") or None
             steps: list[tuple[str, Any]] = [
                 ("Cloning open-dread-rando-exlaunch at pinned commit...",
                  lambda: ensure_exlaunch_checkout(on_line=on_line)),
-                ("Applying patches (Ryujinx-fix + TCP-client topology, "
-                 "idempotent)...",
-                 lambda: apply_patches(on_line=on_line)),
-                (f"Baking bridge seed IP={seed_ip!r} into bridge_config.hpp...",
-                 lambda: write_bridge_config(seed_ip, on_line=on_line)),
+                ("Applying Ryujinx-fix patch (idempotent)...",
+                 lambda: apply_ryujinx_patch(on_line=on_line)),
                 ("Compiling subsdk9 under devkitPro msys2 bash "
                  "(~30-60s on a warm cache)...",
                  lambda: run_exlaunch_build(on_line=on_line)),
@@ -835,7 +745,6 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 _Clock.schedule_once(lambda dt: setattr(retry_btn, "disabled", False))
                 return
             wizard_state["build_done"] = True
-            write_build_manifest()
             update_status(
                 f"Build complete: subsdk9 ({outputs['subsdk9'].stat().st_size} bytes), "
                 f"main.npdm ({outputs['main.npdm'].stat().st_size} bytes)."
@@ -875,18 +784,17 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
 
         def _reset_and_start(*_):
             # Fresh page entry resets the attempt counter so navigating
-            # Back→Forward doesn't immediately hit the cap. Skip the build
-            # only when the outputs are provably current — i.e. the pinned
-            # exlaunch commit + bundled patch files haven't changed since the
-            # last successful build (build_current() hash check). This means
-            # an apworld update (new patches or new pinned commit) always
-            # triggers a fresh build automatically.
+            # Back→Forward doesn't immediately hit the cap. If a previous
+            # wizard run already produced build outputs (build_done was
+            # carried in from build_ready()), skip the worker and let the
+            # user proceed straight to Deploy — re-running the build wastes
+            # 30-60s on a no-op.
             build_state["attempt_count"] = 0
-            if wizard_state.get("build_done") and build_current():
+            if wizard_state.get("build_done") and build_ready():
                 outputs = collect_build_outputs()
                 msg = (
-                    f"Build is current (outputs match the installed apworld "
-                    f"version; subsdk9 + main.npdm at "
+                    f"Build already complete from a previous wizard run "
+                    f"(subsdk9 + main.npdm present at "
                     f"{outputs['subsdk9'].parent}). Click Next to deploy, "
                     f"or Retry to rebuild from scratch."
                 )
@@ -1191,7 +1099,6 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     sm.add_widget(build_welcome())
     sm.add_widget(build_prereqs())
     sm.add_widget(build_romfs())
-    sm.add_widget(build_bridge_ip())
     sm.add_widget(build_build())
     sm.add_widget(build_deploy())
     sm.add_widget(build_done())

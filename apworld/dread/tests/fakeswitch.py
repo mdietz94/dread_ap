@@ -1,12 +1,9 @@
 """A stateful fake Metroid Dread game that speaks the exlaunch wire protocol.
 
-The integration-test fixture between unit tests and a real Switch.
-
-Under the SMO-style inverted topology, the Switch dials the PC. So this
-fake is a TCP **client**: on :meth:`dial`, it sends a UDP discovery probe
-to the responder, parses the ``{"t":"bridge","host":...,"port":...}``
-reply, opens a TCP socket to the advertised address, and runs the
-protocol loop on that connection.
+The integration-test fixture between unit tests and a real Switch. Unlike the
+wire-only ``FakeSwitch`` in ``test_lua_executor.py``, this models **game
+semantics** so the real :class:`DreadContext` can be driven through a whole
+session against it over a loopback socket.
 
 It models the *real* delivery protocol read from upstream Lua
 (randovania ``bootstrap_part_2.lua`` + open-dread-rando ``randomizer_powerup.lua``):
@@ -21,16 +18,17 @@ It models the *real* delivery protocol read from upstream Lua
   * Collecting a world pickup locally also runs ``OnPickedUp`` → bumps
     ``InventoryIndex`` and sets the location bit.
 
-``in_cutscene`` models the cinematic window where
-``Scenario.IsUserInteractionEnabled`` is false: a received pickup is held
-pending until :meth:`end_cutscene`.
+``in_cutscene`` models the cinematic window where ``Scenario.IsUserInteractionEnabled``
+is false: a received pickup is held pending (NOT dropped, NOT counted) until
+:meth:`end_cutscene`. This is the faithful behaviour — the old fake's
+``onpickedup_bumps_counter`` knob encoded the *wrong* assumption (that our
+former ``OnPickedUp``-direct delivery bumped ``ReceivedPickups``; it did not).
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import re
-import socket
 import sys
 from pathlib import Path
 from typing import Optional
@@ -44,18 +42,20 @@ from dread.client import lua_packets as lp  # noqa: E402
 # Resources inside the progression literal render as {item_id="ITEM_X", quantity=N}.
 _RESOURCE_RE = re.compile(r'item_id\s*=\s*"([^"]+)"\s*,\s*quantity\s*=\s*(-?\d+)')
 
-# RL.ReceivePickup("msg", Cls, "prog", receivedIndex, inventoryIndex)
+# RL.ReceivePickup("msg", Cls, "prog", receivedIndex, inventoryIndex) — msg and
+# prog are double-quoted Lua strings (may contain \" escapes); cls is a bareword.
 _RECEIVE_RE = re.compile(
     r'RL\.ReceivePickup\(\s*'
     r'("(?:[^"\\]|\\.)*")\s*,\s*'   # 1: msg
     r'(\w+)\s*,\s*'                 # 2: cls
-    r'("(?:[^"\\]|\\.)*")\s*,\s*'   # 3: progression source
+    r'("(?:[^"\\]|\\.)*")\s*,\s*'   # 3: progression source (quoted)
     r'(-?\d+)\s*,\s*'              # 4: receivedPickupIndex
     r'(-?\d+)\s*\)'                # 5: inventoryIndex
 )
 
 
 def _unescape_lua_string(literal: str) -> str:
+    """Strip the surrounding quotes and undo \\" / \\\\ escaping."""
     inner = literal[1:-1]
     return inner.replace('\\"', '"').replace("\\\\", "\\")
 
@@ -72,37 +72,8 @@ def _push_frame(packet_type: lp.PacketType, payload: bytes) -> bytes:
     return bytes([packet_type]) + len(payload).to_bytes(4, "little") + payload
 
 
-async def discover_bridge(
-    discovery_port: int,
-    probe_host: str = "127.0.0.1",
-    timeout: float = 1.0,
-) -> tuple[str, int]:
-    """UDP-probe the bridge and return ``(host, port)`` from the reply.
-
-    Tests run both sides on loopback, so the probe target is fixed at
-    ``127.0.0.1`` — production parity (loopback first) without
-    duplicating the SMO ``/24`` sweep logic in the test harness. Raises
-    ``asyncio.TimeoutError`` on no reply.
-    """
-    loop = asyncio.get_running_loop()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setblocking(False)
-    try:
-        probe = (json.dumps({"t": "discover", "mod_ver": "fake-dread"})
-                 + "\n").encode("utf-8")
-        await loop.sock_sendto(sock, probe, (probe_host, discovery_port))
-        data, _addr = await asyncio.wait_for(
-            loop.sock_recvfrom(sock, 4096), timeout=timeout)
-    finally:
-        sock.close()
-    reply = json.loads(data.decode("utf-8"))
-    if reply.get("t") != "bridge":
-        raise RuntimeError(f"unexpected discovery reply: {reply!r}")
-    return str(reply["host"]), int(reply["port"])
-
-
 class FakeDreadGame:
-    """In-process Dread game model. TCP-dials a DreadClient bridge."""
+    """In-process Dread game model + exlaunch TCP server."""
 
     def __init__(self) -> None:
         self.api_response = b"1,4096,true,fake-layout-uuid,2.1.0"
@@ -124,51 +95,21 @@ class FakeDreadGame:
         self.bootstrap_chunks: list[str] = []
         self.bootstrapped: bool = False
 
-        # ---- transport ----
-        self._writer: asyncio.StreamWriter | None = None
-        self._task: asyncio.Task[None] | None = None
+        self._server: asyncio.base_events.Server | None = None
+        self.port: int = 0
         self._req_num: int = 0
 
     # ---- lifecycle ----------------------------------------------------
 
-    async def dial(self, discovery_port: int, probe_host: str = "127.0.0.1") -> None:
-        """Run the SMO-style discover-then-dial sequence against a bridge.
-
-        Probes UDP at ``probe_host:discovery_port``, then TCP-connects to
-        the advertised ``(host, port)``. Starts the protocol loop as a
-        background task; tests can interleave :meth:`collect` /
-        :meth:`end_cutscene` etc. while the loop runs.
-        """
-        host, port = await discover_bridge(discovery_port, probe_host)
-        reader, writer = await asyncio.open_connection(host, port)
-        self._writer = writer
-        self._task = asyncio.create_task(
-            self._handle(reader, writer), name="fakeswitch-handle")
-
-    async def disconnect(self) -> None:
-        """Close the writer and wait for the protocol task to unwind.
-
-        Use to simulate the Switch losing its socket mid-session — the
-        DreadContext's accept handler sees EOF and returns to listening.
-        """
-        if self._writer is not None:
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except Exception:
-                pass
-            self._writer = None
-        if self._task is not None:
-            try:
-                await asyncio.wait_for(self._task, timeout=2.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
-                self._task.cancel()
-            self._task = None
+    async def start(self) -> None:
+        self._server = await asyncio.start_server(self._handle, host="127.0.0.1", port=0)
+        self.port = self._server.sockets[0].getsockname()[1]
 
     async def stop(self) -> None:
-        """Alias of :meth:`disconnect` for test-fixture symmetry with
-        the prior server-mode fake."""
-        await self.disconnect()
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
 
     # ---- test-control helpers ----------------------------------------
 
@@ -181,7 +122,7 @@ class FakeDreadGame:
                 self.inventory_index += 1
 
     def end_cutscene(self) -> None:
-        """Leave the cinematic; grant any pending received pickup."""
+        """Leave the cinematic; grant any pending received pickup (GivePendingPickup)."""
         self.in_cutscene = False
         self._try_grant_pending()
 
@@ -195,15 +136,16 @@ class FakeDreadGame:
     # ---- delivery model ----------------------------------------------
 
     def _try_grant_pending(self) -> None:
+        """RL.GivePendingPickup → RL.ConfirmPickup, gated on interaction."""
         if self._pending is None or self.in_cutscene:
             return
         resources = self._pending
         self._pending = None
         self.onpickedup_calls.append(resources)
-        for item_id, qty in resources:
+        for item_id, qty in resources:           # OnPickedUp / HandlePickupResources
             self.inventory[item_id] = self.inventory.get(item_id, 0) + qty
-        self.inventory_index += 1
-        self.received_pickups += 1
+        self.inventory_index += 1                # IncrementInventoryIndex
+        self.received_pickups += 1               # ConfirmPickup
 
     def _receive_pickup(self, src: str) -> None:
         m = _RECEIVE_RE.search(src)
@@ -215,11 +157,11 @@ class FakeDreadGame:
         inv_index = int(m.group(5))
         self.lua_log.append(msg)
         if self._pending is not None:
-            return
+            return  # single in-flight guard
         if recv_index != self.received_pickups or inv_index != self.inventory_index:
-            return
+            return  # index mismatch → game would re-report; client re-polls
         self._pending = [(item_id, int(qty)) for item_id, qty in _RESOURCE_RE.findall(prog)]
-        self._try_grant_pending()
+        self._try_grant_pending()  # GivePendingPickup grants now unless mid-cutscene
 
     # ---- wire handling ------------------------------------------------
 
@@ -238,6 +180,10 @@ class FakeDreadGame:
         return b"locations:" + bytes(buf)
 
     def _respond(self, src: str) -> list[bytes]:
+        """Map one Lua-exec request to its reply frame plus any push frames."""
+        # Bootstrap chunks are large blocks that DEFINE the RL.* functions (and
+        # DoFile the powerup script); they contain the same name substrings as
+        # the runtime calls, so detect + record them first to avoid misrouting.
         if ("function " in src or "Game.DoFile" in src
                 or "RL.Pickups[i]=" in src or "RL.Bootstrap=true" in src):
             self.bootstrap_chunks.append(src)
@@ -273,21 +219,19 @@ class FakeDreadGame:
             return [_lua_exec_reply(self._bump(), True,
                                     b"true" if self.beaten else b"false")]
 
+        # API probe (defensive — normally consumed before the request loop).
         if "RL.Version" in src or "string.format('%d,%d" in src:
             return [_lua_exec_reply(self._bump(), True, self.api_response)]
 
+        # Anything else (bootstrap chunks, Game.AddSF arming, pokes) → ack.
         self.bootstrap_chunks.append(src)
         if "RL.Bootstrap=true" in src:
             self.bootstrapped = True
         return [_lua_exec_reply(self._bump(), True, b"")]
 
-    async def _handle(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            # Handshake request: [0x01][interest_byte] — sent by the bridge.
+            # Handshake request: [0x01][interest_byte]
             handshake = await reader.readexactly(2)
             assert handshake[0] == lp.PacketType.HANDSHAKE
             writer.write(bytes([lp.PacketType.HANDSHAKE, self._bump()]))

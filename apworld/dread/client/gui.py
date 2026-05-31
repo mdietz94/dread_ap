@@ -43,7 +43,9 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.textinput import TextInput
 
+from .commands import parse_switch_target
 from .display import format_status_panel, format_switch_pill
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -198,17 +200,20 @@ class DreadManager(GameManager):
 
 
 class ReconnectPopup(Popup):
-    """Modal popup showing Switch listener / connection status.
+    """Modal popup to retry / re-point the Switch connection.
 
-    Under the inverted topology the PC doesn't dial — it listens, and the
-    Switch sysmodule discovers + dials in. So the popup is purely
-    informational, with one action: "Disconnect" force-closes the active
-    socket so the sysmodule redials. No IP editing.
+    Shows the current ``host:port`` and live status, an editable Switch IP
+    field (``ip`` or ``ip:port``), and a Reconnect button. Reconnect parses the
+    field via ``parse_switch_target``, updates ``ctx.switch_host``/
+    ``switch_port``, and schedules ``ctx.reconnect_switch()`` on the running
+    loop (button callbacks fire on the asyncio loop under App.async_run, same
+    as the /dread_connect command path).
     """
 
     def __init__(self, ctx: "DreadContext"):
         self._ctx = ctx
         self._status_label: Label | None = None
+        self._input: TextInput | None = None
         self.is_open = False
         super().__init__(
             title="Switch connection",
@@ -224,14 +229,26 @@ class ReconnectPopup(Popup):
     def _build(self) -> None:
         outer = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
 
-        self._status_label = _wrapping_label(text="", height=dp(100), valign="top")
+        self._status_label = _wrapping_label(text="", height=dp(60), valign="top")
         outer.add_widget(self._status_label)
 
-        btn = Button(
-            text="Disconnect (Switch will redial)",
-            size_hint_y=None, height=dp(40),
+        row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                        height=dp(36), spacing=dp(8))
+        row.add_widget(Label(
+            text="Switch IP:", size_hint_x=None, width=dp(90),
+            halign="right", valign="middle", text_size=(dp(90), dp(36)),
+        ))
+        self._input = TextInput(
+            multiline=False, write_tab=False,
+            size_hint_y=None, height=dp(36),
         )
-        btn.bind(on_release=lambda *_: self._on_disconnect())
+        # Enter in the field acts like pressing Reconnect.
+        self._input.bind(on_text_validate=lambda *_: self._on_reconnect())
+        row.add_widget(self._input)
+        outer.add_widget(row)
+
+        btn = Button(text="Reconnect", size_hint_y=None, height=dp(40))
+        btn.bind(on_release=lambda *_: self._on_reconnect())
         outer.add_widget(btn)
 
         # Spacer pushes the controls to the top of the popup body.
@@ -242,20 +259,34 @@ class ReconnectPopup(Popup):
         ctx = self._ctx
         snap = ctx.state.snapshot()
         conn = snap.get("switch_conn", "disconnected") or "disconnected"
-        peer = ctx.connected_peer or "—"
         if self._status_label is not None:
             self._status_label.text = (
-                f"[b]Listener[/b]: TCP {ctx.listen_host}:{ctx.listen_port} + "
-                f"UDP discovery :{ctx.discovery_port}\n"
-                f"[b]Status[/b]: {conn}\n"
-                f"[b]Connected from[/b]: {peer}"
+                f"[b]Target[/b]: {ctx.switch_host}:{ctx.switch_port}\n"
+                f"[b]Status[/b]: {conn}"
             )
+        # Prefill the field with the live target — but never while the user is
+        # typing (refresh fires every 1.5 s whenever the popup is open).
+        if self._input is not None and not self._input.focus:
+            self._input.text = f"{ctx.switch_host}:{ctx.switch_port}"
 
-    def _on_disconnect(self) -> None:
+    def _on_reconnect(self) -> None:
         ctx = self._ctx
+        raw = (self._input.text if self._input else "").strip()
+        if raw:
+            try:
+                host, port = parse_switch_target(raw)
+            except ValueError as exc:
+                logging.getLogger(_CLIENT_LOGGER).warning(
+                    "bad switch target %r: %s", raw, exc)
+                if self._status_label is not None:
+                    self._status_label.text = f"[color=#ff9800]Invalid: {exc}[/color]"
+                return
+            ctx.switch_host = host
+            if port is not None:
+                ctx.switch_port = port
         logging.getLogger(_CLIENT_LOGGER).info(
-            "dropping active Switch connection (sysmodule will redial)")
-        asyncio.ensure_future(ctx.disconnect_active_switch())
+            "reconnecting to Switch at %s:%s", ctx.switch_host, ctx.switch_port)
+        asyncio.ensure_future(ctx.reconnect_switch())
         self.refresh()
 
 

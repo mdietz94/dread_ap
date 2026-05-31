@@ -3,12 +3,6 @@
 Mirrors smo_archipelago/commands.py — pure input string → ParseResult.
 The Kivy ClientCommandProcessor in ``context.py`` calls each ``_cmd_*``
 method, which delegates here.
-
-Under the inverted topology (Switch dials the PC), there is no Switch IP
-to type in — discovery handles it. The ``/dread_connect`` /
-``/switch_reconnect`` commands now just force-close the active connection
-so the sysmodule redials. ``/switch_host`` and the IP argument to
-``/dread_connect`` were removed; ``parse_switch_target`` is gone.
 """
 from __future__ import annotations
 
@@ -23,18 +17,15 @@ log = logging.getLogger(__name__)
 
 HELP_TEXT = """\
 Dread Client commands (type with leading /):
-  /dread_status                  show client-side state
-  /dread_connect                 drop the active Switch socket (sysmodule will redial)
-  /switch_reconnect              alias of /dread_connect
-  /setup [ryujinx|sd]            build + deploy the patched sysmodule; romfs patcher then auto-runs on connect
-  /poke <lua>                    run arbitrary Lua via PACKET_REMOTE_LUA_EXEC (debug)
-
-The Switch finds the PC automatically via UDP discovery — no IP entry
-needed. If discovery isn't working, re-run /setup so the sysmodule's
-fallback subnet hint is fresh.
+  /dread_status                            show client-side state
+  /dread_connect [ip[:port]]               (re)dial the Switch; optional ip re-points first
+  /switch_host <ip>                        point the client at a Switch IP (or 'localhost' for Ryujinx)
+  /switch_reconnect                        drop and re-dial the Switch (alias of /dread_connect)
+  /setup [ryujinx|sd]                      build + deploy the patched sysmodule; romfs patcher then auto-runs on connect
+  /poke <lua>                              run arbitrary Lua via PACKET_REMOTE_LUA_EXEC (debug)
 
 To inject items, use the AP server console:
-  /send <slot> <item name>       e.g. /send Samus Missile Tank
+  /send <slot> <item name>                 e.g. /send Samus Missile Tank
 """
 
 
@@ -71,3 +62,35 @@ def parse_command(line: str, state: Optional[BridgeState] = None) -> ParseResult
         ))
 
     return ParseResult(error=f"unknown command: {cmd!r}; type `help`")
+
+
+def parse_switch_target(s: str) -> tuple[str, Optional[int]]:
+    """Parse a ``host`` or ``host:port`` Switch target.
+
+    Used by ``/dread_connect`` and the GUI reconnect popup. Returns
+    ``(host, port)`` where ``port`` is ``None`` when the caller gave only a
+    host (the existing ``switch_port`` is kept). Raises ``ValueError`` on an
+    empty host or a non-numeric / out-of-range port so the caller can report
+    a usage error instead of silently dialing the wrong place.
+
+    IPv6 literals aren't supported — every documented Dread/Ryujinx setup
+    reaches the console over LAN IPv4 — so a multi-colon string is rejected
+    rather than mis-split.
+    """
+    text = (s or "").strip()
+    if not text:
+        raise ValueError("empty switch target")
+    if ":" not in text:
+        return text, None
+    host, _, port_str = text.rpartition(":")
+    host = host.strip()
+    port_str = port_str.strip()
+    if not host or ":" in host:
+        raise ValueError(f"invalid switch target: {s!r}")
+    try:
+        port = int(port_str)
+    except ValueError:
+        raise ValueError(f"invalid port: {port_str!r}") from None
+    if not (1 <= port <= 65535):
+        raise ValueError(f"port out of range: {port}")
+    return host, port
