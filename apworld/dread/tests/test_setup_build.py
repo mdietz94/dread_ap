@@ -88,9 +88,12 @@ def test_ensure_checkout_fetches_when_git_dir_exists(build_root, monkeypatch):
 
 
 def test_ensure_checkout_git_missing_surfaces_install_hint(build_root, monkeypatch):
-    """No git on PATH: return a failure that names git as the missing tool
-    and links the install page."""
+    """No git on PATH or default install locations: return a failure that
+    names git as the missing tool and links the install page."""
     monkeypatch.setattr(build.shutil, "which", lambda _name: None)
+    # Also neutralize the default-install-location fallback so the test is
+    # deterministic on a Windows dev box that happens to have Git installed.
+    monkeypatch.setattr(build, "_resolve_git", lambda: None)
     r = build.ensure_exlaunch_checkout()
     assert r.ok is False
     assert "git" in r.detail.lower()
