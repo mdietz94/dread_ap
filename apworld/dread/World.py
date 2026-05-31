@@ -235,12 +235,22 @@ class DreadWorld(World):
     def _balance_pool_to_locations(self, pool: list[Item], target: int) -> None:
         """Pad short pools with filler; trim overflows in a defined preference
         order. Raise OptionError if even after trimming we exceed target —
-        with guidance pointing at the user-facing knobs to lower."""
+        with guidance pointing at the user-facing knobs to lower.
+
+        Only NON-advancement copies are eligible for trimming. Removing an
+        advancement copy would silently break logic: e.g. every Missile Tank is
+        ``progression_skip_balancing`` (its ``state.has("Missile Tank")`` atom
+        gates ~every location), and the first few Energy Tank / Power Bomb Tank
+        / Missile+ Tank copies are progression too. Trimming those to "make it
+        fit" would produce an unsolvable seed with no fill error (the compiled
+        rules collapse ammo to >=1, so AP's fill can't catch it). So we trim the
+        slack (filler + the useful overflow copies) and, if that isn't enough,
+        raise rather than eat a required item."""
         while len(pool) < target:
             pool.append(self.create_item(self.get_filler_item_name()))
         if len(pool) <= target:
             return
-        # Trim least-impactful items first.
+        # Trim least-impactful items first — but never an advancement copy.
         trim_order = (
             "Energy Part", "Power Bomb Tank", "Missile Tank",
             "Energy Tank", "Missile+ Tank",
@@ -252,7 +262,7 @@ class DreadWorld(World):
             for i in range(len(pool) - 1, -1, -1):
                 if overflow == 0:
                     break
-                if pool[i].name == name:
+                if pool[i].name == name and not pool[i].advancement:
                     pool.pop(i)
                     overflow -= 1
         if overflow > 0:
