@@ -23,7 +23,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # vendor/open-dread-rando is a pinned submodule; the patcher
           # pipeline needs it on PYTHONPATH at runtime.
