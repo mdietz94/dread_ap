@@ -116,12 +116,7 @@ def test_ensure_checkout_reset_failure_blames_pinned_sha(build_root, monkeypatch
 
 def _make_checkout_with_remote_api(build_root: Path, sentinel: bool) -> Path:
     """Create a checkout dir with a stub remote_api.cpp; ``sentinel`` toggles
-    whether ALL patches' sentinel strings are present (idempotence trigger).
-
-    The current build.py applies an ordered patch list; each entry has its
-    own sentinel. Setting ``sentinel=True`` writes every patch's sentinel
-    so the whole pipeline reports "already applied" and skips git invocation.
-    """
+    whether the patch's sentinel string is present (idempotence trigger)."""
     checkout = build_root / "exlaunch-checkout"
     (checkout / ".git").mkdir(parents=True)
     src_dir = checkout / "source" / "program"
@@ -129,8 +124,7 @@ def _make_checkout_with_remote_api(build_root: Path, sentinel: bool) -> Path:
     remote_api = src_dir / "remote_api.cpp"
     content = "// upstream content\n"
     if sentinel:
-        for patch in build._PATCHES:
-            content += f"// {patch.sentinel}\n"
+        content += f"// {build._PATCH_SENTINEL}\n"
     remote_api.write_text(content, encoding="utf-8")
     return checkout
 
@@ -171,13 +165,11 @@ def test_apply_patch_missing_patch_file_returns_actionable_error(
     monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
 
     @contextlib.contextmanager
-    def _yield_none(filename):
+    def _yield_none():
         yield None
     monkeypatch.setattr(build, "_locate_patch_file", _yield_none)
     r = build.apply_ryujinx_patch()
     assert r.ok is False
-    # The pipeline fails at the first un-locatable patch — that's the
-    # Ryujinx-fix one (apply order).
     assert "exlaunch-ryujinx-fix.diff" in r.detail
 
 
@@ -185,17 +177,14 @@ def test_apply_patch_calls_git_apply_with_ignore_whitespace(
     build_root, monkeypatch, tmp_path
 ):
     """Happy path: sentinel absent, patch file locatable: invoke
-    ``git apply --ignore-whitespace <patch>`` once per declared patch."""
+    ``git apply --ignore-whitespace <patch>``."""
     import contextlib
     _make_checkout_with_remote_api(build_root, sentinel=False)
-    # Provide a real patch file for each declared patch — the locator yields
-    # the same disk path regardless of filename in this stub, which is fine
-    # for asserting "git apply ran with --ignore-whitespace".
-    patch = tmp_path / "fake-patch.diff"
+    patch = tmp_path / "exlaunch-ryujinx-fix.diff"
     patch.write_text("--- a\n+++ b\n", encoding="utf-8")
 
     @contextlib.contextmanager
-    def _yield_patch(filename):
+    def _yield_patch():
         yield patch
     monkeypatch.setattr(build, "_locate_patch_file", _yield_patch)
     monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
@@ -208,12 +197,7 @@ def test_apply_patch_calls_git_apply_with_ignore_whitespace(
     monkeypatch.setattr(build, "_stream_subprocess", fake)
     r = build.apply_ryujinx_patch()
     assert r.ok is True
-    # One `git apply --ignore-whitespace` invocation per declared patch.
-    apply_invocations = [
-        c for c in commands_run
-        if "apply" in c and "--ignore-whitespace" in c
-    ]
-    assert len(apply_invocations) == len(build._PATCHES)
+    assert any("apply" in c and "--ignore-whitespace" in c for c in commands_run)
 
 
 # ---- collect_build_outputs / build_ready -------------------------------
@@ -259,52 +243,35 @@ def test_build_ready_requires_both_files(build_root):
 
 # ---- run_build_pipeline orchestration ----------------------------------
 
-def _stub_pipeline_steps(monkeypatch, *, ensure_ok=True, patches_ok=True,
-                          bridge_ok=True, build_ok=True):
-    """Replace every pipeline step with an ok/fail stub. Returns the
-    list of call labels in the order they were invoked, so tests can
-    assert ordering / short-circuit behavior."""
-    calls: list[str] = []
-
-    def _stub(label, ok):
-        def f(on_line=None, *args, **kw):
-            calls.append(label)
-            if ok:
-                return build.BuildResult(ok=True, returncode=0, log="")
-            return build.BuildResult(ok=False, returncode=1, log="x",
-                                     detail=f"{label} err")
-        return f
-
-    monkeypatch.setattr(build, "ensure_exlaunch_checkout",
-                        _stub("ensure", ensure_ok))
-    monkeypatch.setattr(build, "apply_patches", _stub("patches", patches_ok))
-    # write_bridge_config has a positional `seed_ip` parameter; the
-    # _stub wrapper accepts *args so it doesn't TypeError on it.
-    monkeypatch.setattr(build, "write_bridge_config",
-                        _stub("bridge", bridge_ok))
-    monkeypatch.setattr(build, "run_exlaunch_build", _stub("build", build_ok))
-    return calls
-
-
 def test_run_build_pipeline_short_circuits_on_first_failure(monkeypatch):
-    """If ensure_exlaunch_checkout fails, no subsequent step runs."""
-    calls = _stub_pipeline_steps(monkeypatch, ensure_ok=False)
+    """If ensure_exlaunch_checkout fails, neither apply nor build runs."""
+    monkeypatch.setattr(build, "ensure_exlaunch_checkout",
+                        lambda on_line=None: build.BuildResult(
+                            ok=False, returncode=1, log="no net", detail="net err"))
+    monkeypatch.setattr(build, "apply_ryujinx_patch",
+                        lambda on_line=None: pytest.fail("should not be called"))
+    monkeypatch.setattr(build, "run_exlaunch_build",
+                        lambda on_line=None: pytest.fail("should not be called"))
     r = build.run_build_pipeline()
     assert r.ok is False
-    assert calls == ["ensure"]
+    assert r.detail == "net err"
 
 
 def test_run_build_pipeline_returns_outputs_on_success(build_root, monkeypatch):
-    """All four steps succeed AND collect_build_outputs reports both
+    """All three steps succeed AND collect_build_outputs reports both
     files: orchestrator returns ok with outputs dict populated."""
-    calls = _stub_pipeline_steps(monkeypatch)
+    monkeypatch.setattr(build, "ensure_exlaunch_checkout",
+                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
+    monkeypatch.setattr(build, "apply_ryujinx_patch",
+                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
+    monkeypatch.setattr(build, "run_exlaunch_build",
+                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
     deploy = build._build_output_dir()
     deploy.mkdir(parents=True)
     (deploy / "subsdk9").write_bytes(b"x" * 1024)
     (deploy / "main.npdm").write_bytes(b"y" * 256)
     r = build.run_build_pipeline()
     assert r.ok is True
-    assert calls == ["ensure", "patches", "bridge", "build"]
     assert "subsdk9" in r.outputs
     assert "main.npdm" in r.outputs
     assert r.outputs["subsdk9"].stat().st_size == 1024
@@ -313,39 +280,18 @@ def test_run_build_pipeline_returns_outputs_on_success(build_root, monkeypatch):
 def test_run_build_pipeline_succeeds_but_outputs_missing_reports_failure(
     build_root, monkeypatch
 ):
-    """All four steps return ok=True but the deploy dir is empty (the
+    """All three steps return ok=True but the deploy dir is empty (the
     Windows subprocess-success-without-output gap): orchestrator reports
     failure with the missing-files list."""
-    _stub_pipeline_steps(monkeypatch)
+    monkeypatch.setattr(build, "ensure_exlaunch_checkout",
+                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
+    monkeypatch.setattr(build, "apply_ryujinx_patch",
+                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
+    monkeypatch.setattr(build, "run_exlaunch_build",
+                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
     r = build.run_build_pipeline()
     assert r.ok is False
     assert "subsdk9" in r.detail or "main.npdm" in r.detail
-
-
-def test_run_build_pipeline_threads_seed_ip_to_bridge_config(
-    build_root, monkeypatch
-):
-    """The `bridge_seed_ip` arg flows into write_bridge_config (so the
-    wizard's BridgeIpPage value actually reaches bridge_config.hpp)."""
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(build, "ensure_exlaunch_checkout",
-                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
-    monkeypatch.setattr(build, "apply_patches",
-                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
-
-    def fake_bridge(seed_ip, on_line=None):
-        captured["seed_ip"] = seed_ip
-        return build.BuildResult(ok=True, returncode=0, log="")
-
-    monkeypatch.setattr(build, "write_bridge_config", fake_bridge)
-    monkeypatch.setattr(build, "run_exlaunch_build",
-                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
-    deploy = build._build_output_dir()
-    deploy.mkdir(parents=True)
-    (deploy / "subsdk9").write_bytes(b"")
-    (deploy / "main.npdm").write_bytes(b"")
-    build.run_build_pipeline(bridge_seed_ip="192.168.99.42")
-    assert captured["seed_ip"] == "192.168.99.42"
 
 
 # ---- _to_msys_path --------------------------------------------------

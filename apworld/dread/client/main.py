@@ -48,21 +48,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = get_base_parser(description="Metroid Dread Archipelago Client")
     p.prog = "DreadClient"
     p.add_argument("--name", default=None, help="AP slot name to connect as")
-    p.add_argument("--listen-host", default="0.0.0.0",
-                   help="Bind address for the Switch TCP listener (default: 0.0.0.0)")
-    p.add_argument("--listen-port", type=int, default=17777,
-                   help="TCP port the Switch sysmodule dials in on (default: 17777)")
-    p.add_argument("--discovery-port", type=int, default=17779,
-                   help="UDP port the Switch sysmodule probes for the bridge "
-                        "(default: 17779)")
+    # Defaults are None so we can tell "user passed nothing" (→ use the
+    # remembered host, else 127.0.0.1) from "user explicitly chose a host".
+    p.add_argument("--switch-host", default=None,
+                   help="Switch / Ryujinx IP (default: remembered, else 127.0.0.1)")
+    p.add_argument("--switch-port", type=int, default=None,
+                   help="exlaunch socket port (default: remembered, else 6969)")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
 
 async def main(args: argparse.Namespace) -> None:
     logging_setup.setup(args.log_level)
-    log.info("DreadClient starting (listening for Switch on TCP %s:%d, UDP discovery :%d)",
-             args.listen_host, args.listen_port, args.discovery_port)
+    log.info("DreadClient starting")
+
+    # Resolve the Switch target: explicit CLI flag wins; otherwise reuse the
+    # host/port remembered from the last successful connect; else the Ryujinx
+    # loopback default.
+    from .context import _load_user_config
+    cfg = _load_user_config()
+    switch_host = args.switch_host or cfg.get("switch_host") or "127.0.0.1"
+    switch_port = args.switch_port or cfg.get("switch_port") or 6969
+    log.info("Switch: %s:%d", switch_host, switch_port)
 
     state = BridgeState()
     dp = DataPackage(apworld_data_dir=_resolve_apworld_data())
@@ -73,17 +80,15 @@ async def main(args: argparse.Namespace) -> None:
         args.password or None,
         state=state,
         datapackage=dp,
-        listen_host=args.listen_host,
-        listen_port=args.listen_port,
-        discovery_port=args.discovery_port,
+        switch_host=switch_host,
+        switch_port=switch_port,
     )
     if args.name:
         ctx.auth = args.name
 
-    # Start the UDP discovery responder + TCP listener. The Switch sysmodule
-    # finds us via UDP probes (loopback + /24 sweep) and TCP-connects to the
-    # listener; the per-connection lifetime runs in DreadContext.
-    asyncio.create_task(ctx.start_switch_listener(), name="dread-switch-listen")
+    # Supervise the Switch wire: dial now and keep retrying with exponential
+    # backoff (the initial dial often loses the race with Dreadvania's boot).
+    asyncio.create_task(ctx._switch_supervisor(), name="dread-switch-supervisor")
 
     # Find a Python that can run the patcher (and tell the user how to install
     # open-dread-rando in the Archipelago tab if none qualifies).

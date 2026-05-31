@@ -29,9 +29,7 @@ def proc():
         password=None,
         state=BridgeState(),
         datapackage=DataPackage(apworld_data_dir=ROOT / "data"),
-        listen_host="127.0.0.1",
-        listen_port=0,
-        discovery_port=0,
+        switch_host="127.0.0.1",
     )
     p = DreadClientCommandProcessor(ctx)
     p.outputs = []

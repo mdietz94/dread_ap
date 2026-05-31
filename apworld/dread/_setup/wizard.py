@@ -19,25 +19,19 @@ Pages (sequenced; each calls ``goto("next-page")`` when its work completes):
                         persisted as ``romfs_path`` in ``setup_state.json``.
                         The per-seed patcher reads it at AP-connect time
                         and auto-detects the romfs version.
-  4. BridgeIpPage     — optional seed IP for the Switch's /24 sweep. The
-                        topology was inverted (PC listens, Switch dials),
-                        so the sysmodule needs a baked-in seed to find
-                        the PC on real hardware. Defaults to the
-                        auto-detected LAN IP; user can edit. Loopback +
-                        Ryujinx don't need this (loopback is always
-                        tried first).
-  5. BuildPage        — drives ``ensure_exlaunch_checkout`` →
-                        ``apply_patches`` → ``write_bridge_config`` →
-                        ``run_exlaunch_build``; streams each
-                        subprocess's log line-by-line
-  6. DeployPage       — radio: Ryujinx / SD card / Custom folder;
+  4. BuildPage        — drives ``ensure_exlaunch_checkout`` →
+                        ``apply_ryujinx_patch`` → ``run_exlaunch_build``;
+                        streams each subprocess's log line-by-line
+  5. DeployPage       — radio: Ryujinx / SD card / Custom folder;
                         auto-detects each; calls ``deploy_to_*``
-  7. DonePage         — success banner + "Launch DreadClient" handoff
+  6. DonePage         — success banner + "Launch DreadClient" handoff
 
 Smo-baseline pages this wizard intentionally drops:
 
   - ``DumpPickerPage``/``ExtractPage``: dread has no NSP extraction step.
     ``open_dread_rando`` overlays an already-extracted romfs at AP-connect.
+  - ``BridgeIpPage``: the PC dials the Switch on :6969, so the PC's
+    LAN IP is never baked into the build — no bridge-IP page needed.
 
 Kivy is imported lazily INSIDE this module — never at apworld-import time —
 because AP generation hosts (Linux servers running ``ap_generate.py``)
@@ -60,13 +54,12 @@ from typing import Any
 
 from . import appdata_root, setup_state_path
 from .build import (
-    apply_patches,
+    apply_ryujinx_patch,
     build_current,
     build_ready,
     collect_build_outputs,
     ensure_exlaunch_checkout,
     run_exlaunch_build,
-    write_bridge_config,
     write_build_manifest,
 )
 from .deploy import (
@@ -79,9 +72,6 @@ from .deploy import (
 )
 from .prereqs import PrereqResult, all_ok, check_all
 from .dreadap_file import parse_dreadap
-# net_util ships under apworld/dread/client/. Pulling it from there keeps
-# the wizard from re-implementing LAN-IP detection.
-from ..client.net_util import detect_lan_ip, is_plausible_ipv4
 
 log = logging.getLogger(__name__)
 
@@ -240,22 +230,10 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     initial_romfs = (
         Path(saved_romfs) if saved_romfs and Path(saved_romfs).is_dir() else None
     )
-    # Bridge seed IP. The Switch sweeps this address's /24 looking for the
-    # PC bridge; loopback (Ryujinx-on-same-host) is tried first regardless.
-    # On first wizard run we suggest the auto-detected LAN IP; subsequent
-    # runs reuse whatever the user committed. Empty string == "leave the
-    # patch default in place" (useful for Ryujinx-only setups).
-    saved_bridge_ip = saved_state.get("bridge_ip")
-    if saved_bridge_ip is None:
-        try:
-            saved_bridge_ip = detect_lan_ip()
-        except Exception:
-            saved_bridge_ip = ""
     wizard_state: dict[str, Any] = {
         "dreadap_path": dreadap_path,
         "dreadap": parse_dreadap(Path(dreadap_path)) if dreadap_path else None,
         "romfs_path": initial_romfs,
-        "bridge_ip": saved_bridge_ip,
         "build_done": build_ready(),  # carry across pages; reflect prior runs
         "deploy_target": saved_state.get("deploy_target", "ryujinx"),
         "ryujinx_root": str(detect_ryujinx_path() or saved_state.get("ryujinx_root", "")),
@@ -646,7 +624,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         root.add_widget(err_label)
 
         nav, _, next_btn = _nav_row(lambda: goto("prereqs"),
-                                    lambda: goto("bridge_ip"))
+                                    lambda: goto("build"))
         # If a valid romfs path was restored from saved state, the user can
         # advance immediately without re-Browsing.
         next_btn.disabled = initial_path is None
@@ -692,59 +670,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         s.add_widget(root)
         return s
 
-    # --- 4. Bridge IP (seed for the Switch's /24 sweep)
-    def build_bridge_ip() -> Screen:
-        s = Screen(name="bridge_ip")
-        root = BoxLayout(orientation="vertical", padding=20, spacing=12)
-        root.add_widget(_h1("Bridge PC IP"))
-        root.add_widget(_label(
-            "Enter the LAN IP your Switch will use to reach this PC. We've "
-            "guessed your primary adapter's IP. The Switch sysmodule sweeps "
-            "this IP's /24 looking for the DreadClient bridge, so it should "
-            "be the same subnet your Switch is on.\n\n"
-            "This IP gets baked into the compiled sysmodule; if your PC "
-            "moves to a different subnet later, re-run setup. "
-            "Ryujinx-on-this-PC works regardless — loopback is always "
-            "tried first.\n\n"
-            "Leave blank to keep the patch default and rely on loopback "
-            "discovery only (Ryujinx-only setups).",
-            height=160,
-        ))
-        ip_input = TextInput(text=wizard_state["bridge_ip"], multiline=False,
-                             size_hint_y=None, height=48)
-        root.add_widget(ip_input)
-        err_label = _label("", color=(0.8, 0.1, 0.1, 1))
-        root.add_widget(err_label)
-
-        nav, _, next_btn = _nav_row(lambda: goto("romfs"),
-                                    lambda: (commit(), goto("build")))
-
-        def commit() -> None:
-            wizard_state["bridge_ip"] = ip_input.text.strip()
-            # Persist so the next wizard run pre-fills this value.
-            state = load_setup_state()
-            state["bridge_ip"] = wizard_state["bridge_ip"]
-            save_setup_state(state)
-
-        def validate(*_):
-            txt = ip_input.text.strip()
-            # Empty = "use patch default"; we allow that explicitly.
-            if txt == "":
-                next_btn.disabled = False
-                err_label.text = ("No IP set — Ryujinx loopback will still "
-                                  "work, but real-Switch discovery won't.")
-                return
-            ok = is_plausible_ipv4(txt)
-            next_btn.disabled = not ok
-            err_label.text = "" if ok else "Not a valid IPv4 address (a.b.c.d)"
-
-        ip_input.bind(text=validate)
-        validate()
-        root.add_widget(nav)
-        s.add_widget(root)
-        return s
-
-    # --- 5. Build
+    # --- 4. Build
     def build_build() -> Screen:
         s = Screen(name="build")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
@@ -755,8 +681,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         log_box = TextInput(text="", readonly=True, size_hint=(1, 1))
         root.add_widget(log_box)
 
-        nav, _, next_btn = _nav_row(lambda: goto("bridge_ip"),
-                                    lambda: goto("deploy"))
+        nav, _, next_btn = _nav_row(lambda: goto("romfs"), lambda: goto("deploy"))
         next_btn.disabled = True
         retry_btn = Button(text="Retry", size_hint_y=None, height=40, disabled=True)
         root.add_widget(retry_btn)
@@ -778,18 +703,11 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             _Clock.schedule_once(lambda dt: status.setter("text")(status, text))
 
         def run_in_worker() -> None:
-            # Resolve the wizard's seed-IP at worker-start (not closure
-            # capture) so a Back→edit→Forward round trip picks up the
-            # new value without rebuilding the BuildPage.
-            seed_ip = wizard_state.get("bridge_ip") or None
             steps: list[tuple[str, Any]] = [
                 ("Cloning open-dread-rando-exlaunch at pinned commit...",
                  lambda: ensure_exlaunch_checkout(on_line=on_line)),
-                ("Applying patches (Ryujinx-fix + TCP-client topology, "
-                 "idempotent)...",
-                 lambda: apply_patches(on_line=on_line)),
-                (f"Baking bridge seed IP={seed_ip!r} into bridge_config.hpp...",
-                 lambda: write_bridge_config(seed_ip, on_line=on_line)),
+                ("Applying Ryujinx-fix patch (idempotent)...",
+                 lambda: apply_ryujinx_patch(on_line=on_line)),
                 ("Compiling subsdk9 under devkitPro msys2 bash "
                  "(~30-60s on a warm cache)...",
                  lambda: run_exlaunch_build(on_line=on_line)),
@@ -1191,7 +1109,6 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     sm.add_widget(build_welcome())
     sm.add_widget(build_prereqs())
     sm.add_widget(build_romfs())
-    sm.add_widget(build_bridge_ip())
     sm.add_widget(build_build())
     sm.add_widget(build_deploy())
     sm.add_widget(build_done())
