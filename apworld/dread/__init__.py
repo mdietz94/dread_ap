@@ -10,7 +10,7 @@ sys.path (unit-test isolation).
 from __future__ import annotations
 
 
-__version__ = "0.0.1-phase4-resolver-itemsfull"
+__version__ = "0.6.2"
 
 
 # Re-export the World subclass so Archipelago's autodiscovery
