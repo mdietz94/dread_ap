@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -366,9 +367,13 @@ def candidate_pythons() -> list[str]:
     Returns absolute, deduped paths to real ``python.exe`` files (NOT
     ``py.exe`` launchers — those are resolved through ``-3.x`` to the
     underlying interpreter so callers don't have to know about the
-    launcher argv shape later). Order is preference: per-user winget
-    installs first (newest version first), then PATH lookups, then
-    ``py -3.12`` / ``py -3.13`` / ``py -3`` resolutions.
+    launcher argv shape later). Order is preference: the current
+    interpreter first (covers ``python -m`` launches from inside a real
+    venv), then an explicit ``$VIRTUAL_ENV`` fallback (covers the case
+    where ``sys.executable`` is the frozen launcher but the user
+    activated a venv), then per-user winget installs (newest version
+    first), then PATH lookups, then ``py -3.12`` / ``py -3.13`` / ``py -3``
+    resolutions.
 
     **The frozen Archipelago launcher is excluded by design.** Its
     bundled site-packages never sees a user's ``pip install``, so it
@@ -378,6 +383,13 @@ def candidate_pythons() -> list[str]:
     ``patcher_pipeline._candidate_pythons`` filter so the wizard's
     prereq probe and the runtime patcher subprocess agree on what
     counts as "a Python that has it".
+
+    Dedup is on the literal absolute path, NOT the symlink-resolved
+    path. A venv's ``bin/python`` is typically a symlink to the base
+    interpreter, but invoking the resolved base path skips activation
+    (Python uses the unresolved argv[0] to find ``pyvenv.cfg``) and so
+    misses the venv's ``site-packages``. Keeping both entries means we
+    probe the venv where the user actually pip-installed.
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -386,19 +398,40 @@ def candidate_pythons() -> list[str]:
         if not path:
             return
         try:
-            resolved = str(Path(path).resolve())
+            abspath = str(Path(path).absolute())
         except OSError:
             return
-        if not Path(resolved).is_file():
+        if not Path(abspath).is_file():
             return
-        base = Path(resolved).name.lower()
+        base = Path(abspath).name.lower()
         if "archipelagolauncher" in base or base in {"archipelago.exe", "archipelago"}:
             return
-        if resolved in seen:
+        key = abspath.lower() if os.name == "nt" else abspath
+        if key in seen:
             return
-        seen.add(resolved)
-        out.append(resolved)
+        seen.add(key)
+        out.append(abspath)
 
+    # The interpreter currently running the wizard. Correct when the user
+    # launched via `python -m ...` from inside a venv. SKIPPED entirely
+    # when this process is a frozen bundle (PyInstaller / py2exe set
+    # `sys.frozen`) — in that case `sys.executable` points at the
+    # bundled wrapper (e.g. ArchipelagoLauncher.exe), which has its own
+    # baked-in site-packages and can never see a user's `pip install`.
+    # The name filter inside `_add` is a backstop, but `sys.frozen` is
+    # the canonical signal and catches forked/renamed frozen builds the
+    # name list wouldn't.
+    if not getattr(sys, "frozen", False):
+        _add(sys.executable)
+    # Explicit venv fallback: if the wizard is hosted by something that
+    # isn't itself the venv's python (frozen launcher, wrapper script),
+    # the activated venv shows up here even when sys.executable doesn't
+    # point at it.
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        venv_root = Path(venv)
+        for rel in ("bin/python", "bin/python3", "Scripts/python.exe"):
+            _add(str(venv_root / rel))
     # Winget-deterministic per-user installs, newest version first so 3.12
     # outranks 3.10 if both exist.
     localapp = os.environ.get("LOCALAPPDATA")
