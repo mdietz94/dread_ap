@@ -36,3 +36,18 @@ def read_text(name: str) -> str:
     """Read a non-JSON data file as text."""
     resource = files(__package__).joinpath("data").joinpath(name)
     return resource.read_text(encoding="utf-8")
+
+
+def data_resource(*parts: str):
+    """Return a ``Traversable`` for a path under the apworld's ``data/`` dir.
+
+    Zip-safe (same mechanism as :func:`load_json`): the returned object
+    supports ``.iterdir()``, ``.read_bytes()``, ``.name``, ``.is_dir()`` for
+    both folder- and zip-installed apworlds. Pass one part for a file
+    (``data_resource("items.json")``) or several to descend into a
+    subdirectory (``data_resource("exefs_patches")``).
+    """
+    resource = files(__package__).joinpath("data")
+    for part in parts:
+        resource = resource.joinpath(part)
+    return resource

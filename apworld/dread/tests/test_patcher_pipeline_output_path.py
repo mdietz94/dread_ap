@@ -103,8 +103,13 @@ def test_exefs_overlay_overwrites_upstream_subsdk9(monkeypatch, tmp_path):
     assert any("re-asserted patched sysmodule" in n for n in result.notes)
 
 
-def test_no_overlay_leaves_exefs_as_patcher_wrote_it(monkeypatch, tmp_path):
-    """exefs_overlay=None → no re-assert, no crash (degraded but explicit)."""
+def test_no_overlay_leaves_sysmodule_as_patcher_wrote_it(monkeypatch, tmp_path):
+    """exefs_overlay=None → no sysmodule re-assert (degraded but explicit).
+
+    The version-sentinel .ips are still installed regardless of the overlay —
+    that's covered separately below; here we only assert the patcher's subsdk9
+    is untouched and no sysmodule re-assert note is emitted.
+    """
     mod_dir = tmp_path / "mods" / "contents" / "010093801237c000" / "DreadRandovania"
     (mod_dir / "exefs").mkdir(parents=True)
     romfs = tmp_path / "romfs"
@@ -115,4 +120,57 @@ def test_no_overlay_leaves_exefs_as_patcher_wrote_it(monkeypatch, tmp_path):
 
     assert result.ok, result.message
     assert (mod_dir / "exefs" / "subsdk9").read_bytes() == b"UPSTREAM-SERVER-MODE"
-    assert result.notes == []
+    assert not any("re-asserted patched sysmodule" in n for n in result.notes)
+
+
+def test_version_sentinel_ips_installed_into_exefs(monkeypatch, tmp_path):
+    """patch() always re-asserts the build-id-keyed version-sentinel .ips.
+
+    Guards the "Unsupported Metroid Dread version" regression: the vendored
+    open-dread-rando submodule omits these (gitignored, pip-wheel-only) and
+    rmtrees the exefs dir each run, so patch() must restore them from our
+    bundled data/exefs_patches/ — including the 2.1.0 build id.
+    """
+    mod_dir = tmp_path / "mods" / "contents" / "010093801237c000" / "DreadRandovania"
+    (mod_dir / "exefs").mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    result, _ = _patch_with_fakes(monkeypatch, mod_dir, romfs, exefs_overlay=None)
+
+    assert result.ok, result.message
+    ips = sorted(p.name for p in (mod_dir / "exefs").glob("*.ips"))
+    # The 2.1.0 build id the user's ROM reports — must be present.
+    assert "646761F643AFEBB379EDD5E6A5151AF2CEF93DC1.ips" in ips
+    # All bundled patches are non-empty and landed.
+    assert ips, "no version-sentinel .ips were installed"
+    for name in ips:
+        assert (mod_dir / "exefs" / name).stat().st_size > 0
+    assert any("version-sentinel" in n for n in result.notes)
+
+
+# Build ids open-dread-rando supports (== the .ips filenames it ships).
+EXPECTED_IPS = {
+    "1.0.0": "49161D9CCBC15DF944D0B6278A3C446C006B0BE8.ips",
+    "2.1.0": "646761F643AFEBB379EDD5E6A5151AF2CEF93DC1.ips",
+}
+
+
+def test_bundled_exefs_ips_present_for_both_versions():
+    """The two prebuilt version-sentinel patches must ship in the apworld."""
+    from dread._data_loader import data_resource
+
+    bundled = {e.name for e in data_resource("exefs_patches").iterdir()
+               if e.name.endswith(".ips")}
+    for name in EXPECTED_IPS.values():
+        assert name in bundled, f"missing bundled exefs patch {name}; have {bundled}"
+
+
+def test_install_exefs_ips_copies_bytes(tmp_path):
+    """_install_exefs_ips writes each bundled .ips into the target dir."""
+    dest = tmp_path / "exefs"
+    dest.mkdir()
+    copied = pp._install_exefs_ips(dest)
+    assert set(copied) >= set(EXPECTED_IPS.values())
+    for name in copied:
+        assert (dest / name).stat().st_size > 0
