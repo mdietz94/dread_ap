@@ -332,8 +332,7 @@ class DreadContext(CommonContext):
     async def server_auth(self, password_requested: bool = False) -> None:
         if password_requested and not self.password:
             await super().server_auth(password_requested)
-        if not self.auth:
-            self.auth = self.username or "Samus"
+        await self.get_username()
         await self.send_connect()
 
     def on_package(self, cmd: str, args: dict) -> None:
