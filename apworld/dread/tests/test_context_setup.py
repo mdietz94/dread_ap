@@ -1,9 +1,17 @@
 """Tests for the installer-UX additions on DreadContext:
-remembered Switch IP, the backoff supervisor, and interactive /patch."""
+the discovery listener startup and interactive /patch.
+
+The pre-inversion suite also covered ``_remember_switch_target``,
+``request_redial``, and the exponential-backoff supervisor; those code
+paths were removed when the Switch became the TCP client (no more dial,
+no more cached IP, no more supervisor). The listener-startup test below
+replaces them.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import sys
 from pathlib import Path
 
@@ -27,104 +35,49 @@ def ctx():
         password=None,
         state=BridgeState(),
         datapackage=DataPackage(apworld_data_dir=DATA),
-        switch_host="127.0.0.1",
+        listen_host="127.0.0.1",
+        listen_port=0,
+        discovery_port=0,
     )
 
 
-# ---- remembered IP ------------------------------------------------------
-
-def test_remember_switch_target_persists(ctx, tmp_path, monkeypatch):
-    cfgfile = tmp_path / "config.json"
-    monkeypatch.setattr("dread.client.context._user_config_path", lambda: cfgfile)
-    ctx.switch_host = "10.0.0.5"
-    ctx.switch_port = 7000
-    ctx._remember_switch_target()
-    cfg = json.loads(cfgfile.read_text())
-    assert cfg["switch_host"] == "10.0.0.5"
-    assert cfg["switch_port"] == 7000
-
-
-def test_remember_preserves_other_config_keys(ctx, tmp_path, monkeypatch):
-    cfgfile = tmp_path / "config.json"
-    cfgfile.write_text(json.dumps({"dreadvania_python": "C:/py/python.exe"}))
-    monkeypatch.setattr("dread.client.context._user_config_path", lambda: cfgfile)
-    ctx._remember_switch_target()
-    cfg = json.loads(cfgfile.read_text())
-    assert cfg["dreadvania_python"] == "C:/py/python.exe"
-    assert cfg["switch_host"] == "127.0.0.1"
-
-
-# ---- redial signal ------------------------------------------------------
-
-def test_request_redial_sets_event(ctx):
-    ctx._redial_event.clear()
-    ctx.request_redial()
-    assert ctx._redial_event.is_set()
-
-
-# ---- backoff supervisor -------------------------------------------------
+# ---- listener startup ---------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_switch_supervisor_backoff_sequence(ctx, monkeypatch):
-    """Three failed dials wait 1, 2, 4s; the fourth connects and stops."""
-    waits: list[float] = []
-    attempts = {"n": 0}
+async def test_start_switch_listener_binds_and_advertises(ctx):
+    """``start_switch_listener`` binds the TCP listener + UDP discovery
+    responder, and a UDP probe gets back a ``{"t":"bridge"}`` reply whose
+    ``port`` matches the bound TCP listener.
 
-    async def fake_connect():
-        attempts["n"] += 1
-        if attempts["n"] >= 4:
-            ctx.executor = object()  # type: ignore[assignment]
-            ctx.exit_event.set()
+    This is the contract the exlaunch sysmodule depends on — UDP probe →
+    JSON reply with the TCP port to dial.
+    """
+    await ctx.start_switch_listener()
+    try:
+        assert ctx.listen_port > 0
+        assert ctx.discovery_port > 0
 
-    ctx.connect_switch = fake_connect  # type: ignore[assignment]
+        # Probe via the asyncio socket API so the event loop stays
+        # responsive (sync recvfrom would block the loop and deadlock
+        # the responder).
+        loop = asyncio.get_running_loop()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setblocking(False)
+        try:
+            probe = b'{"t":"discover","mod_ver":"test"}\n'
+            await loop.sock_sendto(sock, probe,
+                                   ("127.0.0.1", ctx.discovery_port))
+            data, _addr = await asyncio.wait_for(
+                loop.sock_recvfrom(sock, 4096), timeout=2.0)
+        finally:
+            sock.close()
 
-    async def fake_wait_for(awaitable, timeout):
-        waits.append(timeout)
-        if hasattr(awaitable, "close"):
-            awaitable.close()  # avoid "coroutine never awaited"
-        raise asyncio.TimeoutError
-
-    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
-
-    # NB: don't wrap in asyncio.wait_for — it's monkeypatched. The fake never
-    # really sleeps, and exit_event stops the loop on connect.
-    await ctx._switch_supervisor()
-    assert waits == [1.0, 2.0, 4.0]
-    assert attempts["n"] == 4
-
-
-@pytest.mark.asyncio
-async def test_switch_supervisor_redial_resets_backoff(ctx, monkeypatch):
-    """A manual redial during the backoff sleep resets it to the start."""
-    waits: list[float] = []
-    attempts = {"n": 0}
-
-    async def fake_connect():
-        attempts["n"] += 1
-        # Fail twice, then a redial fires, then connect on the 3rd attempt.
-        if attempts["n"] >= 3:
-            ctx.executor = object()  # type: ignore[assignment]
-            ctx.exit_event.set()
-
-    ctx.connect_switch = fake_connect  # type: ignore[assignment]
-
-    async def fake_wait_for(awaitable, timeout):
-        waits.append(timeout)
-        if hasattr(awaitable, "close"):
-            awaitable.close()
-        # On the 2nd backoff sleep, simulate a manual redial (returns instead
-        # of timing out) so the supervisor resets backoff to START.
-        if len(waits) == 2:
-            return True
-        raise asyncio.TimeoutError
-
-    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
-
-    await ctx._switch_supervisor()
-    # attempt1 fail -> wait 1 (backoff->2); attempt2 fail -> wait 2 but redial
-    # resets backoff to START; attempt3 connects. No 4.0 wait recorded.
-    assert waits == [1.0, 2.0]
-    assert attempts["n"] == 3
+        reply = json.loads(data.decode("utf-8"))
+        assert reply["t"] == "bridge"
+        assert reply["port"] == ctx.listen_port
+        assert reply["host"]  # detect_lan_ip should populate this
+    finally:
+        await ctx.shutdown()
 
 
 # ---- interactive /patch -------------------------------------------------
