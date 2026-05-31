@@ -24,7 +24,7 @@ If something doesn't work, see "Common failure modes" at the bottom.
 - **Archipelago checkout** at `../smo_archipelago/vendor/Archipelago/`
   (the dread_ap project doesn't ship its own; reuses the sibling's).
 - **open-dread-rando-exlaunch sysmodule** installed on the Switch — see
-  [vendor/open-dread-rando-exlaunch/README](../vendor/open-dread-rando-exlaunch/)
+  the upstream [randovania/open-dread-rando-exlaunch README](https://github.com/randovania/open-dread-rando-exlaunch)
   for the build + install steps. After install, exlaunch listens on
   TCP port 6969 once Dread launches.
 - **The Dread Client (this repo's PC-side process)** built into your
@@ -291,7 +291,7 @@ Quick proof the wire is actually working:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `phase1_validate.py` connect refused | exlaunch sysmodule not loaded | Install the sysmodule per `vendor/open-dread-rando-exlaunch/README`; confirm `/atmosphere/contents/0100000000000352/` exists on SD |
+| `phase1_validate.py` connect refused | exlaunch sysmodule not loaded | Install the sysmodule per the upstream [randovania/open-dread-rando-exlaunch README](https://github.com/randovania/open-dread-rando-exlaunch); confirm `/atmosphere/contents/0100000000000352/` exists on SD |
 | `phase1_validate.py` T2 says `RL` is not a table | Dread isn't running the open-dread-rando patcher output | Run step 5 to produce a RomFS, deploy it (step 6), restart Dread |
 | `seed_to_patcher_overrides.py` says "no Dread placements JSON" | The seed wasn't generated with `DreadWorld.generate_output` (older apworld), or wrong --slot name | Check `--slot` matches a `name:` in the YAML; verify the apworld is the current zipped build |
 | `build_patcher_json.py` says "pickup keys that don't exist in template" | Seed and template disagree on the pickup set | Likely an apworld vs template version skew — re-run extract_dread_data.py |

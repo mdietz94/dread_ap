@@ -29,6 +29,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .._vendor import (
+    PATCHER_RUNTIME_DEPS,
+    vendor_unavailable_diagnostic,
+    vendored_open_dread_rando_src,
+)
 from .prereqs import (
     _prepend_path,
     _winget_python312_commands,
@@ -177,11 +182,14 @@ def install_python312(on_line: ProgressFn | None = None) -> InstallResult:
 
 
 # ---------------------------------------------------------------------------
-# open_dread_rando via pip into the first detected real Python
+# open_dread_rando runtime deps via pip into the first detected real Python.
+# open-dread-rando itself is vendored as a git submodule; only its pip-only
+# runtime deps (mercury-engine-data-structures, jsonschema, json-delta,
+# open-dread-rando-exlaunch) need installing.
 # ---------------------------------------------------------------------------
 
 def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult:
-    """``{first_detected_python} -m pip install open-dread-rando``.
+    """``{first_detected_python} -m pip install <runtime-deps>``.
 
     Targets the same first ``candidate_pythons()`` entry that
     ``check_open_dread_rando`` uses as its install hint, so the install
@@ -190,9 +198,24 @@ def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult
     excluded from the candidate list, so we never try to ``pip install``
     into its bundled site-packages.
 
+    Refuses to run when the vendored ``open-dread-rando`` submodule isn't
+    checked out: pip-installing the deps would succeed but the patcher
+    would still fail to import. The user needs to
+    ``git submodule update --init vendor/open-dread-rando`` first.
+
     Streams pip output to ``on_line``. Re-uses ``check_internet`` for a
     crisp "no internet" error instead of pip's deep timeout.
     """
+    if vendored_open_dread_rando_src() is None:
+        msg = (
+            f"Cannot install patcher deps: {vendor_unavailable_diagnostic()}.\n"
+            "(Pip-installing the deps wouldn't help — the patcher source is "
+            "missing.) Fix that, then re-run this install."
+        )
+        if on_line:
+            on_line(msg)
+        return InstallResult(ok=False, returncode=2, log=msg, detail=msg)
+
     net = check_internet(on_line)
     if not net.ok:
         return net
@@ -200,7 +223,7 @@ def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult
     candidates = candidate_pythons()
     if not candidates:
         msg = (
-            "no Python interpreter detected to install open-dread-rando "
+            "no Python interpreter detected to install open-dread-rando deps "
             "into. Install Python 3.12 first (auto-install row above), "
             "then re-run this install."
         )
@@ -209,7 +232,7 @@ def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult
         return InstallResult(ok=False, returncode=127, log=msg, detail=msg)
 
     target = candidates[0]
-    cmd = [target, "-m", "pip", "install", "--upgrade", "open-dread-rando"]
+    cmd = [target, "-m", "pip", "install", "--upgrade", *PATCHER_RUNTIME_DEPS]
     if on_line:
         on_line(f"[install_open_dread_rando] {' '.join(cmd)}")
     captured: list[str] = []
@@ -236,13 +259,14 @@ def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult
     if proc.returncode == 0:
         return InstallResult(
             ok=True, returncode=0, log=log,
-            detail=f"open-dread-rando installed into {target}",
+            detail=f"open-dread-rando runtime deps installed into {target}",
         )
+    deps_pip = " ".join(PATCHER_RUNTIME_DEPS)
     return InstallResult(
         ok=False, returncode=proc.returncode, log=log,
         detail=(
             f"pip exited {proc.returncode}; try running manually:\n"
-            f"    {target} -m pip install open-dread-rando"
+            f"    {target} -m pip install {deps_pip}"
         ),
     )
 

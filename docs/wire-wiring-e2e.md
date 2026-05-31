@@ -201,10 +201,9 @@ ordering matches the template by spot-checking 3 entries.
 ### A3. Parse COLLECTED_INDICES → CheckLocations
 
 The shape of the COLLECTED_INDICES payload is determined by the
-bootstrap Lua's `RL.GetCollectedIndicesAndSend()` implementation.
-Look at it in
-[vendor/open-dread-rando-exlaunch/](../vendor/open-dread-rando-exlaunch/)
-or pull the latest bootstrap files from upstream. Most likely formats:
+bootstrap Lua's `RL.GetCollectedIndicesAndSend()` implementation, which
+lives at [apworld/dread/client/lua/bootstrap_part_0.lua](../apworld/dread/client/lua/bootstrap_part_0.lua)
+(vendored verbatim from randovania). Most likely formats:
 
 - A binary bitfield (149 bits → 19 bytes, little-endian)
 - JSON: `{"indices": [0, 5, 12, ...]}` listing set indices

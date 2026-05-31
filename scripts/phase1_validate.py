@@ -10,7 +10,8 @@ without further Switch-side reverse engineering. If it fails on real
 hardware we stop and triage before doing any more work.
 
 The wire protocol (confirmed from the exlaunch C++ sender in
-vendor/open-dread-rando-exlaunch/source/program/{remote_api,main}.cpp; MIT):
+https://github.com/randovania/open-dread-rando-exlaunch/tree/main/source/program
+— remote_api.cpp + main.cpp; GPL-2.0, upstream, not redistributed here):
 
 Requests (PC → Switch):
   * PACKET_HANDSHAKE        b"\\x01" + interests_byte

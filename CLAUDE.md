@@ -56,7 +56,7 @@ strings are not.
 
 Lifted verbatim from [randovania/game_connection/executor/dread_executor.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/executor/dread_executor.py)
 and [randovania/game_connection/connector/dread_remote_connector.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/connector/dread_remote_connector.py).
-Both are MIT.
+Both are GPL-3.0 (this whole project is GPL-3.0 as a result — see [LICENSE](LICENSE)).
 
 **Packet types** (the upstream `IntEnum(b"N")` trick evaluates as `int("N")==N`,
 so on the wire these are raw `0x01`..`0x09`, not ASCII):
@@ -88,7 +88,8 @@ PacketType, then the layout varies by type:
 **MALFORMED** `[0x09][failing_type:1][rcv:4 LE u32][should:4 LE u32]`
 
 This is the AUTHORITATIVE wire format, confirmed from
-`vendor/open-dread-rando-exlaunch/source/program/{remote_api.cpp,main.cpp}`.
+[randovania/open-dread-rando-exlaunch/source/program/{remote_api.cpp,main.cpp}](https://github.com/randovania/open-dread-rando-exlaunch/tree/main/source/program)
+(GPL-2.0, not redistributed here — clone separately if you need to read it).
 Prior versions of this document described the response shape as
 `[success][len_24][payload]` for all frames — that was wrong (see
 [docs/wire-wiring-notes.md](docs/wire-wiring-notes.md)).
@@ -126,7 +127,7 @@ Prior versions of this document described the response shape as
 C:\Users\maxwe\Documents\dread_ap\
   README.md
   CLAUDE.md                  ← this file
-  LICENSE                    MIT (with upstream attribution)
+  LICENSE                    GPL-3.0 (combined work — GPL-3.0 patcher + GPL-2.0 sysmodule patches)
   PLAN.md                    Copy of the original implementation plan
   .gitignore                 Nintendo IP rules
   scripts/
@@ -233,7 +234,7 @@ starter baked into compilation is the 15 starting missile capacity (the ammo
 Wire wiring: Gate A + B shipped. Every Switch→PC frame is now
 demuxed by leading type byte; the wire format documented previously
 in this file (and in phase1_validate.py) was WRONG — actual format
-discovered from `vendor/open-dread-rando-exlaunch/source/program/`
+discovered from [randovania/open-dread-rando-exlaunch/source/program/](https://github.com/randovania/open-dread-rando-exlaunch/tree/main/source/program)
 and now used throughout. The Switch→AP path emits
 `LocationChecks` from `PACKET_COLLECTED_INDICES` pushes
 (`locations:`-prefixed bitfield → AP location_ids via the new

@@ -4,7 +4,8 @@ The PC client talks to the Switch over TCP on port **6969**. This port is
 opened by the upstream [open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch)
 sysmodule. We did not author it; we just speak its protocol.
 
-Reference implementation (MIT, by Randovania):
+Reference implementation (GPL-3.0, by Randovania — this is where our GPL-3.0
+inheritance comes from):
 - [dread_executor.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/executor/dread_executor.py) — framing, connect, keep-alive
 - [dread_remote_connector.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/connector/dread_remote_connector.py) — `RL.ReceivePickup` and high-level item routing
 - [mercury_remote_connector.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/connector/mercury_remote_connector.py) — shared poll loop with Samus Returns

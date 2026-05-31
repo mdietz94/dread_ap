@@ -29,7 +29,9 @@ that consume the source directly still work.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.resources
+import json
 import os
 import shutil
 import subprocess
@@ -668,6 +670,79 @@ def build_ready() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Build staleness check
+# ---------------------------------------------------------------------------
+
+def _build_manifest_path() -> Path:
+    return build_dir() / "build_manifest.json"
+
+
+def _compute_build_inputs_hash() -> str | None:
+    """SHA-256 of PINNED_EXLAUNCH_COMMIT + bundled patch file contents.
+
+    Returns None if a patch file can't be read (e.g. resources not yet
+    resolved in a fresh install) — callers treat None as "hash unknown,
+    assume stale."
+
+    Bridge IP is intentionally NOT included: it's per-user configuration
+    that doesn't affect whether the apworld-provided source is current.
+    Users who change their LAN IP can click Retry on the Build page.
+    """
+    h = hashlib.sha256()
+    h.update(PINNED_EXLAUNCH_COMMIT.encode())
+    for patch in _PATCHES:
+        with _locate_patch_file(patch.filename) as p:
+            if p is None:
+                return None
+            try:
+                h.update(p.read_bytes())
+            except OSError:
+                return None
+    return h.hexdigest()
+
+
+def write_build_manifest() -> None:
+    """Record a build_manifest.json alongside the build outputs.
+
+    Called by the wizard after a successful build so subsequent wizard
+    runs can skip the 30–60s compile when nothing has changed.
+    """
+    digest = _compute_build_inputs_hash()
+    if digest is None:
+        return  # can't produce a valid manifest; leave any existing one
+    try:
+        _build_manifest_path().write_text(
+            json.dumps({
+                "inputs_hash": digest,
+                "pinned_commit": PINNED_EXLAUNCH_COMMIT,
+            }),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def build_current() -> bool:
+    """True when build outputs exist AND were produced from the current inputs.
+
+    "Current" means PINNED_EXLAUNCH_COMMIT + the bundled patch files match
+    the hash recorded in build_manifest.json at the end of the last build.
+    If the pinned commit or either diff changes (e.g. after an apworld
+    update), this returns False and the wizard triggers a fresh compile.
+    """
+    if not build_ready():
+        return False
+    digest = _compute_build_inputs_hash()
+    if digest is None:
+        return False  # can't verify; treat as stale
+    try:
+        manifest = json.loads(_build_manifest_path().read_text(encoding="utf-8"))
+        return manifest.get("inputs_hash") == digest
+    except (OSError, ValueError):
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Headless orchestrator (CLI entry point — wizard.py is the GUI wrapper)
 # ---------------------------------------------------------------------------
 
@@ -719,6 +794,7 @@ def run_build_pipeline(on_line: ProgressFn | None = None,
             on_line(msg)
         return BuildResult(ok=False, returncode=1, log=r.log, detail=msg)
 
+    write_build_manifest()
     if on_line:
         for k, p in outputs.items():
             on_line(f"[build] {k}: {p} ({p.stat().st_size} bytes)")

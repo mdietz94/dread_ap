@@ -55,12 +55,12 @@ pop, does a check register). Early wire-up validation lives at
 
 This is a soft fork. We vendor and credit:
 
-- [open-dread-rando](https://github.com/randovania/open-dread-rando) — the RomFS patcher. Forked to accept Archipelago slot_data instead of a Randovania seed.
-- [open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch) — the in-game sysmodule. Used as-is.
-- [mercury-engine-data-structures](https://github.com/randovania/mercury-engine-data-structures) — Mercury Engine file IO. Pip dependency, no fork.
-- [randovania/randovania/game_connection/](https://github.com/randovania/randovania/tree/main/randovania/game_connection) — the reference Lua protocol we replicate.
+- [open-dread-rando](https://github.com/randovania/open-dread-rando) (GPL-3.0) — the RomFS patcher. Vendored as a pinned git submodule at `vendor/open-dread-rando/`; we don't fork — we write an adapter that turns AP slot_data into the patcher's existing JSON input schema.
+- [open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch) (GPL-2.0) — the in-game sysmodule. We carry two local patches against it (`apworld/dread/_setup/exlaunch-*.diff`) applied by `apworld/dread/_setup/build.py`; upstream source is not redistributed.
+- [mercury-engine-data-structures](https://github.com/randovania/mercury-engine-data-structures) (MIT) — Mercury Engine file IO. Pip dependency, no fork.
+- [randovania/randovania](https://github.com/randovania/randovania) (GPL-3.0) — the reference Lua-eval protocol we replicate, and the source for the verbatim Lua bootstrap files under `apworld/dread/client/lua/`.
 
-When we find bugs in vendor/ that aren't AP-specific, we file upstream.
+When we find bugs upstream that aren't AP-specific, we file PRs.
 
 ## Plan
 
@@ -68,4 +68,17 @@ See [PLAN.md](PLAN.md) (a copy of the original implementation plan).
 
 ## License
 
-MIT for our code; upstream licenses preserved under vendor/. See [LICENSE](LICENSE).
+GPL-3.0-or-later — see [LICENSE](LICENSE).
+
+Copyright (C) 2026 Maxwell Dietz.
+
+This is a combined work that incorporates GPL-3.0 code from
+[open-dread-rando](https://github.com/randovania/open-dread-rando) (vendored as
+a pinned submodule under `vendor/open-dread-rando/`) and verbatim Lua bootstrap
+files from [randovania](https://github.com/randovania/randovania) (GPL-3.0,
+under `apworld/dread/client/lua/`). GPL-2.0 patches to
+[open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch)
+live in `apworld/dread/_setup/exlaunch-*.diff`. The combined work is GPL-3.0
+under the GPL's compatibility rules (GPL-2.0 → GPL-3.0 via "or later"
+relicensing). [mercury-engine-data-structures](https://github.com/randovania/mercury-engine-data-structures)
+is an MIT pip dependency.

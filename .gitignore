@@ -95,14 +95,18 @@ htmlcov/
 third_party/
 
 # ============================================================================
-# Vendored upstream Randovania repos — not redistributed.
-# We use them as reference clones during dev. End users get the same code
-# via `pip install open-dread-rando open-dread-rando-exlaunch`. The starter
-# patcher template we actually need at runtime is bundled inside the
-# apworld at apworld/dread/data/starter_preset_patcher.json.
-# vendor/CHANGES.md (tracked) documents how to clone these locally.
+# Vendored upstream Randovania repos.
+#
+# - `vendor/open-dread-rando/` is a pinned git SUBMODULE (GPL-3.0). Carries the
+#   patcher source; install_apworld.py copies it into the apworld zip so end
+#   users do not need to `pip install open-dread-rando`. Clone with
+#   `git clone --recurse-submodules`, or run `git submodule update --init`.
+# - `vendor/open-dread-rando-exlaunch/` stays gitignored — GPL-2.0, dev-only
+#   reference clone. Our two local patches live at
+#   `apworld/dread/_setup/exlaunch-*.diff` and are applied by
+#   `apworld/dread/_setup/build.py` against a user-side clone.
+# vendor/CHANGES.md (tracked) documents the diffs we carry.
 # ============================================================================
-vendor/open-dread-rando/
 vendor/open-dread-rando-exlaunch/
 
 # ============================================================================
