@@ -14,9 +14,11 @@ Pages (sequenced; each calls ``goto("next-page")`` when its work completes):
                         Python 3.12 via winget; link to devkitPro installer;
                         pip-install hint for ``open_dread_rando``
   3. RomFSPickerPage  — folder picker for the user's pre-extracted vanilla
-                        Dread 2.1.0 romfs; persisted as ``romfs_path`` in
-                        ``setup_state.json``. The per-seed patcher reads
-                        it at AP-connect time (PR-A2 wires that path)
+                        Dread romfs (1.0.0 or 2.1.0 — both supported by
+                        upstream; a single subsdk9 binary runs on either);
+                        persisted as ``romfs_path`` in ``setup_state.json``.
+                        The per-seed patcher reads it at AP-connect time
+                        and auto-detects the romfs version.
   4. BridgeIpPage     — optional seed IP for the Switch's /24 sweep. The
                         topology was inverted (PC listens, Switch dials),
                         so the sysmodule needs a baked-in seed to find
@@ -281,16 +283,18 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         root.add_widget(_h1("Dread Archipelago — Setup"))
         msg = (
             "This wizard prepares everything DreadClient needs to run a "
-            "Metroid Dread 2.1.0 Archipelago seed against Ryujinx or a "
-            "modded Switch. Run it the first time you set up the client, "
-            "and again whenever you switch deploy targets or update the "
+            "Metroid Dread Archipelago seed against Ryujinx or a modded "
+            "Switch. Run it the first time you set up the client, and "
+            "again whenever you switch deploy targets or update the "
             "apworld.\n\n"
             "REQUIREMENTS — confirm these BEFORE continuing:\n"
-            "  - Metroid Dread version 2.1.0 (the newest retail patch). The "
-            "Ryujinx + Atmosphere CFW path both expect 2.1.0 — patcher "
-            "outputs against other versions are not supported.\n"
-            "  - A pre-extracted vanilla Dread 2.1.0 romfs folder on this PC. "
-            "If you do not have one yet, dump from a clean retail source with "
+            "  - Metroid Dread version 1.0.0 or 2.1.0. Both are supported "
+            "long-term by upstream open-dread-rando + open-dread-rando-"
+            "exlaunch; a single sysmodule binary runs on either. Other "
+            "versions may work transiently but are not promised.\n"
+            "  - A pre-extracted vanilla Dread romfs folder on this PC, "
+            "matching the version your Switch / Ryujinx will run. If you "
+            "do not have one yet, dump from a clean retail source with "
             "NXDumpTool and extract with hactool / nxgameuncomp before "
             "running this wizard. (We never read your NSP/XCI directly — "
             "the per-seed patcher overlays the extracted romfs.)\n"
@@ -302,9 +306,9 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
             "Python 3.12 with the open-dread-rando runtime deps installed "
             "(the patcher itself is vendored as a git submodule).\n"
-            "  - Record the path to your extracted Dread 2.1.0 romfs so the "
-            "per-seed patcher can run automatically when you connect to an "
-            "Archipelago server.\n"
+            "  - Record the path to your extracted Dread romfs so the "
+            "per-seed patcher can run automatically when you connect to "
+            "an Archipelago server.\n"
             "  - Clone open-dread-rando-exlaunch at the pinned commit, apply "
             "our Ryujinx-fix patch, and build the subsdk9 sysmodule under "
             "devkitPro's msys2 bash (~30-60 seconds on a warm cache).\n"
@@ -610,16 +614,18 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     def build_romfs() -> Screen:
         s = Screen(name="romfs")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
-        root.add_widget(_h1("Pick your extracted Dread 2.1.0 romfs"))
+        root.add_widget(_h1("Pick your extracted Dread romfs"))
         root.add_widget(_label(
-            "Browse to your pre-extracted Dread 2.1.0 romfs folder — the "
-            "directory that contains ``system/`` and ``packs/``. The per-seed "
+            "Browse to your pre-extracted Dread romfs folder — the directory "
+            "that contains ``system/`` and ``packs/``. Both Dread 1.0.0 and "
+            "2.1.0 are supported (upstream open-dread-rando reads either, and "
+            "the same sysmodule binary runs on both ROMs). The per-seed "
             "patcher reads this at AP-connect time and overlays placements / "
             "options into your Ryujinx (or Switch) mod install.\n\n"
             "If you haven't extracted yet, dump from a clean retail source "
             "with NXDumpTool and extract with hactool / nxgameuncomp; we "
             "never read the NSP/XCI directly.",
-            height=128,
+            height=160,
         ))
 
         picker_row = BoxLayout(orientation="horizontal", size_hint_y=None,
@@ -648,7 +654,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         def on_browse(_i) -> None:
             current = wizard_state.get("romfs_path")
             picked = _ask_directory(
-                "Select your extracted Dread 2.1.0 romfs folder",
+                "Select your extracted Dread romfs folder",
                 str(current) if current else None,
             )
             if not picked:
@@ -657,10 +663,9 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             if not picked_path.is_dir():
                 err_label.text = f"Not a folder: {picked}"
                 return
-            # Light sanity check — a Dread 2.1.0 romfs has these subdirs.
-            # We warn (not block) because a user with an unusual extractor
-            # layout (subfolder, hardlink farm) might still produce a tree
-            # that works with the patcher.
+            # Light sanity check — a Dread romfs has these subdirs.
+            # Same layout on both 1.0.0 and 2.1.0; this isn't a version
+            # check, just a "does this look like a romfs at all" guard.
             warn_missing = [
                 name for name in ("system", "packs")
                 if not (picked_path / name).is_dir()

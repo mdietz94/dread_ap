@@ -170,12 +170,18 @@ def test_open_dread_rando_importable(monkeypatch):
     assert "0.10.4" in r.detail
 
 
-def test_open_dread_rando_not_importable_surfaces_pip_command(monkeypatch):
+def test_open_dread_rando_not_importable_surfaces_pip_command(monkeypatch, tmp_path):
     """The subprocess exits non-zero: failure includes a pip-install note
-    pointing at the chosen Python."""
+    pointing at the chosen Python. Mocks the vendor probe so the test is
+    deterministic regardless of whether ``vendor/open-dread-rando`` is
+    initialized in the host environment (a submodule-missing run would
+    take the ``git submodule update`` diagnostic branch instead)."""
     monkeypatch.setattr(
         prereqs, "_safe_run",
         lambda _cmd, **_kw: (1, "", "ModuleNotFoundError: open_dread_rando"),
+    )
+    monkeypatch.setattr(
+        prereqs, "vendored_open_dread_rando_src", lambda: tmp_path,
     )
     r = prereqs.check_open_dread_rando(python="/fake/python.exe")
     assert r.ok is False
@@ -211,15 +217,20 @@ def test_open_dread_rando_enumerates_multiple_pythons(monkeypatch):
     assert "/fake/goodpy.exe" in r.detail
 
 
-def test_open_dread_rando_miss_targets_first_candidate(monkeypatch):
+def test_open_dread_rando_miss_targets_first_candidate(monkeypatch, tmp_path):
     """When none of the detected Pythons has it, the install hint targets
     the first (highest-priority) candidate so re-probe lands on the same
-    interpreter pip installed into."""
+    interpreter pip installed into. Mocks the vendor probe so the test
+    doesn't fall through to the ``git submodule update`` branch when the
+    host environment lacks the checkout."""
     candidates = ["/fake/firstpy.exe", "/fake/secondpy.exe"]
     monkeypatch.setattr(prereqs, "candidate_pythons", lambda: candidates)
     monkeypatch.setattr(
         prereqs, "_safe_run",
         lambda _cmd, **_kw: (1, "", "ModuleNotFoundError: open_dread_rando"),
+    )
+    monkeypatch.setattr(
+        prereqs, "vendored_open_dread_rando_src", lambda: tmp_path,
     )
     r = prereqs.check_open_dread_rando(python=None)
     assert r.ok is False

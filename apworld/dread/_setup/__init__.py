@@ -8,8 +8,9 @@ spawns `_setup.wizard.run_setup_wizard` in a new window via
 The wizard's job is to turn a fresh machine into one that can:
   - check out upstream open-dread-rando-exlaunch, apply our Ryujinx fix
     patch, and build a working `subsdk9` + `main.npdm` against devkitPro
-  - record the user's vanilla Dread 2.1.0 romfs location so the per-seed
-    patcher (run automatically at AP-connect time) knows where to overlay
+  - record the user's vanilla Dread romfs location (1.0.0 or 2.1.0) so the
+    per-seed patcher (run automatically at AP-connect time) knows where to
+    overlay
   - deploy the sysmodule either to a real Switch's SD card or to Ryujinx's
     mods directory.
 

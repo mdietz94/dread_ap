@@ -680,7 +680,7 @@ class DreadContext(CommonContext):
         if not romfs_raw or not isinstance(romfs_raw, str):
             _ap_log.info(
                 "Auto-patch skipped: romfs_path not recorded in %s. Re-run "
-                "/setup to pick your extracted Dread 2.1.0 romfs folder.",
+                "/setup to pick your extracted Dread romfs folder.",
                 state_path,
             )
             return
@@ -783,7 +783,7 @@ class DreadContext(CommonContext):
                 log.info("/patch: cancelled (no Dreadvania folder chosen)")
                 return
             vanilla_romfs_dir = await asyncio.to_thread(
-                ask_directory, "Select your extracted Dread 2.1.0 romfs folder",
+                ask_directory, "Select your extracted Dread romfs folder",
                 romfs_init)
             if not vanilla_romfs_dir:
                 log.info("/patch: cancelled (no romfs folder chosen)")

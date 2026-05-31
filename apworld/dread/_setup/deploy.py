@@ -35,7 +35,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Dread's Atmosphere title id — never changes for Dread 2.1.0.
+# Dread's Atmosphere title id — fixed across retail patches (1.0.0 and
+# 2.1.0 share the same title id; only the patch NCAs differ).
 DREAD_TITLE_ID = "010093801237c000"
 # Module name under Ryujinx's mods/contents — matches the directory the
 # CMakeLists.txt `RYU_PATH` post-build hook writes into.
