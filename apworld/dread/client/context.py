@@ -730,8 +730,22 @@ class DreadContext(CommonContext):
         # open_dread_rando isn't installed (e.g. read-only test runners).
         # patcher_pipeline.check_dependencies() handles the real reporting.
         from ..patcher_pipeline import patch
+        from .._setup.build import collect_build_outputs
 
         log.info("/patch: starting…")
+
+        # The patcher overwrites the mod's exefs with the UPSTREAM (server-mode,
+        # port 6969) subsdk9 it bundles. Re-assert our locally-built patched
+        # sysmodule on top so the Switch keeps dialing the client. Empty when
+        # the user hasn't built (e.g. fresh checkout) — warn loudly because the
+        # symptom (Switch listening on 6969, no connection) is otherwise opaque.
+        exefs_overlay = collect_build_outputs() or None
+        if not exefs_overlay:
+            log.warning(
+                "/patch: no built sysmodule found to re-assert — the patcher's "
+                "upstream subsdk9 (port 6969) will be used and the Switch won't "
+                "dial the client. Run /setup's Build + Deploy steps."
+            )
 
         def _do():
             return patch(
@@ -739,6 +753,7 @@ class DreadContext(CommonContext):
                 dreadvania_install_dir=Path(_expand(dreadvania_dir)),
                 vanilla_romfs_dir=Path(_expand(vanilla_romfs_dir)),
                 python_executable=self.dreadvania_python,
+                exefs_overlay=exefs_overlay,
             )
 
         try:
@@ -751,6 +766,8 @@ class DreadContext(CommonContext):
             log.info("/patch: %s", result.message)
             if result.patcher_input_path:
                 log.info("  patcher input: %s", result.patcher_input_path)
+            for note in result.notes:
+                log.info("  %s", note)
         else:
             log.error("/patch: %s", result.message)
             if result.cli_stderr_tail:
