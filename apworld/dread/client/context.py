@@ -297,6 +297,12 @@ class DreadContext(CommonContext):
         # exponential-backoff sleep and dial the Switch immediately. See
         # _switch_supervisor.
         self._redial_event = asyncio.Event()
+        # Current exponential-backoff interval the supervisor sleeps for between
+        # failed dials. Hoisted to an instance attribute (rather than a local in
+        # _switch_supervisor) so a manual /dread_connect can RESET it to the
+        # start value via request_redial — otherwise a user-initiated retry that
+        # races a climbed backoff would still inherit the long (up to 30s) sleep.
+        self._switch_backoff = _SWITCH_BACKOFF_START
         self._goal_reported = False
         # Whether the RL.* bootstrap has been sent to the Switch this connection.
         # Until it has, RL.GetCollectedIndicesAndSend / RL.ReceivePickup / etc.
@@ -425,24 +431,44 @@ class DreadContext(CommonContext):
                 )
 
     async def reconnect_switch(self) -> None:
+        """Tear down any live connection (or in-flight dial) completely, then
+        re-dial from scratch. Serialized against the supervisor + other manual
+        reconnects via ``_reconnect_lock`` so there is never more than one
+        executor or poll loop alive at a time. Awaiting the cancelled poll task
+        and the executor close (which cancels + frees the read / keep-alive
+        tasks and the socket) guarantees no orphaned tasks or half-open sockets
+        survive across repeated reconnects."""
         async with self._reconnect_lock:
-            if self._poll_task:
+            if self._poll_task is not None:
                 self._poll_task.cancel()
+                try:
+                    await self._poll_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
                 self._poll_task = None
-            if self.executor:
+            if self.executor is not None:
                 await self.executor.close()
                 self.executor = None
+            # connect_switch resets _bootstrapped itself, but clear it here too
+            # so the window between teardown and re-dial never looks "ready".
+            self._bootstrapped = False
             await self.connect_switch()
-        # Wake the supervisor so it resets its backoff and resumes watching
-        # (also covers the case where this manual dial failed).
+        # Wake the supervisor + reset its backoff so it resumes watching and a
+        # failed manual dial is retried promptly (request_redial does both).
         self.request_redial()
 
     def request_redial(self) -> None:
-        """Signal the backoff supervisor to dial the Switch immediately.
+        """Signal the backoff supervisor to dial the Switch immediately AND
+        reset the exponential backoff to its starting value.
 
         Both ``/dread_connect`` and the GUI reconnect popup go through
         ``reconnect_switch``, which calls this so a manual retry never has to
-        wait out the current backoff sleep."""
+        wait out the current (possibly maxed-out) backoff sleep, and so the
+        NEXT auto-redial after a user retry is prompt rather than inheriting a
+        climbed interval. Resetting ``_switch_backoff`` here (not only on the
+        supervisor's wake path) makes the reset observable even when the
+        supervisor is mid-dial rather than sleeping."""
+        self._switch_backoff = _SWITCH_BACKOFF_START
         self._redial_event.set()
 
     async def _on_switch_disconnect(self) -> None:
@@ -495,26 +521,29 @@ class DreadContext(CommonContext):
         The initial dial often loses the race with Dreadvania finishing its own
         boot; rather than make the user hit /dread_connect, we retry 1, 2, 4 …
         up to 30s. A manual reconnect (``request_redial``) interrupts the sleep
-        and resets the backoff. While connected we idle until the wire drops
-        (``executor`` cleared by a failed reconnect or close), then resume."""
-        backoff = _SWITCH_BACKOFF_START
+        and resets the backoff (it writes ``self._switch_backoff`` directly, so
+        the reset sticks even if the supervisor is mid-dial). While connected we
+        idle until the wire drops (``executor`` cleared by a failed reconnect or
+        close), then resume."""
+        self._switch_backoff = _SWITCH_BACKOFF_START
         while not self.exit_event.is_set():
             if self.executor is None:
                 # connect_switch is a no-op if already connected and is
                 # serialized against manual reconnects via _reconnect_lock.
                 await self.connect_switch()
                 if self.executor is not None:
-                    backoff = _SWITCH_BACKOFF_START
+                    self._switch_backoff = _SWITCH_BACKOFF_START
                     continue
-                wait = backoff
-                backoff = min(backoff * 2, _SWITCH_BACKOFF_MAX)
+                wait = self._switch_backoff
+                self._switch_backoff = min(
+                    self._switch_backoff * 2, _SWITCH_BACKOFF_MAX)
             else:
                 wait = _SWITCH_BACKOFF_MAX
             self._redial_event.clear()
             try:
                 await asyncio.wait_for(self._redial_event.wait(), timeout=wait)
-                # Woken by a manual redial — dial now with a fresh backoff.
-                backoff = _SWITCH_BACKOFF_START
+                # Woken by a manual redial — request_redial already reset the
+                # backoff; dial now (loop top) with that fresh value.
             except asyncio.TimeoutError:
                 pass
 

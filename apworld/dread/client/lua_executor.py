@@ -149,11 +149,30 @@ class DreadExecutor:
                 self._pending_reply = None
 
     async def close(self) -> None:
-        if self._read_task:
-            self._read_task.cancel()
-        if self._keep_alive_task:
-            self._keep_alive_task.cancel()
-        if self._writer:
+        """Tear the connection down completely: cancel + AWAIT the read and
+        keep-alive tasks, close the socket, and drop all references.
+
+        Awaiting the cancelled tasks (rather than fire-and-forget cancel) means
+        that once ``close()`` returns there are no lingering background tasks
+        belonging to this executor — so a caller that re-dials immediately
+        (``reconnect_switch``) can never end up with two read loops or two
+        keep-alive loops racing the same wire. Idempotent: a second call is a
+        clean no-op. Never call this from inside the read loop itself (it would
+        cancel the running task); ``_on_switch_disconnect`` schedules it on a
+        separate task for exactly that reason."""
+        tasks = [t for t in (self._read_task, self._keep_alive_task) if t is not None]
+        for t in tasks:
+            t.cancel()
+        current = asyncio.current_task()
+        for t in tasks:
+            if t is current:
+                # Defensive: don't await ourselves into a deadlock.
+                continue
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        if self._writer is not None:
             try:
                 self._writer.close()
                 await self._writer.wait_closed()
