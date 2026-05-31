@@ -137,7 +137,7 @@ jobs:
       # download + test without cutting a release tag.
       - name: Upload artifact (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dread.apworld
           path: dist/dread.apworld
