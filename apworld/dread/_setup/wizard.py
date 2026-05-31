@@ -14,13 +14,11 @@ Pages (sequenced; each calls ``goto("next-page")`` when its work completes):
                         Python 3.12 via winget; link to devkitPro installer;
                         pip-install hint for ``open_dread_rando``
   3. RomFSPickerPage  — folder picker for the user's pre-extracted vanilla
-                        Dread romfs (1.0.0 or 2.1.0); persisted as
-                        ``romfs_path`` + ``romfs_version`` in
-                        ``setup_state.json``. The per-seed patcher reads
-                        the path at AP-connect time (PR-A2 wires that
-                        path); the client compares the picked version
-                        against the live Switch's ``GameVersion`` at
-                        connect and warns on mismatch.
+                        Dread romfs (1.0.0 or 2.1.0 — both supported by
+                        upstream; a single subsdk9 binary runs on either);
+                        persisted as ``romfs_path`` in ``setup_state.json``.
+                        The per-seed patcher reads it at AP-connect time
+                        and auto-detects the romfs version.
   4. BridgeIpPage     — optional seed IP for the Switch's /24 sweep. The
                         topology was inverted (PC listens, Switch dials),
                         so the sysmodule needs a baked-in seed to find
@@ -60,12 +58,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from . import (
-    DEFAULT_DREAD_VERSION,
-    SUPPORTED_DREAD_VERSIONS,
-    appdata_root,
-    setup_state_path,
-)
+from . import appdata_root, setup_state_path
 from .build import (
     apply_patches,
     build_ready,
@@ -245,9 +238,6 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
     initial_romfs = (
         Path(saved_romfs) if saved_romfs and Path(saved_romfs).is_dir() else None
     )
-    saved_romfs_version = saved_state.get("romfs_version")
-    if saved_romfs_version not in SUPPORTED_DREAD_VERSIONS:
-        saved_romfs_version = DEFAULT_DREAD_VERSION
     # Bridge seed IP. The Switch sweeps this address's /24 looking for the
     # PC bridge; loopback (Ryujinx-on-same-host) is tried first regardless.
     # On first wizard run we suggest the auto-detected LAN IP; subsequent
@@ -263,7 +253,6 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         "dreadap_path": dreadap_path,
         "dreadap": parse_dreadap(Path(dreadap_path)) if dreadap_path else None,
         "romfs_path": initial_romfs,
-        "romfs_version": saved_romfs_version,
         "bridge_ip": saved_bridge_ip,
         "build_done": build_ready(),  # carry across pages; reflect prior runs
         "deploy_target": saved_state.get("deploy_target", "ryujinx"),
@@ -314,11 +303,9 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "This wizard will:\n"
             "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
             "Python 3.12 with open-dread-rando importable.\n"
-            "  - Record the path to your extracted Dread romfs and which "
-            "version it is (1.0.0 vs 2.1.0) so the per-seed patcher can "
-            "run automatically when you connect to an Archipelago server, "
-            "and DreadClient can warn you if the live game is running a "
-            "different version.\n"
+            "  - Record the path to your extracted Dread romfs so the "
+            "per-seed patcher can run automatically when you connect to "
+            "an Archipelago server.\n"
             "  - Clone open-dread-rando-exlaunch at the pinned commit, apply "
             "our Ryujinx-fix patch, and build the subsdk9 sysmodule under "
             "devkitPro's msys2 bash (~30-60 seconds on a warm cache).\n"
@@ -627,50 +614,16 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         root.add_widget(_h1("Pick your extracted Dread romfs"))
         root.add_widget(_label(
             "Browse to your pre-extracted Dread romfs folder — the directory "
-            "that contains ``system/`` and ``packs/``. The per-seed patcher "
-            "reads this at AP-connect time and overlays placements / options "
-            "into your Ryujinx (or Switch) mod install.\n\n"
-            "Both Dread 1.0.0 and 2.1.0 are supported; pick the version that "
-            "matches the romfs you extracted (and the ROM your Switch or "
-            "Ryujinx will run). The same compiled sysmodule works on either; "
-            "the picked version is only used to warn at connect time if the "
-            "live game reports a different ``GameVersion``.\n\n"
+            "that contains ``system/`` and ``packs/``. Both Dread 1.0.0 and "
+            "2.1.0 are supported (upstream open-dread-rando reads either, and "
+            "the same sysmodule binary runs on both ROMs). The per-seed "
+            "patcher reads this at AP-connect time and overlays placements / "
+            "options into your Ryujinx (or Switch) mod install.\n\n"
             "If you haven't extracted yet, dump from a clean retail source "
             "with NXDumpTool and extract with hactool / nxgameuncomp; we "
             "never read the NSP/XCI directly.",
-            height=200,
+            height=160,
         ))
-
-        # Romfs version selector — radio-style toggle between supported
-        # versions. Persisted alongside romfs_path so DreadClient's
-        # connect-time check can compare against the live GameVersion.
-        version_row = BoxLayout(orientation="horizontal", size_hint_y=None,
-                                height=40, spacing=12)
-        version_row.add_widget(_label("Romfs version:", size_hint_x=None,
-                                      width=140))
-        version_buttons: dict[str, CheckBox] = {}
-
-        def _on_version_pick(picked_version: str) -> None:
-            wizard_state["romfs_version"] = picked_version
-            for v, cb in version_buttons.items():
-                if cb.active != (v == picked_version):
-                    cb.active = (v == picked_version)
-            state = load_setup_state()
-            state["romfs_version"] = picked_version
-            save_setup_state(state)
-
-        current_version = wizard_state.get("romfs_version", DEFAULT_DREAD_VERSION)
-        for ver in SUPPORTED_DREAD_VERSIONS:
-            cell = BoxLayout(orientation="horizontal", spacing=4)
-            cb = CheckBox(group="romfs_version", size_hint_x=None, width=32,
-                          active=(ver == current_version))
-            # Capture ver via default-arg so the closure binds the loop var.
-            cb.bind(on_release=lambda _w, v=ver: _on_version_pick(v))
-            version_buttons[ver] = cb
-            cell.add_widget(cb)
-            cell.add_widget(_label(ver))
-            version_row.add_widget(cell)
-        root.add_widget(version_row)
 
         picker_row = BoxLayout(orientation="horizontal", size_hint_y=None,
                                height=48, spacing=8)
@@ -729,8 +682,6 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             # existing state to preserve sibling keys.
             state = load_setup_state()
             state["romfs_path"] = str(picked_path)
-            state["romfs_version"] = wizard_state.get(
-                "romfs_version", DEFAULT_DREAD_VERSION)
             save_setup_state(state)
 
         browse_btn.bind(on_release=on_browse)

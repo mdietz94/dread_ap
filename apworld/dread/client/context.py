@@ -45,7 +45,7 @@ from .protocol import (
 from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
 from .switch_server import SwitchServer
-from .._setup import SUPPORTED_DREAD_VERSIONS, setup_state_path
+from .._setup import setup_state_path
 from .._setup.deploy import DREAD_TITLE_ID, RYU_MOD_NAME
 
 DEFAULT_LISTEN_PORT = 17777
@@ -68,60 +68,6 @@ _ap_log = logging.getLogger("Client")
 
 
 GAME_NAME = "Metroid Dread"
-
-
-def _normalize_game_version(raw: str) -> str:
-    """Strip leading ``v``/whitespace from a Mercury Engine ``GameVersion``
-    string. The Lua global appears as ``"2.1.0"`` on the units we've tested,
-    but randovania's docs leave the format unspecified and we've also seen
-    ``"v2.1.0"`` in older fixtures — be lenient so a ``v``-prefixed string
-    still matches the un-prefixed value the wizard persisted."""
-    s = raw.strip()
-    if s.startswith(("v", "V")):
-        s = s[1:]
-    return s
-
-
-def _expected_romfs_version() -> Optional[str]:
-    """Read the romfs version the user picked in the setup wizard. Returns
-    None if no wizard run has happened yet or the value is corrupt — in that
-    case we silently skip the connect-time check (no false positives on
-    fresh installs)."""
-    path = setup_state_path()
-    if not path.exists():
-        return None
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(state, dict):
-        return None
-    picked = state.get("romfs_version")
-    if isinstance(picked, str) and picked in SUPPORTED_DREAD_VERSIONS:
-        return picked
-    return None
-
-
-def _check_dread_version_match(api_game_version: str) -> Optional[str]:
-    """Compare the live Switch ``GameVersion`` against the romfs version the
-    wizard persisted. Returns a user-facing warning string on mismatch, or
-    ``None`` if the versions agree (or we have no expectation to compare
-    against). The patcher output for 1.0.0 isn't compatible with a 2.1.0 ROM
-    (and vice-versa), so a mismatch produces undefined behavior on the live
-    game — surface it loudly but don't hard-abort, since the user may have
-    just rebooted into a different ROM and is about to re-run the wizard."""
-    expected = _expected_romfs_version()
-    if expected is None:
-        return None
-    live = _normalize_game_version(api_game_version)
-    if live == expected:
-        return None
-    return (
-        f"Dread version mismatch: live game reports GameVersion={api_game_version!r} "
-        f"but the romfs you patched against is {expected!r}. The patched mod is "
-        f"version-specific — items may fail to grant or the game may crash. "
-        f"Re-run /setup and pick the romfs matching your Switch / Ryujinx ROM."
-    )
 
 
 def _expand(path: str) -> str:
@@ -474,10 +420,6 @@ class DreadContext(CommonContext):
         try:
             api = await conn.setup()
             self.state.update_game_state(layout_uuid=api.layout_uuid)
-            version_warning = _check_dread_version_match(api.game_version)
-            if version_warning is not None:
-                log.warning("%s", version_warning)
-                _ap_log.warning("%s", version_warning)
             # The exlaunch ROM only ships RL.* stubs; the real query / delivery
             # functions are Lua we install every connect (matching randovania's
             # dread_executor.bootstrap). Until this lands, nothing else on the

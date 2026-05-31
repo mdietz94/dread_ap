@@ -52,17 +52,6 @@ import os
 from pathlib import Path
 
 
-# Dread game versions the toolchain supports. open-dread-rando lists both as
-# long-term-supported and the exlaunch sysmodule's main.cpp has a runtime
-# getVersionOffsets() branch (strcmp displayVersion against "2.1.0", else
-# 1.0.0-2.0.0 offsets) — so a single subsdk9 binary works on either, and
-# the patcher reads either romfs without a version arg. The wizard picks
-# one for storage in setup_state.json (so the connect-time check can
-# diagnose ROM/romfs mismatch), but neither value implies a separate build.
-SUPPORTED_DREAD_VERSIONS: tuple[str, ...] = ("1.0.0", "2.1.0")
-DEFAULT_DREAD_VERSION: str = "2.1.0"
-
-
 def appdata_root() -> Path:
     """Per-user output root: `%APPDATA%/dread_ap/` on Windows,
     `~/.local/share/dread_ap/` elsewhere.
