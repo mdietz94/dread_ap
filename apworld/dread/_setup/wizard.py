@@ -59,11 +59,13 @@ from typing import Any
 from . import appdata_root, setup_state_path
 from .build import (
     apply_patches,
+    build_current,
     build_ready,
     collect_build_outputs,
     ensure_exlaunch_checkout,
     run_exlaunch_build,
     write_bridge_config,
+    write_build_manifest,
 )
 from .deploy import (
     DeployResult,
@@ -827,6 +829,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 _Clock.schedule_once(lambda dt: setattr(retry_btn, "disabled", False))
                 return
             wizard_state["build_done"] = True
+            write_build_manifest()
             update_status(
                 f"Build complete: subsdk9 ({outputs['subsdk9'].stat().st_size} bytes), "
                 f"main.npdm ({outputs['main.npdm'].stat().st_size} bytes)."
@@ -866,17 +869,18 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
 
         def _reset_and_start(*_):
             # Fresh page entry resets the attempt counter so navigating
-            # Back→Forward doesn't immediately hit the cap. If a previous
-            # wizard run already produced build outputs (build_done was
-            # carried in from build_ready()), skip the worker and let the
-            # user proceed straight to Deploy — re-running the build wastes
-            # 30-60s on a no-op.
+            # Back→Forward doesn't immediately hit the cap. Skip the build
+            # only when the outputs are provably current — i.e. the pinned
+            # exlaunch commit + bundled patch files haven't changed since the
+            # last successful build (build_current() hash check). This means
+            # an apworld update (new patches or new pinned commit) always
+            # triggers a fresh build automatically.
             build_state["attempt_count"] = 0
-            if wizard_state.get("build_done") and build_ready():
+            if wizard_state.get("build_done") and build_current():
                 outputs = collect_build_outputs()
                 msg = (
-                    f"Build already complete from a previous wizard run "
-                    f"(subsdk9 + main.npdm present at "
+                    f"Build is current (outputs match the installed apworld "
+                    f"version; subsdk9 + main.npdm at "
                     f"{outputs['subsdk9'].parent}). Click Next to deploy, "
                     f"or Retry to rebuild from scratch."
                 )
