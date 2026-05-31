@@ -219,7 +219,36 @@ UPDATE (post-logic-fixes): `World.EXTRA_STARTING_ITEMS` is now EMPTY — Charge
 Beam used to be force-started to clear a fill bottleneck, but once Missile Tank
 became advancement the early reachable set opened up and Charge Beam places as a
 normal findable item (verified 146 generations: solo+multiworld × all trick
-levels × minimal/items/full, 0 fill failures). Also: `objective.hints` in the
+levels × minimal/items/full, 0 fill failures).
+
+UPDATE (escape-rule fill cascade — fixed): the reverse-reachability escape pass
+(commit `7c5a451`) AND-ed "items needed to leave each pickup node" into per-
+location entry rules to plug AP's missing exit-side accessibility. The first cut
+folded raw item atoms in, so e.g. ~80/137 actor pickups picked up a hard
+`Morph Ball` requirement. Morph Ball is a single-copy progression item — the
+moment AP places it at any of those 80 spots, `reach(P)` needs Morph Ball and
+Morph Ball is *at* P, so `sweep_from_pool` can never collect it. `fill_restrictive`'s
+swap dance can't unwind the cascade because every viable spot still wants the
+same item. Result: generation failed across all accessibility levels and trick
+tiers; the original "100/100 verified" claim did not reproduce.
+
+Fix: `scripts/extract_dread_rules.py` now strips fill-fragile atoms (single-pool-
+copy, non-precollected items — Morph Ball, Charge Beam, every unique beam/suit,
+etc.) from each escape AST before AND-ing it into the entry rule, via the new
+`_strip_fill_fragile_items` pass. Multi-copy items (Missile Tank, Energy Tank,
+Power Bomb Tank, Missile+ Tank, Flash Shift Upgrade, Speed Booster Upgrade) and
+precollected starters (Slide, Pulse Radar) stay — `state.has` resolves them from
+other instances / from start state, so they don't cascade. Tightening count drops
+from 106 → 24 at L1 (also smaller at L2/L3). Generation now passes 0 fill
+failures across 99+ seeds spanning trick `beginner/intermediate/advanced` ×
+accessibility `minimal/items/full`, plus 50 seeds of the user-reported config
+and a 16-seed Dread+Clique multiworld smoke. Residual gameplay-softlock risk:
+a one-way-entry room whose escape needs `Morph Ball` no longer protects against
+AP placing a different item there. Same trade-off the original commit already
+accepted for boss/EMMI/cutscene/corex pickups (skipped for the same circular
+reason). See `_strip_fill_fragile_items` docstring for the full rationale.
+
+Also: `objective.hints` in the
 patcher output is now regenerated to a neutral count line — the starter
 template's per-guardian hints ("DNA 1 guarded by Corpius") are false under AP
 placement. Of the precollected starters, only **Slide** (191 rule atoms) and

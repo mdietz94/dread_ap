@@ -1220,6 +1220,36 @@ def _strip_no_suit_damage_thresholds(ast: dict) -> dict:
     return ast
 
 
+def _strip_fill_fragile_items(ast: dict, fragile_names: set[str]) -> dict:
+    """Replace `{type: item, name: N}` atoms with TRIVIAL when N is "fill-
+    fragile" — i.e. it has a single copy in the AP pool AND isn't precollected,
+    so AP fill can't route around the circular dependency this atom would
+    create when AND-ed into per-location escape rules.
+
+    Why this is needed: AP's accessibility model is entry-only. The escape
+    pass folds "items needed to leave the pickup" into the entry rule, but
+    if the escape rule requires Morph Ball (say) and AP places Morph Ball
+    AT this pickup, the rule becomes circular — reach(P) needs Morph Ball,
+    Morph Ball is at P → P is never reachable. Multi-copy items
+    (Missile Tank, Energy Tank, ...) and precollected items (Slide,
+    Pulse Radar) don't trigger the cycle because state.has can resolve
+    them from another instance / from start state.
+
+    A stripped escape rule may admit a *gameplay* softlock (player enters a
+    one-way room, picks up not-the-needed-item, gets stuck) — same caveat
+    as the original commit's non-actor-pickup skip. The alternative is no
+    fill at all, which is strictly worse.
+    """
+    t = ast.get("type")
+    if t == "item" and ast.get("name") in fragile_names:
+        return TRIVIAL
+    if t == "and":
+        return mk_and([_strip_fill_fragile_items(c, fragile_names) for c in ast["items"]])
+    if t == "or":
+        return mk_or([_strip_fill_fragile_items(c, fragile_names) for c in ast["items"]])
+    return ast
+
+
 # ---------------------------------------------------------------------------
 # Softlock prevention via reverse-reachability ("escape" rules)
 # ---------------------------------------------------------------------------
@@ -1513,9 +1543,31 @@ def main(argv: list[str] | None = None) -> int:
     # this fold turns "items to safely enter this pickup" into the actual
     # constraint. Boss/EMMI/cutscene/corex pickups are skipped — their escape
     # depends transitively on the pickup's own item (circular).
+    #
+    # Before AND-ing, strip fill-fragile items (single-pool-copy,
+    # non-precollected) from escape ASTs — see _strip_fill_fragile_items for
+    # the why. Without this strip, escape rules cascade Morph Ball / Charge
+    # Beam / etc. into ~80% of locations, and AP fill can't find a home for
+    # those very items (every viable spot still requires them). Multi-copy
+    # items and Slide/Pulse Radar stay because state.has can satisfy them.
     print("computing escape (softlock) rules ...")
     escape_rules = compute_escape_rules(
         all_area_data, header, event_rule_by_name, ap_loc_by_actor)
+    # Build the fragile-item set from items.json: single-pool-copy items that
+    # aren't in our precollected starter set. Tank/upgrade items with
+    # pool_count >= 2 stay because fill can route around them.
+    _PRECOLLECTED = {"Slide", "Pulse Radar"}
+    fragile_items: set[str] = {
+        it["name"] for it in ap_items
+        if int(it.get("pool_count", 0)) == 1
+        and not it["name"].startswith("Event:")
+        and not it["name"].startswith("Metroid DNA")
+        and it["name"] not in _PRECOLLECTED
+    }
+    escape_rules = {
+        loc: _strip_fill_fragile_items(esc, fragile_items)
+        for loc, esc in escape_rules.items()
+    }
     tightened = 0
     tightening_report: list[dict] = []
     for loc, esc in escape_rules.items():
@@ -1530,6 +1582,7 @@ def main(argv: list[str] | None = None) -> int:
             tightened += 1
             tightening_report.append({"loc": loc, "escape": esc})
     print(f"  escape AND-ed into {tightened}/{len(escape_rules)} actor pickups")
+    print(f"  (stripped {len(fragile_items)} fill-fragile item names from escape)")
 
     region_access: dict[str, dict] = {}
     for r in ap_region_names:

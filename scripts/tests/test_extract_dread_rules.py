@@ -20,6 +20,7 @@ from extract_dread_rules import (  # noqa: E402
     IMPOSSIBLE,
     RDV_ITEM_TO_AP,
     TRIVIAL,
+    _strip_fill_fragile_items,
     absorb_or,
     enumerate_paths,
     mk_and,
@@ -258,6 +259,52 @@ def test_enumerate_paths_or_over_branches():
 
 
 # ---- mapping coverage ----
+
+# ---- escape-rule fragile-item strip ----
+
+def test_strip_fill_fragile_items_replaces_single_copy_atoms():
+    """A `{type: item, name: X}` atom whose name is in the fragile set
+    becomes TRIVIAL; AND/OR structure simplifies around it."""
+    fragile = {"Morph Ball", "Charge Beam"}
+    ast = {"type": "and", "items": [
+        {"type": "item", "name": "Morph Ball", "amount": 1},
+        {"type": "item", "name": "Missile Tank", "amount": 3},
+    ]}
+    # Morph Ball strips, leaving the Missile Tank atom alone.
+    assert _strip_fill_fragile_items(ast, fragile) == {
+        "type": "item", "name": "Missile Tank", "amount": 3,
+    }
+
+
+def test_strip_fill_fragile_items_collapses_pure_fragile_and_to_trivial():
+    fragile = {"Morph Ball", "Charge Beam"}
+    ast = {"type": "and", "items": [
+        {"type": "item", "name": "Morph Ball", "amount": 1},
+        {"type": "item", "name": "Charge Beam", "amount": 1},
+    ]}
+    assert _strip_fill_fragile_items(ast, fragile) == TRIVIAL
+
+
+def test_strip_fill_fragile_items_collapses_or_branch_to_trivial():
+    """If any OR branch becomes trivially satisfiable, the whole OR is
+    trivial (mk_or short-circuits on TRIVIAL)."""
+    fragile = {"Morph Ball"}
+    ast = {"type": "or", "items": [
+        {"type": "item", "name": "Morph Ball", "amount": 1},
+        {"type": "item", "name": "Energy Tank", "amount": 5},
+    ]}
+    assert _strip_fill_fragile_items(ast, fragile) == TRIVIAL
+
+
+def test_strip_fill_fragile_items_preserves_non_item_atoms():
+    """sum / damage_threshold / event nodes are pass-through — only
+    `{type: item}` atoms get stripped."""
+    fragile = {"Morph Ball"}
+    ast = {"type": "sum", "terms": [
+        {"name": "Missile Tank", "per_unit": 2},
+    ], "base": 15, "threshold": 25}
+    assert _strip_fill_fragile_items(ast, fragile) == ast
+
 
 def test_rdv_item_mapping_resolves_to_valid_ap_items_or_none():
     """Every value in RDV_ITEM_TO_AP must either be None or match a
