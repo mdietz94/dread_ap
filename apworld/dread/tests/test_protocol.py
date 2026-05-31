@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT.parent))
 
 from dread.client.protocol import (  # noqa: E402
     _to_lua_table, build_receive_pickup_lua, DreadPickupLocation,
+    pickup_class_for,
 )
 
 
@@ -78,3 +79,35 @@ def test_build_receive_pickup_lua_custom_class():
 def test_pickup_location_key():
     p = DreadPickupLocation(scenario="s010_cave", actor="Item_MissileTank011")
     assert p.key == "s010_cave/Item_MissileTank011"
+
+
+@pytest.mark.parametrize("patcher_item_id, expected_class", [
+    # Items the user reported broken — every one needs its specific class.
+    ("ITEM_WEAPON_WIDE_BEAM", "RandomizerWideBeam"),
+    ("ITEM_WEAPON_PLASMA_BEAM", "RandomizerPlasmaBeam"),
+    ("ITEM_SPEED_BOOSTER", "RandomizerSpeedBooster"),
+    ("ITEM_WEAPON_ICE_MISSILE", "RandomizerIceMissile"),
+    ("ITEM_MULTILOCKON", "RandomizerStormMissile"),
+    ("ITEM_OPTIC_CAMOUFLAGE", "RandomizerPhantomCloak"),
+    ("ITEM_GHOST_AURA", "RandomizerFlashShift"),
+    # Flash Shift Upgrade falls through to RandomizerPowerup — RandomizerFlashShift
+    # would zero its quantity once the player has Flash Shift.
+    ("ITEM_UPGRADE_FLASH_SHIFT_CHAIN", "RandomizerPowerup"),
+    # Upgrades / additive resources without a specific class.
+    ("ITEM_UPGRADE_SPEED_BOOST_CHARGE", "RandomizerPowerup"),
+    ("ITEM_WEAPON_CHARGE_BEAM", "RandomizerPowerup"),
+    ("ITEM_WEAPON_GRAPPLE_BEAM", "RandomizerPowerup"),
+    ("ITEM_WEAPON_POWER_BOMB_MAX", "RandomizerPowerup"),
+    ("ITEM_WEAPON_POWER_BOMB", "RandomizerPowerBomb"),
+    ("ITEM_LIFE_SHARDS", "RandomizerEnergyPart"),
+    # Items the user reported working — fall through to the additive base class.
+    ("ITEM_SPACE_JUMP", "RandomizerPowerup"),
+    ("ITEM_VARIA_SUIT", "RandomizerPowerup"),
+    ("ITEM_GRAVITY_SUIT", "RandomizerPowerup"),
+    ("ITEM_MORPH_BALL", "RandomizerPowerup"),
+    ("ITEM_WEAPON_MISSILE_MAX", "RandomizerPowerup"),
+    ("ITEM_ENERGY_TANKS", "RandomizerPowerup"),
+    ("ITEM_RANDO_ARTIFACT_1", "RandomizerPowerup"),
+])
+def test_pickup_class_for(patcher_item_id, expected_class):
+    assert pickup_class_for(patcher_item_id) == expected_class

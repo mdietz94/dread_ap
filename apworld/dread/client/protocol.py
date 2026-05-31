@@ -62,6 +62,43 @@ class CollectedLocationEvent:
 
 # ---- Lua call construction helpers ----------------------------------------
 
+# Map patcher_item_id -> the Lua class whose OnPickedUp must run when this item
+# is delivered live via RL.ReceivePickup. Mirrors SPECIFIC_CLASSES from upstream
+# open_dread_rando/pickups/lua_editor.py — the same table the seed-baked
+# patcher uses, so seed-time and live-delivery paths grant identically. Items
+# not listed here fall back to RandomizerPowerup, whose OnPickedUp only does
+# additive resource grants — fine for pure-resource items (Space Jump, Varia,
+# Energy Tank, missile/PB tanks, DNA, ...) but WRONG for input-toggle and
+# progressive items, whose specific classes do the additional blackboard /
+# input-handler setup the base class doesn't.
+PATCHER_ITEM_ID_TO_CLASS: dict[str, str] = {
+    "ITEM_WEAPON_POWER_BOMB": "RandomizerPowerBomb",
+    "ITEM_OPTIC_CAMOUFLAGE": "RandomizerPhantomCloak",
+    "ITEM_SPEED_BOOSTER": "RandomizerSpeedBooster",
+    "ITEM_MULTILOCKON": "RandomizerStormMissile",
+    "ITEM_LIFE_SHARDS": "RandomizerEnergyPart",
+    "ITEM_GHOST_AURA": "RandomizerFlashShift",
+    # Note: ITEM_UPGRADE_FLASH_SHIFT_CHAIN deliberately NOT mapped here — upstream
+    # SPECIFIC_CLASSES doesn't either, so it falls through to RandomizerPowerup.
+    # The tunable handler in RandomizerPowerup._ApplyTunableChanges reads its
+    # total quantity and writes iChainDashMax. Mapping it to RandomizerFlashShift
+    # would silently zero its quantity once the player has Flash Shift (the
+    # `hasFlashShift` branch in RandomizerFlashShift.OnPickedUp).
+    "ITEM_WEAPON_POWER_BEAM": "RandomizerPowerBeam",
+    "ITEM_WEAPON_WIDE_BEAM": "RandomizerWideBeam",
+    "ITEM_WEAPON_PLASMA_BEAM": "RandomizerPlasmaBeam",
+    "ITEM_WEAPON_WAVE_BEAM": "RandomizerWaveBeam",
+    "ITEM_WEAPON_MISSILE_LAUNCHER": "RandomizerMissileLauncher",
+    "ITEM_WEAPON_SUPER_MISSILE": "RandomizerSuperMissile",
+    "ITEM_WEAPON_ICE_MISSILE": "RandomizerIceMissile",
+}
+
+
+def pickup_class_for(patcher_item_id: str) -> str:
+    """Return the Lua pickup class that should run OnPickedUp for this item."""
+    return PATCHER_ITEM_ID_TO_CLASS.get(patcher_item_id, "RandomizerPowerup")
+
+
 def build_receive_pickup_lua(
     *,
     message: str,

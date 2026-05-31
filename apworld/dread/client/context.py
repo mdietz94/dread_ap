@@ -40,6 +40,7 @@ from .protocol import (
     ReceivedItemEvent,
     CollectedLocationEvent,
     build_receive_pickup_lua,
+    pickup_class_for,
 )
 from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
@@ -598,6 +599,7 @@ class DreadContext(CommonContext):
             progression=progression,
             received_pickup_index=received,
             inventory_index=self.state.game_inventory_index(),
+            cls=pickup_class_for(dread_item.patcher_item_id),
         )
         try:
             await conn.run_lua(lua)
