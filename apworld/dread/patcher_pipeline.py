@@ -34,6 +34,26 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._data_loader import load_json
+from ._vendor import (
+    PATCHER_RUNTIME_DEPS,
+    vendor_unavailable_diagnostic,
+    vendored_open_dread_rando_src,
+)
+
+
+def _patcher_subprocess_env(env: Optional[dict[str, str]] = None) -> dict[str, str]:
+    """Copy of ``env`` (or ``os.environ``) with ``PYTHONPATH`` prepended to
+    include the vendored ``open_dread_rando`` source. The submodule path is
+    only prepended when it actually exists — otherwise the env is unchanged
+    so callers can still fall back to a pip-installed copy."""
+    out = dict(env) if env is not None else os.environ.copy()
+    src = vendored_open_dread_rando_src()
+    if src is not None:
+        existing = out.get("PYTHONPATH", "")
+        out["PYTHONPATH"] = (
+            f"{src}{os.pathsep}{existing}" if existing else str(src)
+        )
+    return out
 
 
 # A neutral placeholder item used when the AP placement is for ANOTHER
@@ -374,12 +394,12 @@ def describe_python(python_executable: Optional[str] = None) -> str:
     """Human-readable description of the Python that would be used for
     the patcher subprocess. Flags the frozen Archipelago launcher because
     that case is the #1 reason ``check_dependencies()`` reports a missing
-    install when the user definitely ``pip install``ed open-dread-rando
-    into a real Python."""
+    install — the launcher's bundled Python doesn't see a user's
+    pip-installed patcher deps."""
     py = python_executable or sys.executable
     base = Path(py).name.lower()
     if "archipelagolauncher" in base or base in {"archipelago.exe", "archipelago"}:
-        return f"{py}  (frozen Archipelago launcher — won't have open-dread-rando)"
+        return f"{py}  (frozen Archipelago launcher — won't have patcher deps)"
     if python_executable:
         return f"{py}  (auto-detected by the setup wizard)"
     return f"{py}  (sys.executable)"
@@ -395,6 +415,7 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
     patcher CLI will actually see. The in-process import path is wrong
     inside the frozen Archipelago launcher — that Python ships its own
     bundled site-packages and never sees a user's ``pip install``."""
+    deps_pip = " ".join(PATCHER_RUNTIME_DEPS)
     if python_executable and python_executable != sys.executable:
         try:
             proc = subprocess.run(
@@ -402,6 +423,7 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
                  f"import open_dread_rando, mercury_engine_data_structures; "
                  f"print('{_PROBE_OK_TOKEN}')"],
                 capture_output=True, text=True, timeout=30,
+                env=_patcher_subprocess_env(),
             )
         except FileNotFoundError:
             return (
@@ -415,30 +437,42 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
         # Surface the actual ImportError for actionable diagnostics.
         err = (proc.stderr or proc.stdout or "").strip()
         last = err.splitlines()[-1] if err else f"exit {proc.returncode}"
+        hint = (
+            vendor_unavailable_diagnostic()
+            if vendored_open_dread_rando_src() is None
+            else f"install patcher deps with:  {python_executable} -m pip install {deps_pip}"
+        )
         return (
             f"open_dread_rando / mercury_engine_data_structures not importable "
             f"from {python_executable}\n"
             f"    {last}\n"
-            f"Install with:  {python_executable} -m pip install open-dread-rando"
+            f"{hint}"
         )
 
+    # In-process probe path. Inject the vendored source onto sys.path so the
+    # import matches what the patcher subprocess would see at runtime.
+    vendored_src = vendored_open_dread_rando_src()
+    if vendored_src is not None and str(vendored_src) not in sys.path:
+        sys.path.insert(0, str(vendored_src))
     try:
         import open_dread_rando  # noqa: F401
     except ImportError:
+        if vendored_src is None:
+            return (
+                f"open_dread_rando isn't available in {describe_python()}: "
+                f"{vendor_unavailable_diagnostic()}."
+            )
         return (
-            f"open_dread_rando is not installed in {describe_python()}.\n"
-            "Install with:\n"
-            "    pip install open-dread-rando\n"
-            "Or, if running from the frozen Archipelago launcher, install it "
-            "into a real Python and re-run /setup so the wizard auto-detects "
-            "the interpreter."
+            f"open_dread_rando is vendored at {vendored_src} but import still "
+            f"failed in {describe_python()} — likely a missing runtime dep.\n"
+            f"Install with:  pip install {deps_pip}"
         )
     try:
         import mercury_engine_data_structures  # noqa: F401
     except ImportError:
         return (
             "mercury_engine_data_structures is not installed (open_dread_rando dep).\n"
-            "Try:  pip install --upgrade open-dread-rando"
+            f"Install with:  pip install {deps_pip}"
         )
     return None
 
@@ -516,28 +550,33 @@ def _candidate_pythons() -> list[str]:
 
 
 def autodetect_patcher_python() -> tuple[Optional[str], str]:
-    """Find a Python that can run the ``open-dread-rando`` patcher.
+    """Find a Python that can run the vendored ``open-dread-rando`` patcher.
 
     Returns ``(path, message)``: ``path`` is the first detected interpreter
     whose deps import cleanly (``None`` if none qualifies), and ``message`` is
     user-facing — an OK line naming the interpreter, the exact ``pip install``
-    command when a real Python exists but lacks the deps, or an install-Python
-    hint when no interpreter was found at all. Reuses :func:`check_dependencies`
-    so the probe matches exactly what ``/patch`` will see."""
+    command when a real Python exists but lacks the runtime deps, or an
+    install-Python hint when no interpreter was found at all. Reuses
+    :func:`check_dependencies` so the probe matches exactly what ``/patch``
+    will see."""
+    deps_pip = " ".join(PATCHER_RUNTIME_DEPS)
     candidates = _candidate_pythons()
     if not candidates:
         return None, (
             "No Python interpreter found on PATH. Install Python 3 from "
-            "python.org, then run:  python -m pip install open-dread-rando"
+            f"python.org, then run:  python -m pip install {deps_pip}"
         )
     for cand in candidates:
         if check_dependencies(cand) is None:
             return cand, f"patcher Python auto-detected: {cand}"
     best = candidates[0]
+    if vendored_open_dread_rando_src() is None:
+        return None, f"Vendored open-dread-rando not available: {vendor_unavailable_diagnostic()}."
     return None, (
-        "open-dread-rando isn't installed in any detected Python. Run this, "
-        "then re-run /setup so the wizard re-detects the interpreter:\n"
-        f"    {best} -m pip install open-dread-rando"
+        "open-dread-rando runtime deps aren't installed in any detected "
+        "Python. Run this, then re-run /setup so the wizard re-detects the "
+        "interpreter:\n"
+        f"    {best} -m pip install {deps_pip}"
     )
 
 
@@ -593,7 +632,10 @@ def patch(
         "--quiet",
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600,
+            env=_patcher_subprocess_env(),
+        )
     except subprocess.TimeoutExpired:
         return PatchResult(ok=False, message="patcher CLI timed out after 600s",
                            patcher_input_path=patcher_input_path)

@@ -7,7 +7,7 @@ accepted ``(reader, writer)`` get wrapped in :class:`DreadConnection`.
 The fake responds to handshake + Lua-exec on its side of the pipe,
 mimicking exlaunch byte-for-byte.
 
-Wire format (confirmed from vendor/open-dread-rando-exlaunch/source/program/):
+Wire format (confirmed from https://github.com/randovania/open-dread-rando-exlaunch/tree/main/source/program):
 
     HANDSHAKE reply       [0x01][req_num:1]                                       (2 bytes)
     REMOTE_LUA_EXEC reply [0x03][req_num:1][success:1][len:3 LE u24][payload]

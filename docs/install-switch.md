@@ -75,9 +75,14 @@ automatically (PR-A4 of the setup-wizard stack). Walk through the pages:
      writes). Click "Install..." to open
      [devkitpro.org/wiki/Getting_Started](https://devkitpro.org/wiki/Getting_Started),
      install the **Switch-dev** package group, then click **Re-check**.
-   - `open-dread-rando` is a pip command. The row shows the exact
-     `python -m pip install open-dread-rando` invocation; run it in a
-     terminal, then **Re-check**.
+   - `open-dread-rando` is vendored as a git submodule at
+     `vendor/open-dread-rando/` — if you cloned without
+     `--recurse-submodules`, run
+     `git submodule update --init vendor/open-dread-rando` and **Re-check**.
+     The wizard then installs the patcher's pip-only runtime deps
+     (mercury-engine-data-structures, jsonschema, json-delta,
+     open-dread-rando-exlaunch) into the detected Python 3.12 when you
+     click "Auto-install".
 3. **RomFS picker** - Browse to your extracted Dread 2.1.0 romfs folder
    (the one with `system/` and `packs/` subdirs). Persisted to
    `%APPDATA%/dread_ap/setup_state.json` as `romfs_path`.

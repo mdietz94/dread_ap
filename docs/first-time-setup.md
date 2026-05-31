@@ -63,10 +63,15 @@ The wizard runs three detectors and shows the results:
   Python.Python.3.12`) and accept the UAC prompt. The wizard
   re-checks automatically.
 
-- **open-dread-rando (Python patcher)** - the pip package the
-  patcher runs as a subprocess. The row's `note` shows the exact
-  pip command (`<python> -m pip install open-dread-rando`). Run
-  it in PowerShell, then **Re-check**.
+- **open-dread-rando (Python patcher)** - vendored as a git
+  submodule at `vendor/open-dread-rando/`. If you cloned without
+  `--recurse-submodules`, run
+  `git submodule update --init vendor/open-dread-rando` and
+  **Re-check**. The patcher has pip-only runtime deps
+  (mercury-engine-data-structures, jsonschema, json-delta,
+  open-dread-rando-exlaunch) that the row's **Auto-install** button
+  installs into the detected Python 3.12 for you; or run the exact
+  `<python> -m pip install ...` command from the row's `note`.
 
 When all three rows are green, click **Next**.
 

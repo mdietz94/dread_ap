@@ -300,7 +300,8 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "from scratch.\n\n"
             "This wizard will:\n"
             "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
-            "Python 3.12 with open-dread-rando importable.\n"
+            "Python 3.12 with the open-dread-rando runtime deps installed "
+            "(the patcher itself is vendored as a git submodule).\n"
             "  - Record the path to your extracted Dread 2.1.0 romfs so the "
             "per-seed patcher can run automatically when you connect to an "
             "Archipelago server.\n"
@@ -570,7 +571,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             run_installer_popup(ordered, preflight=True)
 
         install_all_btn = Button(
-            text="Install all missing (Python 3.12 via winget + open-dread-rando via pip)",
+            text="Install all missing (Python 3.12 via winget + open-dread-rando deps via pip)",
             size_hint_y=None, height=40,
             disabled=(persisted_mode != "auto"),
         )

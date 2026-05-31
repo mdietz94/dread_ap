@@ -26,6 +26,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .._vendor import (
+    PATCHER_RUNTIME_DEPS,
+    vendor_unavailable_diagnostic,
+    vendored_open_dread_rando_src,
+)
+
 # Suppress the per-child console window when running under the Launcher's
 # windowed PyInstaller (no parent console → Windows opens a fresh console
 # for each CONSOLE-subsystem child, which steals focus from the wizard).
@@ -42,8 +48,9 @@ INSTALL_URLS = {
     # page and reported being confused about what to click.
     "python312": "https://www.python.org/downloads/release/python-3120/#files",
     "devkitpro": "https://devkitpro.org/wiki/Getting_Started",
-    # Empty string — open_dread_rando is a pip package; the wizard renders
-    # a pip-install command rather than a clickable URL.
+    # Empty string — open_dread_rando is vendored as a git submodule; the
+    # wizard renders a pip-install command for the *runtime deps* rather
+    # than a clickable URL.
     "open_dread_rando": "",
 }
 
@@ -84,7 +91,12 @@ class PrereqResult:
     auto_installable: bool = False
 
 
-def _run(cmd: list[str], *, timeout: float = 10.0) -> tuple[int, str, str]:
+def _run(
+    cmd: list[str],
+    *,
+    timeout: float = 10.0,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     """Subprocess wrapper that returns (returncode, stdout, stderr).
 
     Centralized so tests can monkeypatch one function instead of mocking
@@ -101,16 +113,21 @@ def _run(cmd: list[str], *, timeout: float = 10.0) -> tuple[int, str, str]:
         text=True,
         timeout=timeout,
         creationflags=_NO_WINDOW,
+        env=env,
     )
     return res.returncode, res.stdout or "", res.stderr or ""
 
 
-def _safe_run(cmd: list[str]) -> tuple[int, str, str] | None:
+def _safe_run(
+    cmd: list[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str] | None:
     """`_run` that returns None instead of raising on FileNotFoundError /
     OSError. Use when a detector wants to treat 'executable missing' the
     same as 'executable exists but exited non-zero'."""
     try:
-        return _run(cmd)
+        return _run(cmd, env=env)
     except (FileNotFoundError, OSError):
         return None
     except subprocess.TimeoutExpired:
@@ -465,8 +482,21 @@ def candidate_pythons() -> list[str]:
 def _probe_open_dread_rando(python: str) -> tuple[bool, str]:
     """Run the ``_ODR_PROBE_SOURCE`` against ``python``. Returns
     ``(ok, detail)`` — ``detail`` is the version string on success or
-    the last error line on failure."""
-    r = _safe_run([python, "-c", _ODR_PROBE_SOURCE])
+    the last error line on failure.
+
+    Injects ``PYTHONPATH`` pointing at the vendored ``open_dread_rando`` source
+    so the probe matches what the patcher subprocess will see — the package
+    isn't pip-installed in the target Python, it lives in
+    ``vendor/open-dread-rando/src/``."""
+    env: dict[str, str] | None = None
+    vendored_src = vendored_open_dread_rando_src()
+    if vendored_src is not None:
+        env = os.environ.copy()
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            f"{vendored_src}{os.pathsep}{existing}" if existing else str(vendored_src)
+        )
+    r = _safe_run([python, "-c", _ODR_PROBE_SOURCE], env=env)
     if r is None:
         return False, "failed to launch interpreter"
     rc, out, err = r
@@ -499,6 +529,12 @@ def check_open_dread_rando(python: Path | str | None = None) -> PrereqResult:
     for tests + the wizard's row-rerun path; it short-circuits the
     enumeration to one explicit interpreter.
     """
+    # Vendored-submodule sanity: if it isn't checked out, no Python will
+    # satisfy the import, and the right fix is `git submodule update`, not
+    # pip install. Catch that case explicitly so the wizard surfaces it.
+    submod_missing = vendored_open_dread_rando_src() is None
+    deps_pip = " ".join(PATCHER_RUNTIME_DEPS)
+
     if python is not None:
         ok, detail = _probe_open_dread_rando(str(python))
         if ok:
@@ -507,11 +543,15 @@ def check_open_dread_rando(python: Path | str | None = None) -> PrereqResult:
                 f"{detail} ({python})",
                 auto_installable=True,
             )
+        if submod_missing:
+            note = vendor_unavailable_diagnostic()
+        else:
+            note = f"Install patcher deps:  {python} -m pip install {deps_pip}"
         return PrereqResult(
             "open_dread_rando", "open-dread-rando (Python patcher)", False,
             f"not importable from {python}: {detail}",
-            note=f"Install with:  {python} -m pip install open-dread-rando",
-            auto_installable=True,
+            note=note,
+            auto_installable=not submod_missing,
         )
 
     candidates = candidate_pythons()
@@ -533,21 +573,23 @@ def check_open_dread_rando(python: Path | str | None = None) -> PrereqResult:
             )
         last_failure = (cand, detail)
 
-    # None of the detected Pythons satisfied the import. Surface the
-    # first candidate as the install target since it's the
-    # highest-priority interpreter the user likely wants the package
-    # in. Including the exact resolved path means the hint and the
-    # auto-installer (which targets the same `candidates[0]`) install
-    # into the same Python the next probe will check — no version /
-    # launcher-flag mismatch.
+    # None of the detected Pythons satisfied the import. Either the
+    # submodule isn't checked out (fix: git submodule update) or the
+    # runtime deps need pip-installing into the first candidate (the
+    # highest-priority interpreter we want them in; the auto-installer
+    # targets the same candidates[0]).
     target = candidates[0]
     last_msg = f" — last failure on {last_failure[0]}: {last_failure[1]}" if last_failure else ""
+    if submod_missing:
+        note = vendor_unavailable_diagnostic()
+    else:
+        note = f"Install patcher deps:  {target} -m pip install {deps_pip}"
     return PrereqResult(
         "open_dread_rando", "open-dread-rando (Python patcher)", False,
         f"not importable from any of {len(candidates)} detected Python "
         f"interpreter(s){last_msg}",
-        note=f"Install with:  {target} -m pip install open-dread-rando",
-        auto_installable=True,
+        note=note,
+        auto_installable=not submod_missing,
     )
 
 

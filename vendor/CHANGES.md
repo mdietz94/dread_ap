@@ -1,50 +1,68 @@
 # vendor/CHANGES.md
 
-This file tracks our local diffs vs. the upstream sources in `vendor/`.
+This file tracks how we consume upstream Randovania sources under `vendor/`.
 
 ## Current status
 
-`open-dread-rando-exlaunch/` carries two local patches, applied in order
-by `apworld/dread/_setup/build.py`:
-
+- `open-dread-rando/` — pinned **git submodule** at `66d85916` (upstream v2.20.1).
+  Carries the patcher source so end users do not need to `pip install
+  open-dread-rando`. Clean (no local patches); we adapt to its JSON input
+  schema instead of forking.
+- `open-dread-rando-exlaunch/` — **gitignored**; if you clone it locally for
+  reference, it carries two of our local patches applied by
+  `apworld/dread/_setup/build.py`:
   1. "exlaunch: Ryujinx-safe non-blocking socket loop" — see below.
   2. "exlaunch: TCP-client + UDP-discovery topology" — see below.
 
-`open-dread-rando/` is still clean and reference-only.
-
 ## Subdirectories
 
-### `open-dread-rando/`
+### `open-dread-rando/` — submodule
 
-Shallow clone of [randovania/open-dread-rando](https://github.com/randovania/open-dread-rando).
-The RomFS patcher for Metroid Dread.
+Pinned git submodule from [randovania/open-dread-rando](https://github.com/randovania/open-dread-rando)
+(**GPL-3.0**). The RomFS patcher for Metroid Dread.
 
-**Why vendored, not forked**: the patcher reads a fully-documented JSON
-schema ([src/open_dread_rando/files/schema.json](open-dread-rando/src/open_dread_rando/files/schema.json)).
-Everything we need for v0.1 — pickup remap, starting_items, starting_location,
-elevators, layout_uuid for seed identity, hints, text_patches — is already
-expressible via the JSON. So we don't fork; we install upstream as a pip
-dep and write an adapter that produces the JSON from AP slot_data.
+Clone with `git clone --recurse-submodules`, or initialize an existing clone
+with `git submodule update --init vendor/open-dread-rando`.
 
-**Why vendored at all**: to pin a known-working commit, to read source
-during dev iteration without going to GitHub, and to have a working copy
-ready if we *do* hit something that needs a fork later.
+**Why submodule, not pip dep**: bringing the source into the tree gives us
+deterministic upgrades, lets the setup wizard skip a `pip install open-dread-rando`
+step, and pins the JSON schema / model_data this apworld targets to a known
+commit. We still don't fork — we write an adapter that produces the
+patcher's existing JSON input shape from AP slot_data.
 
-If upstream gains an AP-relevant bug we need to fix immediately, branch
-off this checkout, push to a personal fork, install via
-`pip install git+...` instead of pypi, and add a note here. File the
-upstream PR concurrently.
+**Bumping the pin**:
 
-### `open-dread-rando-exlaunch/`
+```pwsh
+cd vendor\open-dread-rando
+git fetch origin
+git checkout <new-tag-or-sha>
+cd ..\..
+git add vendor/open-dread-rando
+git commit -m "Bump open-dread-rando to <tag>"
+```
 
-Shallow clone of [randovania/open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch).
-The in-game sysmodule (subsdk9 + main.npdm) that opens the Lua-eval socket
-on port 6969.
+After bumping, re-run `pytest apworld/dread/tests/` (the schema /
+model_data fixtures we read from the submodule may have shifted).
 
-**Why vendored**: was reference-only; now a soft fork carrying two local
-patches (see below). End users still download the upstream release for
-production hardware. The local fork only matters if we ship our own
-.nso build, or for the upstream PRs.
+**Runtime deps still required**: open-dread-rando depends on
+`mercury-engine-data-structures`, `jsonschema`, `json-delta`, and
+`open-dread-rando-exlaunch` (the Python helper, distinct from the Switch
+sysmodule). These remain pip-installed into the user's patcher Python; the
+wizard installs them. We just no longer install open-dread-rando itself.
+
+### `open-dread-rando-exlaunch/` — gitignored dev clone
+
+Optional local clone of [randovania/open-dread-rando-exlaunch](https://github.com/randovania/open-dread-rando-exlaunch)
+(**GPL-2.0**). The in-game sysmodule (subsdk9 + main.npdm) that opens the
+Lua-eval socket on port 6969.
+
+**Why gitignored**: end users get the sysmodule by following the upstream
+README's build instructions (or downloading a release `.nso`). We are not in
+the business of redistributing Nintendo-adjacent binaries, and the source
+isn't needed at runtime — only when rebuilding the patched `.nso`. Our two
+local patches live as plain diff files at
+`apworld/dread/_setup/exlaunch-*.diff` and apply against a user-side clone
+by `apworld/dread/_setup/build.py`.
 
 **Patch — exlaunch: Ryujinx-safe non-blocking socket loop**
 
@@ -151,11 +169,10 @@ a feature flag with the listening side gated off by default.
 
 ## Updating the vendored copies
 
-```pwsh
-cd vendor\open-dread-rando
-git fetch --depth 1 origin
-git checkout origin/main
-```
+For `open-dread-rando/` see "Bumping the pin" above. For
+`open-dread-rando-exlaunch/` (if you keep a local reference clone), pull
+from the upstream remote and re-apply the diff files in
+`apworld/dread/_setup/`.
 
 After updating, re-run `scripts/phase1_validate.py` against a Switch with
 the matching exlaunch release installed to confirm nothing in the Lua
