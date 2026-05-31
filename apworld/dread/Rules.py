@@ -184,7 +184,8 @@ def set_rules(world) -> None:
     pickups) get no per-pickup rule, but they are NOT trivially reachable:
     Regions.py gates each region's Menu edge on its global region_access
     rule, so a boss is reachable only once its region is. Also locks the
-    event items and the Metroid DNA goal items to their locations.
+    Metroid DNA goal items (prefer_bosses) and applies softlock_locks.json
+    to pin single-copy escape items / forbid progression at sibling rooms.
     """
     from worlds.generic.Rules import add_rule  # local import for test isolation
 
@@ -243,6 +244,44 @@ def set_rules(world) -> None:
             if item is not None:
                 multiworld.itempool.remove(item)
                 location.place_locked_item(item)
+
+    # 2c. Softlock prevention. The escape-rule strip in
+    #     scripts/extract_dread_rules.py::_strip_fill_fragile_items removes
+    #     single-pool-copy progression items from per-pickup escape rules to
+    #     unblock fill — but that lets AP place arbitrary items at rooms
+    #     where leaving requires a specific item. For each identified room:
+    #       * mode=lock        : place_locked_item the escape item there
+    #       * mode=filler_only : forbid progression placement (used for
+    #                            rooms sharing a single-copy escape item
+    #                            that's already locked elsewhere — bounds
+    #                            the worst case to a lost filler).
+    #     Composes with DNA prefer_bosses (those touch boss/EMMI/cutscene/
+    #     corex pickups; these all touch actor pickups — disjoint).
+    from worlds.generic.Rules import add_item_rule  # local import for tests
+    softlock_table = load_json("softlock_locks.json")
+    for entry in softlock_table.get("entries", []):
+        loc_name = entry["location"]
+        try:
+            location = multiworld.get_location(loc_name, player)
+        except KeyError:
+            continue
+        if entry["mode"] == "lock":
+            item_name = entry["item"]
+            item = next(
+                (i for i in multiworld.itempool
+                 if i.player == player and i.name == item_name),
+                None,
+            )
+            if item is not None:
+                multiworld.itempool.remove(item)
+                location.place_locked_item(item)
+            else:
+                # Item was consumed by another path (e.g. precollected via
+                # a future starting-inventory option) — degrade to filler-
+                # only so a softlock at most costs a filler.
+                add_item_rule(location, lambda it: not it.advancement)
+        elif entry["mode"] == "filler_only":
+            add_item_rule(location, lambda it: not it.advancement)
 
     # 3. Real victory condition. The compiled victory_condition is
     #    {type: event, name: Ship} after M2 — compile_to_lambda maps that to
