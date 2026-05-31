@@ -588,6 +588,7 @@ def patch(
     layout_uuid: Optional[str] = None,
     patcher_input_path: Optional[Path] = None,
     python_executable: Optional[str] = None,
+    exefs_overlay: Optional[dict[str, Path]] = None,
 ) -> PatchResult:
     """End-to-end /patch implementation. Pure-ish (writes to disk, runs
     a subprocess) — returns a PatchResult that the caller surfaces as
@@ -597,7 +598,31 @@ def patch(
       1. dependency check
       2. build patcher_input.json from `placements`
       3. invoke `python -m open_dread_rando` against the vanilla romfs,
-         writing into `dreadvania_install_dir` (overwriting in place)
+         writing the mod into `dreadvania_install_dir` (overwriting in place)
+      4. re-assert ``exefs_overlay`` (our patched sysmodule files) over the
+         exefs the patcher just wrote — see below.
+
+    ``dreadvania_install_dir`` is the FINAL mod folder (the dir whose
+    ``romfs``/``exefs`` the game loads). The upstream patcher's RYUJINX
+    output mode appends a ``DreadRandovania`` segment to whatever
+    ``--output-path`` it's handed (``open_dread_rando/output_config.py``).
+    Since our callers already include that segment in
+    ``dreadvania_install_dir`` (deploy + ``_dreadvania_install_dir_from_state``
+    both end in ``DreadRandovania`` for Ryujinx), we hand the patcher the
+    PARENT and let it re-create the same leaf — landing the mod AT
+    ``dreadvania_install_dir`` instead of one level deeper. Passing the dir
+    directly produced ``.../DreadRandovania/DreadRandovania`` and, worse, the
+    nested ``exefs`` got the patcher's bundled UPSTREAM (server-mode, port
+    6969) ``subsdk9``, which Ryujinx then loaded in place of our patched
+    TCP-client build ("Multiple replacements to subsdk9").
+
+    ``exefs_overlay`` (name→source-path, e.g. our built ``subsdk9`` +
+    ``main.npdm``) is copied into the final mod's ``exefs`` AFTER the patcher
+    runs. The patcher always writes its own upstream ``subsdk9`` there, so
+    without this re-assert our patched sysmodule would be clobbered on every
+    patch and the Switch would fall back to listening on 6969. The patcher's
+    own ``exefs`` IPS files (``HasRandomizerPatches`` etc.) are left intact —
+    we only overwrite the names in ``exefs_overlay``.
 
     The Switch→PC collected-checks wiring lives in the client-sent
     Randovania bootstrap, so no post-patch init.lc edit is needed.
@@ -621,13 +646,32 @@ def patch(
     patcher_input_path.parent.mkdir(parents=True, exist_ok=True)
     patcher_input_path.write_text(json.dumps(patcher_input, indent=2), encoding="utf-8")
 
+    # Account for the patcher's compatibility-mode path suffix so the mod
+    # lands AT dreadvania_install_dir, not nested under a doubled segment.
+    # RYUJINX mode appends "DreadRandovania" to --output-path; our callers
+    # already include that leaf, so pass the parent and let the patcher
+    # re-create it. (See the docstring for the 6969-shadowing bug this fixes.)
+    compatibility = patcher_input.get("mod_compatibility")
+    appended_leaf = "DreadRandovania" if compatibility == "ryujinx" else None
+    if appended_leaf and dreadvania_install_dir.name == appended_leaf:
+        output_path = dreadvania_install_dir.parent
+        final_mod_dir = dreadvania_install_dir
+    elif appended_leaf:
+        # Caller didn't pre-include the leaf (e.g. SD/atmosphere root) — the
+        # patcher will create it under the given dir.
+        output_path = dreadvania_install_dir
+        final_mod_dir = dreadvania_install_dir / appended_leaf
+    else:
+        output_path = dreadvania_install_dir
+        final_mod_dir = dreadvania_install_dir
+
     # 3: run the upstream patcher CLI. Use absolute paths — relative
     # --output-path triggers a recursive romfs/build/ artifact upstream.
     py = python_executable or sys.executable
     cmd = [
         py, "-m", "open_dread_rando",
         "--input-path", str(vanilla_romfs_dir.resolve()),
-        "--output-path", str(dreadvania_install_dir.resolve()),
+        "--output-path", str(output_path.resolve()),
         "--input-json", str(patcher_input_path.resolve()),
         "--quiet",
     ]
@@ -651,6 +695,35 @@ def patch(
             cli_stderr_tail="\n".join((proc.stderr or "").splitlines()[-20:]),
         )
 
+    # 4: re-assert our patched sysmodule over the upstream subsdk9 the patcher
+    # just wrote into the mod's exefs. Without this the Switch falls back to
+    # the upstream server-mode build (listens on 6969, never dials the client).
+    notes: list[str] = []
+    if exefs_overlay:
+        exefs_dir = final_mod_dir / "exefs"
+        try:
+            exefs_dir.mkdir(parents=True, exist_ok=True)
+            for name, src in exefs_overlay.items():
+                shutil.copy2(src, exefs_dir / name)
+            notes.append(
+                "re-asserted patched sysmodule ("
+                + ", ".join(sorted(exefs_overlay)) + f") into {exefs_dir}"
+            )
+        except OSError as exc:
+            # Don't fail the whole patch — the romfs is already written; surface
+            # the problem so the user knows the Switch may still listen on 6969.
+            return PatchResult(
+                ok=False,
+                message=(
+                    f"patcher succeeded but re-asserting the patched sysmodule "
+                    f"into {exefs_dir} failed: {exc}. The Switch may load the "
+                    f"upstream server-mode subsdk9 (port 6969) and never dial "
+                    f"the client. Re-run /setup's Deploy step."
+                ),
+                patcher_input_path=patcher_input_path,
+                cli_returncode=0,
+            )
+
     n_actors = len(placements.get("placements", []))
     n_cross = sum(1 for p in placements.get("placements", []) if not p.get("is_own_player", True))
     return PatchResult(
@@ -661,4 +734,5 @@ def patch(
         ),
         patcher_input_path=patcher_input_path,
         cli_returncode=0,
+        notes=notes,
     )
