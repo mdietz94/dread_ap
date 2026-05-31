@@ -293,13 +293,30 @@ vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged
 fix + Charge Beam forced start — see above and the notes retro); the smoke seed
 runs under `items`.
 
+Per-item pickup classes: SHIPPED. `protocol.PATCHER_ITEM_ID_TO_CLASS` mirrors
+upstream `open_dread_rando/pickups/lua_editor.py` `SPECIFIC_CLASSES` exactly
+(13 entries), and `_attempt_delivery` resolves it per item via
+`pickup_class_for(...)`. So input-toggle items (Speed Booster, Phantom Cloak)
+and progressive beam/missile items (Wide/Plasma/Wave Beam, Ice/Storm/Super
+Missile, Missile Launcher, Flash Shift, Power Bomb, Energy Part) now run
+their own `Randomizer*.OnPickedUp` on remote delivery, matching what the
+seed-baked path already does. Items not in the dict (Space Jump, Varia,
+suits, tanks, DNA, Charge Beam, Grapple Beam, Flash Shift **Upgrade**,
+Speed Booster Upgrade, ...) still go through `RandomizerPowerup` — its
+additive-resource grant + the `tItemTunableHandlers` chain are correct for
+them. **Audit note:** `RandomizerFlashShift.OnPickedUp` zeros out
+`ITEM_UPGRADE_FLASH_SHIFT_CHAIN` resources when the player already has
+Flash Shift, so the Upgrade item MUST fall through to `RandomizerPowerup`.
+That parity with upstream is asserted in `test_pickup_class_for`. Local vs.
+remote divergence (`actor == nil` for remote): only `MarkLocationCollected`
+is skipped — fine, AP handles location reporting via the bitfield path.
+Without this fix, the user-visible bug was that Wide/Plasma Beam, Speed
+Booster, Ice Missile did nothing on a remote send and Storm Missile charged-
+but-didn't-lock-on, while Space Jump/Varia worked.
+
 Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
 collapse ammo to >=1 and damage to suit ownership); per-trick-category
-granularity; door/elevator randomization; per-item pickup classes (delivery
-currently passes the generic `RandomizerPowerup` for all items — additive items
-+ most upgrades work, but input-toggle items like Speed Booster / Phantom Cloak
-and progressive beam/missile model updates want their specific `Randomizer*`
-class; no regression vs. before, it's a refinement). Real-hardware (or Ryujinx)
+granularity; door/elevator randomization. Real-hardware (or Ryujinx)
 end-to-end run is the next manual gate — but now an *integration smoke* (does the
 bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
 NOT a semantics probe: the counter/cutscene questions are settled from source.
@@ -333,10 +350,10 @@ under the game and `.dreadap` files auto-route to it.
    `bootstrap_part_2.lua` + `randomizer_powerup.lua` (read them, not hardware).
    *Residual live check* (integration, not semantics): confirm the bootstrap
    loads on the actual 2.1.0 ROM and that an item pops + a check registers; see
-   the e2e runbook. A future polish is per-item pickup classes (we pass generic
-   `RandomizerPowerup`); and a `Game.AddSF(2.0,RL.UpdateRDVClient,"")` arm could
-   replace our explicit per-tick `RL.Get*AndSend` calls if we want game-driven
-   pushes. **Hard rule learned here:** never call `run_lua` from inside a push
+   the e2e runbook. Per-item pickup classes are now wired (see
+   [[dread-delivery-protocol]]). A possible future polish: a
+   `Game.AddSF(2.0,RL.UpdateRDVClient,"")` arm could replace our explicit
+   per-tick `RL.Get*AndSend` calls if we want game-driven pushes. **Hard rule learned here:** never call `run_lua` from inside a push
    handler (`_on_switch_push` / `_handle_*`) — it runs on the read loop and
    deadlocks awaiting a reply only that loop can read. Drive sends from the poll
    task or AP-message task. See [[dread-delivery-protocol]].
