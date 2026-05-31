@@ -248,6 +248,42 @@ def test_nav_station_hints_neutralized():
         assert patched["text"] == expected_text
 
 
+def test_nav_station_hints_filled_from_generated():
+    """When the placements carry AP-generated `nav_hints`, merge_overrides
+    bakes each one onto a Nav Station plaque (in order), preserving
+    accesspoint_actor/hint_id. A plaque past the generated count falls back to
+    the neutral filler so nothing keeps leaking Randovania's placement."""
+    t = _template()
+    t["hints"] = [
+        {
+            "accesspoint_actor": {"scenario": "s010_cave", "actor": "PRP_CV_AccessPoint002"},
+            "hint_id": "CAVE_2",
+            "text": ["A {c1}Progressive Beam{c0} can be found in {c5}Cataris{c0}."],
+        },
+        {
+            "accesspoint_actor": {"scenario": "s020_magma", "actor": "accesspoint"},
+            "hint_id": "MAGMA_1",
+            "text": ["A {c1}Progressive Bomb{c0} can be found in {c5}Artaria{c0}."],
+        },
+    ]
+    out = merge_overrides(t, {
+        "nav_hints": [
+            {"text": "Your {c1}Screw Attack{c0} is at {c5}Beebee{c0}'s {c5}Ship{c0}."},
+        ],
+    })
+    assert len(out["hints"]) == 2
+    # First plaque gets the generated hint; door-unlock metadata preserved.
+    assert out["hints"][0]["accesspoint_actor"] == t["hints"][0]["accesspoint_actor"]
+    assert out["hints"][0]["hint_id"] == "CAVE_2"
+    assert out["hints"][0]["text"] == [
+        "Your {c1}Screw Attack{c0} is at {c5}Beebee{c0}'s {c5}Ship{c0}."
+    ]
+    # Second plaque (no generated hint left) falls back to neutral filler.
+    assert out["hints"][1]["text"] == [
+        "You're playing Archipelago! There's already a hint system!"
+    ]
+
+
 def test_nav_station_hints_absent_round_trips():
     """Templates without top-level hints (e.g. the synthetic test template)
     must round-trip unchanged — the neutralizer only fires when entries exist."""
