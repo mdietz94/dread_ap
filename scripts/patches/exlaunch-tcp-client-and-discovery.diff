@@ -40,7 +40,7 @@ index 0000000..b17b265
 +#define DEFAULT_BRIDGE_SUBNET "192.168.1.1"
 +#endif
 diff --git a/source/program/remote_api.cpp b/source/program/remote_api.cpp
-index db61e88..1b5fbe7 100644
+index 595b8bf..651f1ef 100644
 --- a/source/program/remote_api.cpp
 +++ b/source/program/remote_api.cpp
 @@ -4,6 +4,7 @@
@@ -70,11 +70,18 @@ index db61e88..1b5fbe7 100644
      static s32 clientSocket = -1;
      static std::atomic<bool> readyForGameThread = false;
      u8 requestNumber = 0;
-@@ -51,7 +57,17 @@ namespace {
+@@ -51,16 +57,24 @@ namespace {
      constexpr inline auto TransferMemorySize = MinTransferMemorySize * 1;
  
      constexpr inline auto SocketPoolSize = SocketAllocatorSize + TransferMemorySize;
 -    constexpr inline auto SocketPort = 6969;
+-
+-    // Poll cadence and keep-alive backstop. The main loop blocks in
+-    // nn::socket::Poll for PollTimeoutMs, then if no readable / hangup event
+-    // arrived it decrements keepAlive. Once keepAlive reaches 0 the
+-    // connection is torn down. Client sends PACKET_KEEP_ALIVE every 2 s; the
+-    // 3 s window here allows ~1 s of jitter. POLLHUP / POLLERR short-circuit
+-    // this for the common case where the peer cleanly drops.
 +
 +    // UDP port the PC's DiscoveryResponder binds. The Switch unicasts JSON
 +    // probes here and TCP-dials the host/port from the reply.
@@ -86,10 +93,26 @@ index db61e88..1b5fbe7 100644
 +    constexpr inline s32 LoopbackProbeMs = 250;
 +    // After the burst of /24 SendTo()s, how long to drain reply traffic.
 +    constexpr inline s32 SweepCollectMs  = 1000;
++
++    // Poll cadence. The main loop blocks in nn::socket::Poll for
++    // PollTimeoutMs per tick. An idle-but-healthy connection is NEVER torn
++    // down on a timer (smo_archipelago parity) -- teardown happens only on
++    // POLLHUP/POLLERR or recv<=0; SO_KEEPALIVE on the dialed socket lets the
++    // OS reap a silently-dead peer.
+     constexpr inline auto PollTimeoutMs = 50;
+-    constexpr inline auto ResetValueAliveTimer = 60; // 60 * 50 ms = 3 s idle window
  
-     // Poll cadence and keep-alive backstop. The main loop blocks in
-     // nn::socket::Poll for PollTimeoutMs, then if no readable / hangup event
-@@ -106,48 +122,224 @@ namespace {
+     // Per-call deadline for ParseClientPacket payload reads. Bounds how long
+     // a single ParseClientPacket invocation may stall when the client sends
+@@ -79,7 +93,6 @@ namespace {
+     static RemoteApi::CommandBuffer RecvBuffer;
+     static size_t RecvBufferLength = 0;
+     SendBuffer sendBuffer;
+-    static int keepAlive;
+ 
+     // Read exactly `want` bytes into `buf`, or fail (timeout / peer EOF /
+     // error). Uses poll() + MSG_DONTWAIT recv() so no single call blocks the
+@@ -106,48 +119,230 @@ namespace {
          }
          return got == want;
      }
@@ -318,6 +341,12 @@ index db61e88..1b5fbe7 100644
 +    s32 DialBridge(const BridgeTarget& target) {
 +        s32 fd = nn::socket::Socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 +        if (fd < 0) return -1;
++        // SO_KEEPALIVE so the OS reaps a silently-dead peer -- we keep no
++        // app-layer idle timer (smo_archipelago parity; matches its
++        // sockSetKeepalive). Default OS timing is fine: real drops surface
++        // via POLLHUP/POLLERR + recv<=0 long before the keepalive probe.
++        s32 soKeepAlive = 1;
++        nn::socket::SetSockOpt(fd, SOL_SOCKET, SO_KEEPALIVE, &soKeepAlive, sizeof(soKeepAlive));
 +        nn::socket::InAddr ia{};
 +        if (nn::socket::InetAton(target.host, &ia) == 0) {
 +            nn::socket::Close(fd);
@@ -347,7 +376,7 @@ index db61e88..1b5fbe7 100644
  }
  
  void AddPacketToSendBuffer(PacketBuffer& buffer) {
-@@ -206,85 +398,85 @@ void SocketSpawn(void *) {
+@@ -208,85 +403,76 @@ void SocketSpawn(void *) {
  
      bool looping = true;
      while (looping) {
@@ -360,17 +389,16 @@ index db61e88..1b5fbe7 100644
 +        BridgeTarget target{};
 +        if (!ResolveBridge(target, BridgeDiscoveryPort)) {
 +            svcSleepThread(BridgeRetrySleepNs);
-+            continue;
-+        }
+             continue;
+         }
 +        // TCP-dial the host:port the responder advertised.
 +        clientSocket = DialBridge(target);
 +        if (clientSocket < 0) {
 +            svcSleepThread(BridgeRetrySleepNs);
-             continue;
-         }
++            continue;
++        }
 +        requestNumber = 0;
 +        memset(&RemoteApi::clientSubs, 0, sizeof(struct ClientSubscriptions));
-+        keepAlive = ResetValueAliveTimer;
 +        bool peer_dead = false;
          while (looping) {
 -            struct sockaddr clientAddr;
@@ -399,15 +427,15 @@ index db61e88..1b5fbe7 100644
 -                        peer_dead = true; break;
 -                    }
 -                    if (pfd.revents & PollEvIn) {
+-                        // POLLIN = peer is alive (or FIN'd). Reset the
+-                        // keep-alive backstop here so a slow game thread
+-                        // reading our replies can't tear down a healthy
+-                        // connection — a wedged game thread is our problem,
+-                        // and the PC times out its own run_lua await regardless.
+-                        keepAlive = ResetValueAliveTimer;
 -                        if (readyForGameThread.load()) {
--                            // RecvBuffer in use by game thread; defer the
--                            // read until next tick. Sleep one tick so we
--                            // don't busy-loop on the buffered data, and
--                            // tick the keep-alive backstop — 50 ms has
--                            // elapsed and a sustained game-thread stall
--                            // shouldn't keep the connection alive forever.
+-                            // RecvBuffer busy; defer the read one tick.
 -                            svcSleepThread(PollTimeoutMs * 1000000ll);
--                            keepAlive--;
 -                        } else {
 -                            // Catches recv == 0 (graceful FIN); see
 -                            // ReceiveLogic comment.
@@ -431,14 +459,8 @@ index db61e88..1b5fbe7 100644
 +                }
 +                if (pfd.revents & PollEvIn) {
 +                    if (readyForGameThread.load()) {
-+                        // RecvBuffer in use by game thread; defer the
-+                        // read until next tick. Sleep one tick so we
-+                        // don't busy-loop on the buffered data, and
-+                        // tick the keep-alive backstop — 50 ms has
-+                        // elapsed and a sustained game-thread stall
-+                        // shouldn't keep the connection alive forever.
++                        // RecvBuffer busy; defer the read one tick.
 +                        svcSleepThread(PollTimeoutMs * 1000000ll);
-+                        keepAlive--;
 +                    } else {
 +                        // Catches recv == 0 (graceful FIN); see
 +                        // ReceiveLogic comment.
@@ -454,10 +476,10 @@ index db61e88..1b5fbe7 100644
 -
 -                if (keepAlive <= 0) break;
 +                // n > 0 but no event bit set: spurious wakeup; loop.
-+            } else {
-+                // poll timeout = no peer activity this tick.
-+                keepAlive--;
              }
++            // poll timeout (n == 0) = idle tick; never tear down on a
++            // timer (smo_archipelago parity) -- only POLLHUP/POLLERR +
++            // recv<=0 do.
  
 -            // Teardown of clientSocket (peer dead OR keep-alive expired).
 -            // Matches upstream's teardown EXACTLY: Close only, no Shutdown.
@@ -473,16 +495,14 @@ index db61e88..1b5fbe7 100644
 -            clientSocket = -1;
 -            nn::os::UnlockMutex(&sendBufferLock);
 -            (void)peer_dead; // currently informational; reserved for future logging
--        }
 +            SendLogic();
+         }
  
 -        if (g_TcpSocket != -1) {
 -            nn::socket::Shutdown(g_TcpSocket, SHUT_RDWR);
 -            nn::socket::Close(g_TcpSocket);
 -            g_TcpSocket = -1;
-+            if (keepAlive <= 0) break;
-         }
-+
+-        }
 +        // Teardown of clientSocket (peer dead OR keep-alive expired).
 +        // Close only (no Shutdown) — adding Shutdown(SHUT_RDWR) wedged
 +        // Ryujinx's bsd:u for the prior listening-socket teardown; for
@@ -503,3 +523,13 @@ index db61e88..1b5fbe7 100644
      }
  }
  
+@@ -395,7 +581,8 @@ void RemoteApi::ParseClientPacket() {
+         RemoteApi::ParseRemoteLuaExec();
+         break;
+     case PACKET_KEEP_ALIVE:
+-        keepAlive = ResetValueAliveTimer;
++        // No-op: POLLIN already proves liveness; we keep no app-layer
++        // idle timer (smo_archipelago parity). The PC may still send these.
+         break;
+     }
+ }

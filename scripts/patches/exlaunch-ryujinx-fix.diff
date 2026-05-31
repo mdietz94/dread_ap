@@ -97,16 +97,21 @@ index b83b2dd..e10e117 100644
  }; // namespace
  static nn::os::MutexType sendBufferLock;
  
-@@ -101,27 +156,40 @@ void AddPacketToSendBuffer(PacketBuffer& buffer) {
+@@ -101,27 +156,42 @@ void AddPacketToSendBuffer(PacketBuffer& buffer) {
      nn::os::UnlockMutex(&sendBufferLock);
  }
  
 -void ReceiveLogic() {
-+// Returns false when the peer has closed the socket gracefully (recv returned
-+// 0). Ryujinx does NOT reliably report POLLHUP on a clean FIN, so the only
-+// way to detect disconnect is recv == 0 — without this signal the main loop
-+// would spin forever on a closed socket (POLLIN keeps firing with 0 bytes
-+// available, recv keeps returning 0, the keepAlive backstop never advances).
++// Returns false when the peer has gone away — graceful FIN (recv == 0) OR
++// abortive teardown (recv < 0 with ECONNRESET / ECONNABORTED). Ryujinx does
++// NOT reliably report POLLHUP / POLLERR: on a clean FIN POLLIN fires with 0
++// bytes available; on a host-side abort POLLIN fires and recv returns -1
++// every tick forever (Ryujinx's bsd:u surfaces it as SocketException 10053
++// over and over). Either way the caller must tear down — without this
++// signal the main loop would spin on a closed socket and spam the host log
++// at thousands of events per second. We are inside POLLIN, so EAGAIN on a
++// non-blocking recv is not expected here; treating it as peer-dead at worst
++// triggers one harmless redial.
 +bool ReceiveLogic() {
      // don't recv new packets while we waiting for game loop otherwise we need to make a copy of our receive buffer
 -    if (readyForGameThread.load()) return;
@@ -115,12 +120,13 @@ index b83b2dd..e10e117 100644
      std::fill(RecvBuffer.begin(), RecvBuffer.end(), 0);
  
      ssize_t length = nn::socket::Recv(clientSocket, RecvBuffer.data(), 1, MSG_DONTWAIT);
-+    if (length == 0) return false; // peer FIN (graceful close)
++    if (length <= 0) return false; // 0 = peer FIN; <0 = host-side abort (e.g. ECONNABORTED)
      RecvBufferLength = length;
-     if (length > 0) {
-         // data received
-         RemoteApi::ParseClientPacket();
-     }
+-    if (length > 0) {
+-        // data received
+-        RemoteApi::ParseClientPacket();
+-    }
++    RemoteApi::ParseClientPacket();
 +    return true;
  }
  
@@ -145,7 +151,7 @@ index b83b2dd..e10e117 100644
          }
      }
      // erase everything with size of 0
-@@ -151,23 +219,65 @@ void SocketSpawn(void *) {
+@@ -151,23 +221,65 @@ void SocketSpawn(void *) {
              clientSocket = nn::socket::Accept(g_TcpSocket, &clientAddr, &addrLen);
              if (clientSocket < 0) break;
              keepAlive = ResetValueAliveTimer;
@@ -171,15 +177,15 @@ index b83b2dd..e10e117 100644
 +                        peer_dead = true; break;
 +                    }
 +                    if (pfd.revents & PollEvIn) {
++                        // POLLIN = peer is alive (or FIN'd). Reset the
++                        // keep-alive backstop here so a slow game thread
++                        // reading our replies can't tear down a healthy
++                        // connection — a wedged game thread is our problem,
++                        // and the PC times out its own run_lua await regardless.
++                        keepAlive = ResetValueAliveTimer;
 +                        if (readyForGameThread.load()) {
-+                            // RecvBuffer in use by game thread; defer the
-+                            // read until next tick. Sleep one tick so we
-+                            // don't busy-loop on the buffered data, and
-+                            // tick the keep-alive backstop — 50 ms has
-+                            // elapsed and a sustained game-thread stall
-+                            // shouldn't keep the connection alive forever.
++                            // RecvBuffer busy; defer the read one tick.
 +                            svcSleepThread(PollTimeoutMs * 1000000ll);
-+                            keepAlive--;
 +                        } else {
 +                            // Catches recv == 0 (graceful FIN); see
 +                            // ReceiveLogic comment.
@@ -224,7 +230,7 @@ index b83b2dd..e10e117 100644
          }
  
          if (g_TcpSocket != -1) {
-@@ -245,33 +355,39 @@ bool RemoteApi::CheckReceivedBytes(PacketType packet_type, ssize_t receivedBytes
+@@ -245,33 +357,39 @@ bool RemoteApi::CheckReceivedBytes(PacketType packet_type, ssize_t receivedBytes
  
  void RemoteApi::ParseClientPacket() {
      int payloadLength = 0;
