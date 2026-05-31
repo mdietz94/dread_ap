@@ -22,6 +22,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # vendor/open-dread-rando is a pinned submodule; the patcher
+          # pipeline needs it on PYTHONPATH at runtime.
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5

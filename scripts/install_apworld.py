@@ -37,12 +37,42 @@ REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "apworld" / "dread"
 DEFAULT_AP_ROOT = REPO.parent / "smo_archipelago" / "vendor" / "Archipelago"
 
+# Vendored open-dread-rando source — submodule. We copy this into the
+# apworld at install time under `_vendored_patcher/open_dread_rando/` so the
+# zip is self-contained; the patcher subprocess doesn't need
+# `pip install open-dread-rando` to run.
+VENDORED_PATCHER_PKG = (
+    REPO / "vendor" / "open-dread-rando" / "src" / "open_dread_rando"
+)
+# Path inside the apworld where the vendored copy lives. Read by
+# `apworld/dread/_vendor.py` at runtime.
+BUNDLED_PATCHER_REL = Path("_vendored_patcher") / "open_dread_rando"
+
 SKIP_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache",
               ".pytest_cache", "tests"}
 
 
 def _should_skip(path: Path) -> bool:
     return any(part in SKIP_NAMES for part in path.parts)
+
+
+def _iter_vendored_patcher() -> list[tuple[Path, Path]]:
+    """List ``(absolute_source_path, relative_path_within_open_dread_rando)``
+    for every file we ship inside the apworld's bundled patcher copy.
+
+    Returns an empty list if the submodule isn't checked out; callers should
+    treat that as a fatal install error (the apworld is useless without it).
+    """
+    if not VENDORED_PATCHER_PKG.is_dir():
+        return []
+    out: list[tuple[Path, Path]] = []
+    for path in sorted(VENDORED_PATCHER_PKG.rglob("*")):
+        if path.is_dir():
+            continue
+        if any(part in SKIP_NAMES for part in path.parts):
+            continue
+        out.append((path, path.relative_to(VENDORED_PATCHER_PKG)))
+    return out
 
 
 def _ensure_compiled_rules() -> None:
@@ -108,7 +138,25 @@ def _ensure_compiled_rules() -> None:
         sys.exit(1)
 
 
+def _check_vendored_patcher_or_die() -> list[tuple[Path, Path]]:
+    """Verify the vendored open-dread-rando submodule is checked out and
+    return its file list. Exits with a clear message if not — the
+    apworld is non-functional without it (the patcher subprocess imports
+    from `_vendored_patcher/`)."""
+    vendored = _iter_vendored_patcher()
+    if not vendored:
+        sys.stderr.write(
+            "\nvendor/open-dread-rando/ is empty — the apworld bundles the\n"
+            "patcher source into _vendored_patcher/ and cannot ship without it.\n"
+            "Initialize the submodule:\n"
+            "    git submodule update --init vendor/open-dread-rando\n"
+        )
+        sys.exit(1)
+    return vendored
+
+
 def build_apworld_zip(src: Path, dst: Path) -> int:
+    vendored = _check_vendored_patcher_or_die()
     dst.parent.mkdir(parents=True, exist_ok=True)
     file_count = 0
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -118,10 +166,17 @@ def build_apworld_zip(src: Path, dst: Path) -> int:
             arcname = path.relative_to(src.parent).as_posix()
             zf.write(path, arcname)
             file_count += 1
+        # Bundle the vendored patcher so the .apworld is self-contained.
+        bundled_base = Path(src.name) / BUNDLED_PATCHER_REL
+        for source, rel in vendored:
+            arcname = (bundled_base / rel).as_posix()
+            zf.write(source, arcname)
+            file_count += 1
     return file_count
 
 
 def install_folder(src: Path, dst: Path) -> int:
+    vendored = _check_vendored_patcher_or_die()
     if dst.exists():
         shutil.rmtree(dst)
     dst.mkdir(parents=True)
@@ -137,6 +192,13 @@ def install_folder(src: Path, dst: Path) -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
             file_count += 1
+    # Bundle the vendored patcher so the install dir is self-contained.
+    bundled_root = dst / BUNDLED_PATCHER_REL
+    for source, rel in vendored:
+        target = bundled_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        file_count += 1
     return file_count
 
 

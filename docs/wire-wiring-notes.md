@@ -36,7 +36,7 @@ guessed at the push-frame shape:
 > request."
 
 Reading the actual exlaunch C++ sender
-(`vendor/open-dread-rando-exlaunch/source/program/{remote_api.cpp,main.cpp}`)
+([randovania/open-dread-rando-exlaunch/source/program/{remote_api.cpp,main.cpp}](https://github.com/randovania/open-dread-rando-exlaunch/tree/main/source/program))
 showed both assumptions were wrong:
 
 - **Every** Switch→PC frame begins with a 1-byte `PacketType` (including

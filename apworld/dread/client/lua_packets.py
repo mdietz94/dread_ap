@@ -2,9 +2,10 @@
 
 Replaces SMO's ``protocol.py`` (line-delimited JSON over TCP).
 
-Authoritative source for the wire format is the exlaunch C++ sender:
-  vendor/open-dread-rando-exlaunch/source/program/remote_api.cpp
-  vendor/open-dread-rando-exlaunch/source/program/main.cpp
+Authoritative source for the wire format is the exlaunch C++ sender (GPL-2.0,
+upstream — not redistributed in this tree):
+  https://github.com/randovania/open-dread-rando-exlaunch/blob/main/source/program/remote_api.cpp
+  https://github.com/randovania/open-dread-rando-exlaunch/blob/main/source/program/main.cpp
 The upstream Randovania Python parser is at:
   https://github.com/randovania/randovania/blob/main/randovania/game_connection/executor/dread_executor.py
 

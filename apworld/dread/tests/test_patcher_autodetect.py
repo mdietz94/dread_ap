@@ -31,8 +31,11 @@ def test_autodetect_all_missing_returns_pip_command(monkeypatch):
     monkeypatch.setattr(pp, "check_dependencies", lambda p: "missing")
     path, msg = pp.autodetect_patcher_python()
     assert path is None
-    # Names the best (first) candidate in the actionable command.
-    assert "firstpy -m pip install open-dread-rando" in msg
+    # Names the best (first) candidate in the actionable command. The
+    # command installs the patcher's runtime deps (open-dread-rando itself
+    # is vendored as a git submodule, not pip-installed).
+    assert "firstpy -m pip install" in msg
+    assert "mercury-engine-data-structures" in msg
 
 
 def test_candidate_pythons_excludes_frozen_launcher(tmp_path, monkeypatch):

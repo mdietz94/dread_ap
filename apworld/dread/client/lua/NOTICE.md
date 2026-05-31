@@ -1,6 +1,8 @@
 # Vendored Randovania bootstrap Lua
 
-These files are copied **verbatim** from Randovania (MIT licensed):
+These files are copied **verbatim** from [randovania/randovania](https://github.com/randovania/randovania)
+(**GPL-3.0**; this is the reason our combined work is GPL-3.0 — see the top-level
+[LICENSE](../../../../LICENSE)):
 
     randovania/games/dread/assets/lua/{bootstrap_part_0..3,bootstrap_locations}.lua
 
