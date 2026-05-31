@@ -347,7 +347,7 @@ index db61e88..1b5fbe7 100644
  }
  
  void AddPacketToSendBuffer(PacketBuffer& buffer) {
-@@ -206,85 +398,85 @@ void SocketSpawn(void *) {
+@@ -208,85 +400,85 @@ void SocketSpawn(void *) {
  
      bool looping = true;
      while (looping) {
