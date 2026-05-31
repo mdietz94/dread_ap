@@ -8,20 +8,22 @@ wizard's log box can render live):
      `git clone --depth 1 <pinned ref>`. Subsequent runs `git fetch +
      reset --hard` so the user's local commits / stale apply don't
      accumulate.
-  2. `git apply` the bundled Ryujinx-fix patch. Idempotent — we probe
-     for the patch's marker strings in the working tree first; if they're
-     present we skip. (This avoids the "patch does not apply" error on
-     re-runs.)
+  2. `git apply` each bundled patch in order. Idempotent per-patch — we
+     probe for that patch's sentinel string in the working tree first;
+     if it's present we skip just that patch. Apply order matters:
+     Ryujinx-fix introduces the ``nn::socket::Poll`` declaration the
+     tcp-client patch relies on.
   3. Run `./exlaunch.sh build` under devkitPro's bundled msys2 bash.
      Streams compiler output line-by-line.
   4. Harvest `subsdk9` + `main.npdm` from
      `<checkout>/src/open_dread_rando_exlaunch/deploy/` and return their
      paths via `collect_build_outputs`.
 
-The patch file we apply ships next to this module
-(`apworld/dread/_setup/exlaunch-ryujinx-fix.diff`). It's identical to
-`scripts/patches/exlaunch-ryujinx-fix.diff` in the source tree —
-`install_apworld.py` will sync it at apworld-zip time.
+The patch files ship next to this module (``apworld/dread/_setup/
+*.diff``). They're identical to ``scripts/patches/*.diff`` in the source
+tree — ``install_apworld.py`` packs the apworld/dread/_setup/ copies via
+``rglob``, and the repo-root mirrors are kept in sync so dev checkouts
+that consume the source directly still work.
 """
 
 from __future__ import annotations
@@ -43,10 +45,10 @@ from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under
 # child, stealing focus from the wizard). No-op on non-Windows.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-# Where the patch file lives at runtime. The patch is bundled into the
-# package itself (install_apworld.py packs it via rglob, so it lands at
-# ``apworld/dread/_setup/exlaunch-ryujinx-fix.diff`` inside the zip),
-# AND we keep a repo-root copy at ``scripts/patches/`` for dev checkouts
+# Where the patch files live at runtime. Each patch is bundled into the
+# package itself (install_apworld.py packs them via rglob, so they land at
+# ``apworld/dread/_setup/<patch>.diff`` inside the zip), AND we keep a
+# repo-root copy at ``scripts/patches/<patch>.diff`` for dev checkouts
 # that consume the source directly. Resolution order matters:
 #
 #   1. ``importlib.resources`` on this package — works whether the apworld
@@ -55,26 +57,69 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 #      materialize the patch to a temp file via ``importlib.resources.
 #      as_file`` (the canonical way to bridge a zip-loaded resource into
 #      a tool that demands a real path).
-#   2. Repo-root ``scripts/patches/exlaunch-ryujinx-fix.diff`` walk-up —
-#      covers dev checkouts where the package directory itself was
-#      stripped down or the patch was removed from _setup/ to avoid the
-#      duplication.
+#   2. Repo-root ``scripts/patches/<patch>`` walk-up — covers dev
+#      checkouts where the package directory itself was stripped down or
+#      the patch was removed from _setup/ to avoid the duplication.
 _SETUP_ROOT = Path(__file__).resolve().parent
-_PATCH_FILENAME = "exlaunch-ryujinx-fix.diff"
+
+# Ordered list of patches to apply. The tcp-client patch references the
+# ``nn::socket::Poll`` declaration that the Ryujinx-fix patch adds, so
+# Ryujinx MUST be applied first. Each entry:
+#   - filename: the diff filename in _setup/ AND scripts/patches/
+#   - sentinel: a unique string the patch introduces in the working tree;
+#     if present, the patch is already applied and we skip it.
+#   - sentinel_path: file (relative to the checkout) to probe for the
+#     sentinel. Use a header / file the patch is GUARANTEED to touch even
+#     when only part of the patch is being re-applied (so a partial state
+#     in the working tree doesn't fool the idempotency check).
+@dataclass(frozen=True)
+class _Patch:
+    filename: str
+    sentinel: str
+    sentinel_path: str
+    label: str
+    # Files the patch creates fresh (new-file hunks). If the sentinel is
+    # absent (patch not yet applied) but one of these files exists in the
+    # working tree — from a prior partial / aborted apply — git apply
+    # refuses ("already exists in working directory"). We delete those
+    # leftovers BEFORE applying so the patch lands cleanly. Empty for
+    # patches that only modify existing files.
+    creates: tuple[str, ...] = ()
+
+
+_PATCHES: tuple[_Patch, ...] = (
+    _Patch(
+        filename="exlaunch-ryujinx-fix.diff",
+        sentinel="nn::socket::Poll DOES work on Ryujinx",
+        sentinel_path="source/program/remote_api.cpp",
+        label="Ryujinx-safe non-blocking socket loop",
+    ),
+    _Patch(
+        # Inverts the topology: PC binds UDP :17779 + TCP :17777 and the
+        # Switch UDP-discovers the bridge before TCP-dialing. Adds
+        # SendTo/RecvFrom wrapper decls, resolveBridge + DialBridge, and
+        # creates source/program/bridge_config.hpp with a default seed
+        # IP that the wizard's BridgeIpPage can overwrite.
+        filename="exlaunch-tcp-client-and-discovery.diff",
+        sentinel="bool ResolveBridge",
+        sentinel_path="source/program/remote_api.cpp",
+        label="TCP-client + UDP-discovery topology",
+        creates=("source/program/bridge_config.hpp",),
+    ),
+)
 
 
 @contextlib.contextmanager
-def _locate_patch_file():
-    """Yield a real-filesystem ``Path`` to ``exlaunch-ryujinx-fix.diff``,
-    or ``None`` if neither the package resource nor the repo-root fallback
-    can be found.
+def _locate_patch_file(filename: str):
+    """Yield a real-filesystem ``Path`` to ``<filename>``, or ``None`` if
+    neither the package resource nor the repo-root fallback can be found.
 
     Context manager because the importlib.resources zip-extract path
     needs scoped cleanup of its temp file; the disk-resident cases just
     yield the existing path and tear down cheaply on exit.
     """
     try:
-        resource = importlib.resources.files(__package__).joinpath(_PATCH_FILENAME)
+        resource = importlib.resources.files(__package__).joinpath(filename)
         if resource.is_file():
             with importlib.resources.as_file(resource) as p:
                 yield p
@@ -83,7 +128,7 @@ def _locate_patch_file():
         pass
     cur = _SETUP_ROOT
     for _ in range(8):  # _setup → apworld/dread → apworld → repo-root → …
-        cand = cur / "scripts" / "patches" / _PATCH_FILENAME
+        cand = cur / "scripts" / "patches" / filename
         if cand.is_file():
             yield cand
             return
@@ -288,28 +333,30 @@ def ensure_exlaunch_checkout(on_line: ProgressFn | None = None) -> BuildResult:
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — apply our Ryujinx-fix patch
+# Step 2 — apply the ordered patch list
 # ---------------------------------------------------------------------------
 
-# Sentinel string introduced by the patch. If we see it in remote_api.cpp
-# we know the patch is already applied and skip re-applying.
-_PATCH_SENTINEL = "nn::socket::Poll DOES work on Ryujinx"
 
-
-def _patch_already_applied(checkout: Path) -> bool:
-    f = checkout / "source" / "program" / "remote_api.cpp"
+def _patch_sentinel_present(checkout: Path, patch: _Patch) -> bool:
+    f = checkout / patch.sentinel_path
     if not f.is_file():
         return False
     try:
-        return _PATCH_SENTINEL in f.read_text(encoding="utf-8", errors="ignore")
+        return patch.sentinel in f.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return False
 
 
-def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
-    """`git apply` the bundled exlaunch-ryujinx-fix.diff. Idempotent — if
-    the patch's sentinel string is already present in the working tree we
-    skip without erroring.
+def _apply_one_patch(
+    patch: _Patch,
+    *,
+    on_line: ProgressFn | None,
+) -> BuildResult:
+    """`git apply` a single patch. Skip if its sentinel is already present.
+
+    Per-patch sentinel means a partial state (Ryujinx applied but not
+    tcp-client) advances cleanly — the Ryujinx step is skipped, the
+    tcp-client step runs.
     """
     checkout = _exlaunch_checkout_dir()
     if not (checkout / ".git").is_dir():
@@ -317,11 +364,31 @@ def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
                "first")
         return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
 
-    if _patch_already_applied(checkout):
-        msg = "patch already applied (sentinel found in remote_api.cpp)"
+    if _patch_sentinel_present(checkout, patch):
+        msg = (f"already applied (sentinel found in "
+               f"{patch.sentinel_path})")
         if on_line:
-            on_line(f"[patch] {msg}")
+            on_line(f"[patch:{patch.filename}] {msg}")
         return BuildResult(ok=True, returncode=0, log=msg, detail=msg)
+
+    # Clear leftover files the patch creates (from a prior partial apply
+    # or aborted wizard run). git apply's new-file hunk requires the
+    # target path NOT to exist; without this step a retry after a
+    # partial failure surfaces as "already exists in working directory".
+    for relpath in patch.creates:
+        leftover = checkout / relpath
+        if leftover.exists():
+            try:
+                leftover.unlink()
+                if on_line:
+                    on_line(f"[patch:{patch.filename}] removed leftover "
+                            f"{relpath}")
+            except OSError as e:
+                msg = (f"[patch:{patch.filename}] could not remove leftover "
+                       f"{relpath}: {e}")
+                if on_line:
+                    on_line(msg)
+                return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
 
     git = shutil.which("git")
     if git is None:
@@ -330,10 +397,10 @@ def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
             on_line(msg)
         return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
 
-    with _locate_patch_file() as patch:
-        if patch is None:
+    with _locate_patch_file(patch.filename) as patch_path:
+        if patch_path is None:
             msg = (
-                f"{_PATCH_FILENAME} not found in the apworld package "
+                f"{patch.filename} not found in the apworld package "
                 "(importlib.resources lookup) and no repo-root "
                 "scripts/patches/ fallback. Rebuild the apworld with "
                 "install_apworld.py so the patch is packed alongside "
@@ -344,11 +411,11 @@ def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
             return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
 
         if on_line:
-            on_line(f"[patch] applying {patch.name}")
+            on_line(f"[patch:{patch.filename}] applying ({patch.label})")
         # --ignore-whitespace tolerates the line-ending normalization noise
         # that vendored-repo checkouts on Windows accumulate.
         r = _stream_subprocess(
-            [git, "apply", "--ignore-whitespace", str(patch)],
+            [git, "apply", "--ignore-whitespace", str(patch_path)],
             cwd=checkout,
             timeout=_TIMEOUTS["git_apply"],
             on_line=on_line,
@@ -357,13 +424,156 @@ def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
     if not r.ok:
         return BuildResult(
             ok=False, returncode=r.returncode, log=r.log,
-            detail=(f"git apply failed — most likely the pinned upstream "
-                    f"sha has diverged from what the patch was generated "
-                    f"against. Regenerate the patch against "
-                    f"{PINNED_EXLAUNCH_COMMIT} and re-bundle the apworld."),
+            detail=(f"git apply failed for {patch.filename} — most likely "
+                    f"the pinned upstream sha has diverged from what the "
+                    f"patch was generated against, or a previously-applied "
+                    f"patch in the pipeline left an unexpected working "
+                    f"state. Regenerate against {PINNED_EXLAUNCH_COMMIT} "
+                    f"and re-bundle the apworld."),
         )
     return BuildResult(ok=True, returncode=0, log=r.log,
-                       detail="patch applied")
+                       detail=f"applied {patch.filename}")
+
+
+def apply_patches(on_line: ProgressFn | None = None) -> BuildResult:
+    """`git apply` every patch in ``_PATCHES`` in declared order.
+
+    Stops at the first failing patch and returns its BuildResult so the
+    wizard can surface a specific remediation. Each patch is independently
+    idempotent (per-patch sentinel), so re-running after a partial success
+    only retries the patches that didn't land.
+    """
+    last: BuildResult | None = None
+    for patch in _PATCHES:
+        last = _apply_one_patch(patch, on_line=on_line)
+        if not last.ok:
+            return last
+    assert last is not None
+    return last
+
+
+# Back-compat alias. Old wizard call sites + the headless CLI entry point
+# imported `apply_ryujinx_patch` directly; the new pipeline subsumes its
+# behavior + the tcp-client patch. Keeping the name as an alias is a
+# one-line bridge so existing imports don't break mid-rollout.
+apply_ryujinx_patch = apply_patches
+
+
+# ---------------------------------------------------------------------------
+# Step 2b — write generated bridge_config.hpp (wizard-driven, optional)
+# ---------------------------------------------------------------------------
+
+# Bracketed marker lines around the auto-generated #define so the wizard
+# can rewrite the override block without touching the rest of the file.
+# Anything inside the markers is owned by write_bridge_config(); anything
+# outside (the #pragma once, comments, fallback #ifndef block) is owned
+# by the patch.
+_BRIDGE_CONFIG_MARK_BEGIN = "// === wizard-generated bridge config (begin) ==="
+_BRIDGE_CONFIG_MARK_END   = "// === wizard-generated bridge config (end) ==="
+
+
+def _bridge_config_path() -> Path:
+    return (_exlaunch_checkout_dir() / "source" / "program"
+            / "bridge_config.hpp")
+
+
+def write_bridge_config(seed_ip: str | None,
+                        on_line: ProgressFn | None = None) -> BuildResult:
+    """Overwrite the ``DEFAULT_BRIDGE_SUBNET`` macro in bridge_config.hpp
+    with ``seed_ip`` (the user's PC LAN IP from BridgeIpPage).
+
+    ``seed_ip=None`` means "no wizard customization" — leave the file
+    exactly as the patch produced it (with the ``#ifndef`` fallback
+    default). Idempotent: a second call with the same IP is a no-op
+    against the file content.
+
+    The patch creates bridge_config.hpp with a ``#ifndef
+    DEFAULT_BRIDGE_SUBNET ... #endif`` fallback. This helper inserts an
+    UNCONDITIONAL ``#define`` block ABOVE the fallback, wrapped in
+    sentinel comments so it can be rewritten in place on subsequent
+    wizard runs.
+    """
+    cfg = _bridge_config_path()
+    if not cfg.is_file():
+        msg = (f"bridge_config.hpp missing — apply_patches must run "
+               f"before write_bridge_config (expected at {cfg})")
+        if on_line:
+            on_line(msg)
+        return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
+
+    if seed_ip is None:
+        # Strip any prior wizard block so re-running without an IP returns
+        # the file to its patch-default state.
+        seed_ip = ""  # signal: emit no override
+
+    # Read+write bytes (with explicit \n newlines on write) so the
+    # no-op detection holds across Windows + git's autocrlf antics —
+    # otherwise text-mode write would convert \n back to \r\n and the
+    # next call would always "differ" from disk even with the same IP.
+    try:
+        original = cfg.read_bytes().decode("utf-8")
+    except OSError as e:
+        return BuildResult(ok=False, returncode=1, log=str(e),
+                           detail=f"failed to read {cfg}: {e}")
+    # Normalize CRLF → LF for comparison; write keeps LF only.
+    original = original.replace("\r\n", "\n")
+
+    # Excise any prior wizard block.
+    lines = original.splitlines(keepends=True)
+    out: list[str] = []
+    skipping = False
+    for ln in lines:
+        if _BRIDGE_CONFIG_MARK_BEGIN in ln:
+            skipping = True
+            continue
+        if skipping:
+            if _BRIDGE_CONFIG_MARK_END in ln:
+                skipping = False
+            continue
+        out.append(ln)
+    stripped = "".join(out)
+
+    if seed_ip:
+        # Insert the override block immediately after the #pragma once.
+        # NO leading newline — the existing post-#pragma-once blank line
+        # in the file provides the separation; adding one here would
+        # accumulate an extra blank line on every wizard re-run.
+        insertion = (
+            f"{_BRIDGE_CONFIG_MARK_BEGIN}\n"
+            f"// Set by the /setup wizard's BridgeIpPage. Re-run /setup to\n"
+            f"// change. Removing this block restores the fallback default\n"
+            f"// from the #ifndef DEFAULT_BRIDGE_SUBNET below.\n"
+            f"#define DEFAULT_BRIDGE_SUBNET \"{seed_ip}\"\n"
+            f"{_BRIDGE_CONFIG_MARK_END}\n"
+        )
+        idx = stripped.find("#pragma once")
+        if idx < 0:
+            # File got mangled — write the override at the top anyway.
+            new = insertion + stripped
+        else:
+            after = stripped.find("\n", idx)
+            new = stripped[: after + 1] + insertion + stripped[after + 1 :]
+    else:
+        new = stripped
+
+    if new == original:
+        msg = f"bridge_config.hpp unchanged ({'no override' if not seed_ip else seed_ip})"
+        if on_line:
+            on_line(f"[bridge-config] {msg}")
+        return BuildResult(ok=True, returncode=0, log=msg, detail=msg)
+
+    try:
+        # Explicit LF newlines — see read_bytes comment above.
+        cfg.write_bytes(new.encode("utf-8"))
+    except OSError as e:
+        return BuildResult(ok=False, returncode=1, log=str(e),
+                           detail=f"failed to write {cfg}: {e}")
+    msg = (f"wrote DEFAULT_BRIDGE_SUBNET={seed_ip!r} into {cfg}"
+           if seed_ip else
+           f"cleared wizard override from {cfg}")
+    if on_line:
+        on_line(f"[bridge-config] {msg}")
+    return BuildResult(ok=True, returncode=0, log=msg, detail=msg)
 
 
 # ---------------------------------------------------------------------------
@@ -461,28 +671,42 @@ def build_ready() -> bool:
 # Headless orchestrator (CLI entry point — wizard.py is the GUI wrapper)
 # ---------------------------------------------------------------------------
 
-def run_build_pipeline(on_line: ProgressFn | None = None) -> BuildResult:
-    """Single-shot fetch → patch → build orchestration.
+def run_build_pipeline(on_line: ProgressFn | None = None,
+                       bridge_seed_ip: str | None = None) -> BuildResult:
+    """Single-shot fetch → patch → write-config → build orchestration.
 
-    Useful from the CLI `/setup` command path (when the user opts out of
-    or hasn't yet integrated the Kivy GUI). The wizard's BuildPage will
-    eventually call the same three step functions individually so it can
-    render per-step progress; this function just chains them.
+    Useful from the CLI ``/setup`` command path (when the user opts out
+    of or hasn't yet integrated the Kivy GUI). The wizard's BuildPage
+    calls the four step functions individually so it can render per-step
+    progress; this function chains them.
+
+    ``bridge_seed_ip`` is the user's PC LAN IP (passed through from
+    BridgeIpPage). Passing ``None`` leaves the patch-default seed in
+    bridge_config.hpp — adequate for Ryujinx-on-same-host (loopback
+    discovery covers it) but the /24 sweep won't find a real Switch on
+    the LAN until the wizard bakes in the right IP.
     """
     if on_line:
-        on_line("[build] step 1/3: ensure exlaunch checkout")
+        on_line("[build] step 1/4: ensure exlaunch checkout")
     r = ensure_exlaunch_checkout(on_line)
     if not r.ok:
         return r
 
     if on_line:
-        on_line("[build] step 2/3: apply Ryujinx fix patch")
-    r = apply_ryujinx_patch(on_line)
+        on_line("[build] step 2/4: apply patches (Ryujinx-fix + tcp-client)")
+    r = apply_patches(on_line)
     if not r.ok:
         return r
 
     if on_line:
-        on_line("[build] step 3/3: run ./exlaunch.sh build")
+        on_line("[build] step 3/4: write bridge_config.hpp "
+                f"(seed_ip={bridge_seed_ip!r})")
+    r = write_bridge_config(bridge_seed_ip, on_line)
+    if not r.ok:
+        return r
+
+    if on_line:
+        on_line("[build] step 4/4: run ./exlaunch.sh build")
     r = run_exlaunch_build(on_line)
     if not r.ok:
         return r

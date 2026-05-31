@@ -4,9 +4,13 @@ This file tracks our local diffs vs. the upstream sources in `vendor/`.
 
 ## Current status
 
-`open-dread-rando-exlaunch/` carries a local patch (see "exlaunch:
-Ryujinx-safe non-blocking socket loop" below). `open-dread-rando/`
-is still clean and reference-only.
+`open-dread-rando-exlaunch/` carries two local patches, applied in order
+by `apworld/dread/_setup/build.py`:
+
+  1. "exlaunch: Ryujinx-safe non-blocking socket loop" — see below.
+  2. "exlaunch: TCP-client + UDP-discovery topology" — see below.
+
+`open-dread-rando/` is still clean and reference-only.
 
 ## Subdirectories
 
@@ -37,11 +41,10 @@ Shallow clone of [randovania/open-dread-rando-exlaunch](https://github.com/rando
 The in-game sysmodule (subsdk9 + main.npdm) that opens the Lua-eval socket
 on port 6969.
 
-**Why vendored**: was reference-only; now a soft fork carrying one local
-patch ("exlaunch: Ryujinx-safe non-blocking socket loop", below). End
-users still download the upstream release for production hardware. The
-local fork only matters if we ship our own .nso build, or for the
-upstream PR.
+**Why vendored**: was reference-only; now a soft fork carrying two local
+patches (see below). End users still download the upstream release for
+production hardware. The local fork only matters if we ship our own
+.nso build, or for the upstream PRs.
 
 **Patch — exlaunch: Ryujinx-safe non-blocking socket loop**
 
@@ -83,6 +86,68 @@ once we've confirmed the patched .nso boots cleanly on Ryujinx and grants
 an item end-to-end. The diff is small enough (~80 lines) to land as one
 PR. Once merged, point this vendor copy at the merged commit and delete
 this section.
+
+**Patch — exlaunch: TCP-client + UDP-discovery topology**
+
+Files touched:
+- `open-dread-rando-exlaunch/source/nn/socket.hpp` — add `SendTo` and
+  `RecvFrom` wrapper declarations alongside the others. (`Bind`,
+  `Connect`, `InetHtons`, `InetAton`, `Poll` are already declared post
+  Ryujinx-fix.)
+- `open-dread-rando-exlaunch/source/program/remote_api.cpp` —
+  - Delete `g_TcpSocket` and `CreateServerSocket()` (the listening
+    socket is gone).
+  - Add discovery helpers in the anon namespace: `ProbeJson`,
+    `FindSubstr`, `ParseBridgeReply`, `WaitUdpReply`, `ProbeOne`,
+    `SweepSubnet`, `ResolveBridge`, `DialBridge`. The probe/reply wire
+    format matches `apworld/dread/client/discovery.py` exactly:
+    `{"t":"discover","mod_ver":"dread-ap"}\n` →
+    `{"t":"bridge","host":"<ipv4>","port":<int>}\n`.
+  - Rewrite `SocketSpawn`'s outer loop to resolve via
+    `ResolveBridge(loopback → /24 sweep)` then `DialBridge()` →
+    inner Poll loop (unchanged from the Ryujinx-fix patch) → teardown
+    → 1 s backoff → retry. The inner Poll discipline + `Close`-only
+    teardown survive verbatim because they're load-bearing for
+    Ryujinx half-open recovery.
+  - Add an `#include "bridge_config.hpp"` so the `/24` seed comes from
+    a build-time `DEFAULT_BRIDGE_SUBNET` macro.
+- `open-dread-rando-exlaunch/source/program/bridge_config.hpp` — new
+  file. Defines `DEFAULT_BRIDGE_SUBNET` to `"192.168.1.1"` under a
+  `#ifndef` fallback. The /setup wizard's BridgeIpPage rewrites this
+  via `build.write_bridge_config(seed_ip)` to bake the user's PC
+  LAN IP before each compile; without wizard customization the
+  fallback is used.
+
+**Why**: the previous topology had the PC dial the Switch on port 6969,
+which forced an exponential-backoff supervisor on the PC side to handle
+"Switch not ready yet" / "Switch IP unknown" / "DHCP changed
+mid-session." We inverted to mirror smo_archipelago's discipline: the PC
+binds UDP :17779 + TCP :17777 and answers a small JSON discovery probe;
+the Switch sweeps loopback then its baked `/24` to find the bridge and
+TCP-dials it. The wire frame format (`PACKET_HANDSHAKE`,
+`PACKET_REMOTE_LUA_EXEC`, etc.) is unchanged — only the underlying
+socket initiation flips. nifm is intentionally NOT used to learn the
+Switch's own IP for the sweep seed (it crashed sail-init in SMO; the
+build-time `DEFAULT_BRIDGE_SUBNET` stands in).
+
+**Verified-by-precedent**: smo_archipelago's `ApDiscovery.cpp` runs the
+same loopback → `/24` sweep flow and has been validated on Ryujinx + real
+HW. Our `ResolveBridge` is a port of that file's `resolveBridge` with
+the SMO-specific JSON encoder/parser replaced by `FindSubstr`-based
+inline scans (the dread tree doesn't carry SMO's `util/Json.hpp`).
+
+**Verified locally**: builds clean against the pinned exlaunch commit
+under devkitPro msys2 bash. Produces a ~200 KB subsdk9 with no compile
+errors / warnings. End-to-end Ryujinx integration smoke is the next
+gate (deploy the new subsdk9; confirm the Switch UDP-discovers
+DreadClient's responder within ~2 s of game launch, TCP-dials, runs
+the RL.* bootstrap, and an in-game pickup registers on the AP server).
+
+**Upstream PR plan**: this lands as a separate PR from the Ryujinx-fix
+because it changes user-visible behavior (port 6969 listening removed).
+Discuss with randovania before opening — they may want to keep the
+listening-side as an option for direct-Switch tooling. Could merge as
+a feature flag with the listening side gated off by default.
 
 ## Updating the vendored copies
 

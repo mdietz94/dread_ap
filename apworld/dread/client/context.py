@@ -30,9 +30,10 @@ from typing import Any, Optional
 from CommonClient import CommonContext, ClientCommandProcessor
 from NetUtils import ClientStatus
 
-from .commands import parse_command, parse_switch_target
+from .commands import parse_command
 from .datapackage import DataPackage
-from .lua_executor import DreadExecutor
+from .discovery import DEFAULT_DISCOVERY_PORT, DiscoveryResponder
+from .lua_executor import DreadConnection
 from .lua_packets import PacketType, Response, parse_received_pickups_count
 from .protocol import (
     DreadItem,
@@ -42,8 +43,11 @@ from .protocol import (
 )
 from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
+from .switch_server import SwitchServer
 from .._setup import setup_state_path
 from .._setup.deploy import DREAD_TITLE_ID, RYU_MOD_NAME
+
+DEFAULT_LISTEN_PORT = 17777
 
 log = logging.getLogger(__name__)
 
@@ -131,12 +135,6 @@ def _field(obj: Any, name: str, idx: int) -> Any:
 # Randovania's RL.UpdateRDVClient self-scheduling interval.
 POLL_INTERVAL_SECONDS = 2.0
 
-# Switch auto-connect backoff bounds (seconds). The supervisor doubles from
-# START up to MAX between failed dials; MAX also caps the idle re-check cadence
-# while connected.
-_SWITCH_BACKOFF_START = 1.0
-_SWITCH_BACKOFF_MAX = 30.0
-
 
 class DreadClientCommandProcessor(ClientCommandProcessor):
     """`/`-prefixed commands typed into the Kivy command bar."""
@@ -155,45 +153,22 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         self._emit(result)
         return True
 
-    def _cmd_switch_host(self, host: str = "") -> bool:
-        """Repoint the Switch IP. ``/switch_host 192.168.1.42``"""
-        ctx = self.ctx
-        if not host:
-            self.output(f"current switch_host = {ctx.switch_host!r}")
-            return True
-        ctx.switch_host = host
-        self.output(f"switch_host set to {host!r}; use /switch_reconnect to apply")
-        return True
+    def _cmd_dread_connect(self) -> bool:
+        """``/dread_connect`` — force-close the active Switch connection so
+        the sysmodule re-dials.
 
-    def _cmd_dread_connect(self, host: str = "") -> bool:
-        """``/dread_connect [ip[:port]]`` — (re)dial the Switch.
-
-        The initial dial sometimes loses the race with Dreadvania finishing
-        its own startup, so this is the recovery hatch. With no argument it
-        just re-dials the current target; pass ``ip`` (optionally ``ip:port``)
-        to re-point first — e.g. ``/dread_connect 192.168.1.42`` or
-        ``/dread_connect localhost:6969``.
+        Under the inverted topology the Switch dials in via UDP discovery
+        + TCP connect; the PC never picks an IP. This is the recovery
+        hatch for a half-open / stale connection — close the writer, the
+        Switch redials within its reconnect cadence.
         """
         ctx = self.ctx
-        if host:
-            try:
-                new_host, new_port = parse_switch_target(host)
-            except ValueError as exc:
-                self.output(f"err: {exc}")
-                self.output("usage: /dread_connect [ip[:port]]")
-                return True
-            ctx.switch_host = new_host
-            if new_port is not None:
-                ctx.switch_port = new_port
-        # reconnect_switch wakes the backoff supervisor (request_redial) once
-        # it has re-dialed, so no explicit signal is needed here.
-        asyncio.ensure_future(ctx.reconnect_switch())
-        self.output(f"reconnecting to Switch at {ctx.switch_host}:{ctx.switch_port} …")
+        asyncio.ensure_future(ctx.disconnect_active_switch())
+        self.output("dropped active Switch connection; sysmodule will redial …")
         return True
 
     def _cmd_switch_reconnect(self) -> bool:
-        """Drop the current Switch connection and re-dial. Alias of
-        ``/dread_connect`` (kept for muscle memory)."""
+        """Alias of ``/dread_connect`` (kept for muscle memory)."""
         return self._cmd_dread_connect()
 
     def _cmd_poke(self, *lua_words: str) -> bool:
@@ -280,26 +255,31 @@ class DreadContext(CommonContext):
         *,
         state: BridgeState,
         datapackage: DataPackage,
-        switch_host: str = "127.0.0.1",
-        switch_port: int = 6969,
+        listen_host: str = "0.0.0.0",
+        listen_port: int = DEFAULT_LISTEN_PORT,
+        discovery_port: int = DEFAULT_DISCOVERY_PORT,
     ):
         super().__init__(server_address, password)
         self.state = state
         self.datapackage = datapackage
         self.scout_cache = ScoutCache()
-        self.switch_host = switch_host
-        self.switch_port = switch_port
-        self.executor: Optional[DreadExecutor] = None
+        self.listen_host = listen_host
+        self.listen_port = listen_port
+        self.discovery_port = discovery_port
+        # Currently-active accepted Switch connection (one at a time —
+        # newer accepts supersede). None when no Switch is attached.
+        self._active_conn: Optional[DreadConnection] = None
+        # Informational: source IP:port of the active connection, surfaced
+        # in the GUI status pill / reconnect popup. None when disconnected.
+        self.connected_peer: Optional[str] = None
+        self._switch_server: Optional[SwitchServer] = None
+        self._discovery: Optional[DiscoveryResponder] = None
         self._poll_task: Optional[asyncio.Task[None]] = None
-        self._reconnect_lock = asyncio.Lock()
-        # Set by the backoff supervisor / manual reconnect to interrupt the
-        # exponential-backoff sleep and dial the Switch immediately. See
-        # _switch_supervisor.
-        self._redial_event = asyncio.Event()
         self._goal_reported = False
-        # Whether the RL.* bootstrap has been sent to the Switch this connection.
-        # Until it has, RL.GetCollectedIndicesAndSend / RL.ReceivePickup / etc.
-        # don't exist on the Switch side, so polling + delivery must wait.
+        # Whether the RL.* bootstrap has been sent to the Switch this
+        # connection. Until it has, RL.GetCollectedIndicesAndSend /
+        # RL.ReceivePickup / etc. don't exist on the Switch side, so
+        # polling + delivery must wait.
         self._bootstrapped = False
         # Full ordered AP items_received list (indexed by AP receive position).
         # Delivery sends the item at position == the game's ReceivedPickups
@@ -354,8 +334,12 @@ class DreadContext(CommonContext):
                 await self._poll_task
             except (asyncio.CancelledError, Exception):
                 pass
-        if self.executor:
-            await self.executor.close()
+        if self._discovery is not None:
+            self._discovery.stop()
+            self._discovery = None
+        if self._switch_server is not None:
+            await self._switch_server.stop()
+            self._switch_server = None
         await super().shutdown()
 
     def run_gui(self) -> None:
@@ -372,151 +356,131 @@ class DreadContext(CommonContext):
 
     # ---- Switch connection lifecycle ----------------------------------
 
-    async def connect_switch(self) -> None:
-        if self.executor is not None:
+    async def start_switch_listener(self) -> None:
+        """Start the UDP discovery responder + TCP listener.
+
+        Called once from ``main.py``. The Switch sysmodule UDP-probes for
+        the responder, then TCP-connects to the advertised listener; the
+        per-connection lifetime runs inside ``_on_switch_connection``.
+
+        No exponential-backoff loop — the Switch dials in when ready, and
+        TCP keepalive on accepted sockets (see ``switch_server``) surfaces
+        a dead wire so the Switch redials within ~20 s. Discovery /
+        listener failures are logged and the client keeps running so the
+        user can re-run /setup or investigate.
+        """
+        if self._switch_server is not None:
             return
-        self.executor = DreadExecutor(
-            host=self.switch_host,
-            port=self.switch_port,
-            on_push=self._on_switch_push,
-            on_disconnect=self._on_switch_disconnect,
+        self.state.set_switch_conn("listening")
+        self._switch_server = SwitchServer(
+            host=self.listen_host,
+            port=self.listen_port,
+            on_connection=self._on_switch_connection,
         )
         try:
-            self._bootstrapped = False
-            api = await self.executor.connect()
+            await self._switch_server.start()
+        except OSError as exc:
+            log.error("could not bind TCP listener on %s:%d: %s",
+                      self.listen_host, self.listen_port, exc)
+            self.state.set_switch_conn(f"listen failed: {exc}")
+            self._switch_server = None
+            return
+        # Advertise the actual bound port (matters when listen_port=0).
+        self.listen_port = self._switch_server.actual_port
+        self._discovery = DiscoveryResponder(
+            tcp_port=self.listen_port,
+            bind_host=self.listen_host,
+            port=self.discovery_port,
+        )
+        await self._discovery.start()
+        # Mirror the discovery port back to the context so tests / GUI see
+        # the actual bound value when discovery_port=0 was requested.
+        self.discovery_port = self._discovery.actual_port
+        log.info("Switch listener ready: TCP %s:%d, UDP discovery :%d — "
+                 "waiting for sysmodule to dial in",
+                 self.listen_host, self.listen_port, self.discovery_port)
+
+    async def _on_switch_connection(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        peer: str,
+    ) -> None:
+        """Handle one accepted Switch connection start-to-finish.
+
+        Runs for the lifetime of the TCP socket: handshake → API probe →
+        ``RL.*`` bootstrap → poll loop start → block on the read loop →
+        clean up. Returning unwinds in ``SwitchServer._handle_client``.
+        """
+        conn = DreadConnection(reader, writer, on_push=self._on_switch_push)
+        self._active_conn = conn
+        self.connected_peer = peer
+        self._bootstrapped = False
+        self.state.set_switch_conn("connecting")
+        try:
+            api = await conn.setup()
             self.state.update_game_state(layout_uuid=api.layout_uuid)
-            # The exlaunch ROM only ships RL.* stubs; the real query/delivery
-            # functions are Lua we must send every connect (matching
-            # randovania's dread_executor.bootstrap). Until this lands, nothing
-            # else on the wire works.
-            await self._send_bootstrap(api.buffer_size)
+            # The exlaunch ROM only ships RL.* stubs; the real query / delivery
+            # functions are Lua we install every connect (matching randovania's
+            # dread_executor.bootstrap). Until this lands, nothing else on the
+            # wire works. The bootstrap RE-RUNS on every accept because the
+            # Switch may have reconnected with a fresh Lua state.
+            await self._send_bootstrap(conn, api.buffer_size)
             self._bootstrapped = True
             self.state.set_switch_conn("connected")
-            # Remember the host that actually worked so the next session dials
-            # it without the user re-typing (default is Ryujinx loopback).
-            self._remember_switch_target()
-            log.info("Switch connected + bootstrapped: api=%s game=%s layout=%s",
-                     api.api_version, api.game_version, api.layout_uuid)
-            self._poll_task = asyncio.create_task(self._poll_loop(), name="dread-poll")
+            log.info(
+                "Switch connected + bootstrapped from %s: "
+                "api=%s game=%s layout=%s",
+                peer, api.api_version, api.game_version, api.layout_uuid,
+            )
+            self._poll_task = asyncio.create_task(
+                self._poll_loop(), name="dread-poll")
+            try:
+                await conn.run_until_disconnect()
+            finally:
+                if self._poll_task is not None:
+                    self._poll_task.cancel()
+                    self._poll_task = None
         except Exception as exc:
-            log.warning("Switch dial/bootstrap failed: %s", exc)
+            log.warning("Switch session ended with error: %s", exc)
             self.state.set_switch_conn(f"error: {exc}")
-            if self.executor is not None:
-                await self.executor.close()
-            self.executor = None
+        finally:
+            await conn.close()
+            # Only mutate state if we're still the active connection — a
+            # supersede may have already replaced us.
+            if self._active_conn is conn:
+                self._active_conn = None
+                self.connected_peer = None
+                self._bootstrapped = False
+                self.state.set_switch_conn("listening")
 
-    async def _send_bootstrap(self, buffer_size: int) -> None:
+    async def _send_bootstrap(self, conn: DreadConnection, buffer_size: int) -> None:
         """Send the vendored RL.* bootstrap, chunked to the negotiated buffer
         size. Raises if the Switch reports a Lua error for any chunk — a failed
         bootstrap means the rest of the protocol can't run, so surfacing it is
         better than limping on with half the namespace defined."""
-        assert self.executor is not None
         from .bootstrap import load_bootstrap_code, chunk_lua_blocks
 
         blocks = load_bootstrap_code()
         chunks = chunk_lua_blocks(blocks, buffer_size)
         log.info("Sending RL bootstrap: %d blocks in %d chunk(s)", len(blocks), len(chunks))
         for i, chunk in enumerate(chunks):
-            resp = await self.executor.run_lua(chunk)
+            resp = await conn.run_lua(chunk)
             if not resp.success:
                 raise RuntimeError(
                     f"bootstrap chunk {i + 1}/{len(chunks)} failed: "
                     f"{resp.payload.decode('utf-8', 'replace')[:200]}"
                 )
 
-    async def reconnect_switch(self) -> None:
-        async with self._reconnect_lock:
-            if self._poll_task:
-                self._poll_task.cancel()
-                self._poll_task = None
-            if self.executor:
-                await self.executor.close()
-                self.executor = None
-            await self.connect_switch()
-        # Wake the supervisor so it resets its backoff and resumes watching
-        # (also covers the case where this manual dial failed).
-        self.request_redial()
+    async def disconnect_active_switch(self) -> None:
+        """Force-close the active Switch connection so the sysmodule redials.
 
-    def request_redial(self) -> None:
-        """Signal the backoff supervisor to dial the Switch immediately.
-
-        Both ``/dread_connect`` and the GUI reconnect popup go through
-        ``reconnect_switch``, which calls this so a manual retry never has to
-        wait out the current backoff sleep."""
-        self._redial_event.set()
-
-    async def _on_switch_disconnect(self) -> None:
-        """Fired by ``DreadExecutor`` when its read loop (or keep-alive
-        loop) exits because the socket died mid-session.
-
-        The supervisor's "is the wire up?" gate is ``self.executor is
-        None`` — without this callback the dead executor object stays
-        set, the supervisor sleeps at ``_SWITCH_BACKOFF_MAX`` (30 s),
-        and ``_poll_loop`` just logs ``Switch poll failed`` over and
-        over with no redial. Users observed that as "had to type
-        /dread_connect to recover" after a Ryujinx-side socket drop;
-        the fix is to drop the executor reference here so the next
-        supervisor tick (woken immediately via ``request_redial``)
-        sees a missing wire and reconnects.
-
-        Reentrancy note: we're called from inside the executor's own
-        read loop coroutine, so we MUST NOT ``await
-        self.executor.close()`` here — close cancels the read task
-        we're running in. We just drop our reference and let the
-        outgoing executor unwind naturally (its writer / keep-alive
-        will fail their next write and exit), then schedule a best-
-        effort close on a separate task so the socket descriptor is
-        released promptly without us awaiting it.
+        Wired to ``/dread_connect`` / ``/switch_reconnect`` and the GUI's
+        Disconnect button. No-op if nothing is attached.
         """
-        gone = self.executor
-        if gone is None:
+        if self._switch_server is None:
             return
-        log.info("Switch connection lost mid-session; redialing")
-        self.state.set_switch_conn("disconnected")
-        self.executor = None
-        self._bootstrapped = False
-        self.request_redial()
-        # Best-effort socket cleanup off-loop. close() cancels the read
-        # task — which IS the caller of this method — so launching it as
-        # a separate task avoids self-cancellation while still releasing
-        # the writer + keep-alive resources.
-        asyncio.create_task(gone.close(), name="dread-exec-cleanup")
-
-    def _remember_switch_target(self) -> None:
-        """Persist the current Switch host/port so the next session reuses it."""
-        cfg = _load_user_config()
-        cfg["switch_host"] = self.switch_host
-        cfg["switch_port"] = self.switch_port
-        _save_user_config(cfg)
-
-    async def _switch_supervisor(self) -> None:
-        """Keep a Switch connection up, retrying with exponential backoff.
-
-        The initial dial often loses the race with Dreadvania finishing its own
-        boot; rather than make the user hit /dread_connect, we retry 1, 2, 4 …
-        up to 30s. A manual reconnect (``request_redial``) interrupts the sleep
-        and resets the backoff. While connected we idle until the wire drops
-        (``executor`` cleared by a failed reconnect or close), then resume."""
-        backoff = _SWITCH_BACKOFF_START
-        while not self.exit_event.is_set():
-            if self.executor is None:
-                # connect_switch is a no-op if already connected and is
-                # serialized against manual reconnects via _reconnect_lock.
-                await self.connect_switch()
-                if self.executor is not None:
-                    backoff = _SWITCH_BACKOFF_START
-                    continue
-                wait = backoff
-                backoff = min(backoff * 2, _SWITCH_BACKOFF_MAX)
-            else:
-                wait = _SWITCH_BACKOFF_MAX
-            self._redial_event.clear()
-            try:
-                await asyncio.wait_for(self._redial_event.wait(), timeout=wait)
-                # Woken by a manual redial — dial now with a fresh backoff.
-                backoff = _SWITCH_BACKOFF_START
-            except asyncio.TimeoutError:
-                pass
+        await self._switch_server.disconnect_active()
 
     async def _ensure_patcher_python(self) -> None:
         """Ensure a usable patcher Python is configured and tell the user.
@@ -579,9 +543,9 @@ class DreadContext(CommonContext):
         loc_ids = self.datapackage.all_location_ids()
         if loc_ids:
             await request_scout(self, loc_ids, cache=self.scout_cache)
-        # Kick off the Switch wire if it isn't already up.
-        if self.executor is None:
-            await self.connect_switch()
+        # No dial-on-AP-connect — the Switch sysmodule dials in via UDP
+        # discovery whenever it's ready (handled by `start_switch_listener`
+        # called once from main).
 
     async def _on_received_items(self, args: dict) -> None:
         """Absorb a ``ReceivedItems`` package into the ordered AP-items list,
@@ -609,7 +573,8 @@ class DreadContext(CommonContext):
         clocks the next one. So we send exactly one per call and never advance a
         local cursor — making reconnect/restart and mid-cutscene delivery safe
         by construction (CLAUDE.md risk #1)."""
-        if self.executor is None or not self._bootstrapped:
+        conn = self._active_conn
+        if conn is None or not self._bootstrapped:
             return
         received = self.state.game_received_pickups()
         target = len(self._ap_items)
@@ -636,8 +601,8 @@ class DreadContext(CommonContext):
             inventory_index=self.state.game_inventory_index(),
         )
         try:
-            await self.executor.run_lua(lua)
-        except (ConnectionError, asyncio.TimeoutError) as exc:
+            await conn.run_lua(lua)
+        except (ConnectionError, asyncio.TimeoutError, OSError, RuntimeError) as exc:
             log.warning("ReceivePickup send failed for %s: %s; will retry",
                         dread_item.ap_item_name, exc)
 
@@ -842,11 +807,11 @@ class DreadContext(CommonContext):
         try:
             while True:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
-                if self.executor is None:
+                if self._active_conn is None:
                     return
                 try:
                     await self._poll_once()
-                except (ConnectionError, asyncio.TimeoutError) as exc:
+                except (ConnectionError, asyncio.TimeoutError, OSError, RuntimeError) as exc:
                     log.warning("Switch poll failed: %s; will retry", exc)
                     await asyncio.sleep(POLL_INTERVAL_SECONDS)
         except asyncio.CancelledError:
@@ -859,16 +824,17 @@ class DreadContext(CommonContext):
         We fetch inventory FIRST (so ``InventoryIndex`` is fresh before the
         received-pickups push drives a delivery), then collected indices, then
         received pickups. All three feed delivery/checks; none is optional."""
-        if self.executor is None or not self._bootstrapped:
+        conn = self._active_conn
+        if conn is None or not self._bootstrapped:
             return
-        await self.executor.run_lua("RL.GetInventoryAndSend(); return ''")
-        await self.executor.run_lua("RL.GetCollectedIndicesAndSend(); return ''")
-        await self.executor.run_lua("RL.GetReceivedPickupsAndSend(); return ''")
+        await conn.run_lua("RL.GetInventoryAndSend(); return ''")
+        await conn.run_lua("RL.GetCollectedIndicesAndSend(); return ''")
+        await conn.run_lua("RL.GetReceivedPickupsAndSend(); return ''")
         # Direct game-state poll. The Switch's PACKET_GAME_STATE push covers
         # this too, but it only fires on scenario transitions; this explicit
         # read covers the case where the player reaches the goal while
         # already in s080_shipyard.
-        state_resp = await self.executor.run_lua(
+        state_resp = await conn.run_lua(
             "return tostring(Init.bBeatenSinceLastReboot)"
         )
         if state_resp.success and state_resp.payload == b"true":
@@ -1046,8 +1012,9 @@ class DreadContext(CommonContext):
     # ---- Misc --------------------------------------------------------
 
     async def _poke_lua(self, source: str) -> None:
-        if self.executor is None:
+        conn = self._active_conn
+        if conn is None:
             log.warning("no Switch connection; /poke ignored")
             return
-        resp = await self.executor.run_lua(source)
+        resp = await conn.run_lua(source)
         log.info("poke reply: success=%s payload=%r", resp.success, resp.payload[:200])
