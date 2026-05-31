@@ -195,6 +195,24 @@ def _pickup_key(pickup: dict[str, Any]) -> Optional[str]:
     return None
 
 
+NAV_HINT_AP_TEXT = "You're playing Archipelago! There's already a hint system!"
+
+
+def _neutralize_nav_hints(hints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace each Nav Station hint's spoiler text with the AP-aware filler,
+    keeping ``accesspoint_actor`` / ``hint_id`` intact so the patcher's
+    ``patch_hints`` still resolves the actor and applies the door-unlock
+    side-effects (``vDoorsToChange=[]``, ``wpThermalDevice=""``).
+
+    The starter preset bakes ~11 entries pointing at Randovania's own
+    placement (e.g. "A Progressive Beam can be found in Cataris"); those
+    are false under AP shuffling. Symmetric to :func:`_objective_hints_for`."""
+    out = []
+    for hint in hints:
+        out.append({**hint, "text": [NAV_HINT_AP_TEXT]})
+    return out
+
+
 def _objective_hints_for(required_artifacts: int) -> list[str]:
     """Neutral, non-spoiler text for the in-game objective screen, replacing
     the starter preset's stale per-guardian hints.
@@ -250,6 +268,12 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
         obj = out.setdefault("objective", {})
         obj["required_artifacts"] = int(required_artifacts)
         obj["hints"] = _objective_hints_for(int(required_artifacts))
+
+    # Nav Station hints: the starter preset bakes ~11 entries pointing at
+    # Randovania's own placement, false under AP shuffling. Neutralize text
+    # while preserving entries so patch_hints still unlocks the doors.
+    if out.get("hints"):
+        out["hints"] = _neutralize_nav_hints(out["hints"])
 
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})
