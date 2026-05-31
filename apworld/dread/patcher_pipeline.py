@@ -43,6 +43,14 @@ from ._data_loader import load_json
 # means no special handling is needed by open-dread-rando.
 CROSS_SLOT_PLACEHOLDER = {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 2}
 
+# Sprite to render for in-world pickups that hold ANOTHER slot's item.
+# "itemsphere" is the patcher's own neutral-orb model (also its fallback in
+# vendor/open-dread-rando/.../model_data.py), so no new asset has to ship.
+# A future polish would register a real AP-branded model and switch this
+# constant. The model list shape matches the template (single-model entries
+# use a one-element list; multi-element lists are the progressive-item case).
+CROSS_SLOT_MODEL: list[str] = ["itemsphere"]
+
 # Starting-area option index → (scenario, actor). v0.1 only supports
 # Artaria (option 0 == vanilla start). Future versions extend this.
 STARTING_AREA_INDEX_TO_LOCATION: dict[int, dict[str, str]] = {
@@ -120,6 +128,7 @@ def placements_to_overrides(
 
     pickup_resources: dict[str, list] = {}
     pickup_captions: dict[str, str] = {}
+    pickup_models: dict[str, list[str]] = {}
 
     for p in placements.get("placements", []):
         scenario = p.get("scenario")
@@ -159,6 +168,7 @@ def placements_to_overrides(
             ap_item_name = p.get("ap_item_name", "Item")
             pickup_resources[key] = [[dict(CROSS_SLOT_PLACEHOLDER)]]
             pickup_captions[key] = f"Sent {ap_item_name} to {recipient}"
+            pickup_models[key] = list(CROSS_SLOT_MODEL)
 
     if layout_uuid is None:
         layout_uuid = layout_uuid_from_seed(str(seed_id), slot_name)
@@ -174,6 +184,7 @@ def placements_to_overrides(
         "required_artifacts": placements.get("required_artifacts"),
         "pickup_resources": pickup_resources,
         "pickup_captions": pickup_captions,
+        "pickup_models": pickup_models,
     }
 
 
@@ -253,6 +264,7 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
 
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})
+    pickup_models = overrides.get("pickup_models", {})
 
     unmatched = set(pickup_resources.keys())
     for pickup in out.get("pickups", []):
@@ -264,6 +276,11 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
             unmatched.discard(key)
         if key in pickup_captions:
             pickup["caption"] = pickup_captions[key]
+        # Only rewrite an existing model field — non-actor pickups (boss /
+        # EMMI / cutscene drops) carry no in-world sphere to re-skin, so
+        # leaving them untouched preserves the template's vanilla shape.
+        if key in pickup_models and "model" in pickup:
+            pickup["model"] = pickup_models[key]
 
     if unmatched:
         raise ValueError(

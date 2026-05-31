@@ -114,6 +114,37 @@ def test_pickup_caption_override():
     assert missile["caption"] == "Sent Missile Tank to Player 2"
 
 
+def test_pickup_model_override():
+    t = _template()
+    out = merge_overrides(t, {
+        "pickup_models": {
+            "s010_cave/Item_MissileTank011": ["itemsphere"],
+        },
+    })
+    missile = next(p for p in out["pickups"]
+                   if p["pickup_actor"]["actor"] == "Item_MissileTank011")
+    # Targeted pickup is reskinned; unrelated pickup keeps its vanilla model.
+    assert missile["model"] == ["itemsphere"]
+    morph = next(p for p in out["pickups"]
+                 if p["pickup_actor"]["actor"] == "ItemSphere_ChargeBeam")
+    assert morph["model"] == ["powerup_morphball"]
+
+
+def test_pickup_model_override_skips_non_actor_pickups():
+    """Non-actor pickups (boss / EMMI drops) have no ``model`` field in the
+    template — there's no in-world sphere to re-skin. The override must not
+    inject the field, since the patcher would either ignore it or choke on
+    the unexpected shape."""
+    t = _template()
+    out = merge_overrides(t, {
+        "pickup_models": {
+            "s010_cave/OnCorpiusDeath_CUSTOM": ["itemsphere"],
+        },
+    })
+    corpius = next(p for p in out["pickups"] if p["pickup_actor"] is None)
+    assert "model" not in corpius
+
+
 def test_unknown_pickup_key_raises():
     # merge_overrides is now a pure library function — raises ValueError
     # rather than SystemExit. The CLI script (scripts/build_patcher_json.py)

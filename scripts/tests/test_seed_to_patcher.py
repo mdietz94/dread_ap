@@ -115,6 +115,26 @@ def test_cross_slot_item_becomes_placeholder_with_caption():
     key = "s010_cave/ItemSphere_ChargeBeam"
     assert out["pickup_resources"][key] == [[dict(CROSS_SLOT_PLACEHOLDER)]]
     assert out["pickup_captions"][key] == "Sent The Big Button to ButtonPusher"
+    # The in-world sprite is rewritten to the neutral orb so foreign items
+    # look generic instead of leaking what they grant via the vanilla model.
+    assert out["pickup_models"][key] == ["itemsphere"]
+
+
+def test_own_slot_item_does_not_emit_model_override():
+    """Own-slot pickups must keep their template-baked model so e.g. a Charge
+    Beam pedestal still looks like a beam — only foreign items become orbs."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_models"] == {}
 
 
 def test_event_placements_are_skipped():
@@ -303,13 +323,16 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
     assert merged["starting_location"] == {"scenario": "s010_cave", "actor": "StartPoint0"}
     assert merged["starting_items"] == {"ITEM_WEAPON_MISSILE_MAX": 15}
 
-    # Own-slot pickup overridden with our item
+    # Own-slot pickup overridden with our item — model stays vanilla.
     morph = next(p for p in merged["pickups"]
                  if p["pickup_actor"]["actor"] == "ItemSphere_ChargeBeam")
     assert morph["resources"][0][0]["item_id"] == "ITEM_WEAPON_CHARGE_BEAM"
+    assert morph["model"] == ["x"]
 
-    # Cross-slot pickup gets placeholder resource + custom caption
+    # Cross-slot pickup gets placeholder resource + custom caption + the
+    # neutral itemsphere model so it doesn't visually leak the dest item.
     missile = next(p for p in merged["pickups"]
                    if p["pickup_actor"]["actor"] == "Item_MissileTank011")
     assert missile["resources"][0][0]["item_id"] == "ITEM_WEAPON_MISSILE_MAX"
     assert missile["caption"] == "Sent Big Button to ButtonPusher"
+    assert missile["model"] == ["itemsphere"]
