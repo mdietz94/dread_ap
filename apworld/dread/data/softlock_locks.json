@@ -1,0 +1,17 @@
+{
+  "_comment": "Softlock prevention table — see Rules.py::set_rules and docs in scripts/extract_dread_rules.py::_strip_fill_fragile_items. Each entry pins behaviour at a room whose escape rule references a fill-fragile (single-pool-copy) item the strip removes. 'lock' places the item there; 'filler_only' (used when the item is already locked at another candidate room — fragile items have pool_count=1) constrains AP to non-progression items so the worst-case softlock costs at most a filler. The 12 rooms were derived from scripts/diagnose_reverse_reachability.py at trick L1; L2/L3 candidate sets are subsets. Picking the L1 escape item is conservative across tiers because tricks only add escape routes, never remove them.",
+  "entries": [
+    {"location": "Artaria: GrappleBeam",      "mode": "lock",         "item": "Grapple Beam"},
+    {"location": "Artaria: ScrewAttack",      "mode": "lock",         "item": "Screw Attack"},
+    {"location": "Artaria: VARIA_GEN_001",    "mode": "lock",         "item": "Varia Suit"},
+    {"location": "Artaria: missiletank_002",  "mode": "lock",         "item": "Gravity Suit"},
+    {"location": "Dairon: powerbombtank_002", "mode": "lock",         "item": "Bomb"},
+    {"location": "Ferenia: energyfragment",   "mode": "lock",         "item": "Storm Missile"},
+    {"location": "Ferenia: energyfragment_002","mode": "lock",        "item": "Wide Beam"},
+    {"location": "Ghavoran: missiletank",     "mode": "lock",         "item": "Ice Missile"},
+    {"location": "Artaria: energytank_000",   "mode": "filler_only",  "shares_with": "Artaria: VARIA_GEN_001"},
+    {"location": "Ferenia: missiletank_004",  "mode": "filler_only",  "shares_with": "Ferenia: energyfragment"},
+    {"location": "Ghavoran: missiletank_006", "mode": "filler_only",  "shares_with": "Ghavoran: missiletank"},
+    {"location": "Ghavoran: powerup_sonar",   "mode": "filler_only",  "shares_with": "Ghavoran: missiletank"}
+  ]
+}
