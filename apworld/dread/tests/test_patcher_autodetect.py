@@ -48,7 +48,7 @@ def test_candidate_pythons_excludes_frozen_launcher(tmp_path, monkeypatch):
     monkeypatch.setattr(pp.sys, "platform", "linux")
 
     cands = pp._candidate_pythons()
-    assert str(real.resolve()) in cands
+    assert str(real.absolute()) in cands
     assert all("ArchipelagoLauncher" not in c for c in cands)
 
 
@@ -59,6 +59,57 @@ def test_candidate_pythons_dedupes(tmp_path, monkeypatch):
     monkeypatch.setattr(pp.shutil, "which",
                         lambda name: str(real) if name in ("py", "python", "python3") else None)
     monkeypatch.setattr(pp.sys, "platform", "linux")
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
 
     cands = pp._candidate_pythons()
-    assert cands.count(str(real.resolve())) == 1
+    assert cands.count(str(real.absolute())) == 1
+
+
+def test_candidate_pythons_skips_sys_executable_when_frozen(tmp_path, monkeypatch):
+    """When this process is a PyInstaller-frozen bundle (`sys.frozen` set),
+    `sys.executable` points at the wrapper exe and must NOT be probed:
+    its bundled site-packages can never satisfy `import open_dread_rando`,
+    so probing it would just slow the wizard down. The name-based
+    backstop in `_add` (via `describe_python`) only catches known
+    Archipelago exe names; `sys.frozen` covers forked/renamed builds."""
+    frozen_wrapper = tmp_path / "TotallyCustomFork.exe"
+    frozen_wrapper.write_text("")
+    real = tmp_path / "python.exe"
+    real.write_text("")
+    monkeypatch.setattr(pp.sys, "executable", str(frozen_wrapper))
+    monkeypatch.setattr(pp.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(pp.shutil, "which",
+                        lambda name: str(real) if name in ("py", "python", "python3") else None)
+    monkeypatch.setattr(pp.sys, "platform", "linux")
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+    cands = pp._candidate_pythons()
+    assert str(frozen_wrapper.absolute()) not in cands
+    assert str(real.absolute()) in cands
+
+
+def test_candidate_pythons_keeps_venv_distinct_from_resolved_base(tmp_path, monkeypatch):
+    """A venv's bin/python is typically a symlink to the base interpreter.
+    Dedup must NOT collapse them: invoking the resolved base path skips
+    venv activation and misses the venv's site-packages."""
+    import os as _os
+    base = tmp_path / "usr_bin_python3.12"
+    base.write_text("")
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    venv_py = venv / "bin" / "python"
+    try:
+        _os.symlink(str(base), str(venv_py))
+    except (OSError, NotImplementedError):
+        # No symlink support (e.g. Windows without privilege) — skip.
+        import pytest
+        pytest.skip("symlinks unavailable")
+    monkeypatch.setattr(pp.sys, "executable", str(venv_py))
+    monkeypatch.setattr(pp.shutil, "which",
+                        lambda name: str(base) if name in ("py", "python", "python3") else None)
+    monkeypatch.setattr(pp.sys, "platform", "linux")
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+    cands = pp._candidate_pythons()
+    assert str(venv_py.absolute()) in cands
+    assert str(base.absolute()) in cands

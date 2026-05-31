@@ -445,29 +445,50 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
 
 def _candidate_pythons() -> list[str]:
     """Best-effort, ordered list of real Python interpreters to probe for the
-    patcher deps. Deduped by resolved path. The frozen Archipelago launcher is
-    excluded — its bundled site-packages never sees a user's ``pip install``,
-    so it can never be the answer."""
+    patcher deps. Deduped by literal absolute path (NOT symlink-resolved — a
+    venv's ``bin/python`` is typically a symlink to the base interpreter, but
+    invoking the resolved base path skips venv activation and misses the
+    venv's ``site-packages``). The frozen Archipelago launcher is excluded —
+    its bundled site-packages never sees a user's ``pip install``, so it
+    can never be the answer."""
     candidates: list[str] = []
+    seen: set[str] = set()
 
     def _add(path: Optional[str]) -> None:
         if not path:
             return
         try:
-            resolved = str(Path(path).resolve())
+            abspath = str(Path(path).absolute())
         except OSError:
             return
-        if not Path(resolved).is_file():
+        if not Path(abspath).is_file():
             return
         # describe_python tags the frozen launcher; never offer it.
-        if "frozen Archipelago launcher" in describe_python(resolved):
+        if "frozen Archipelago launcher" in describe_python(abspath):
             return
-        if resolved not in candidates:
-            candidates.append(resolved)
+        key = abspath.lower() if os.name == "nt" else abspath
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(abspath)
 
-    # The current interpreter first (correct in dev / a real venv; skipped
-    # automatically when we're running inside the frozen launcher).
-    _add(sys.executable)
+    # The current interpreter first (correct in dev / a real venv).
+    # SKIPPED when this process is a frozen bundle (PyInstaller / py2exe
+    # set `sys.frozen`) — in that case `sys.executable` points at the
+    # frozen wrapper, which has its own bundled site-packages and can
+    # never satisfy this prereq regardless of what the user has pip-
+    # installed. The `describe_python` name check below is a backstop;
+    # `sys.frozen` is the canonical signal.
+    if not getattr(sys, "frozen", False):
+        _add(sys.executable)
+    # Explicit venv fallback: if our host process isn't itself the venv's
+    # python (frozen launcher, wrapper script), the activated venv still
+    # shows up here.
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        venv_root = Path(venv)
+        for rel in ("bin/python", "bin/python3", "Scripts/python.exe"):
+            _add(str(venv_root / rel))
     # PATH lookups.
     for name in ("py", "python", "python3"):
         _add(shutil.which(name))
