@@ -44,8 +44,8 @@ from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under, _pre
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
-# Hard fork: github.com/mdietz94/open-dread-rando-exlaunch (branch
-# `bridge-networking`).
+# Hard fork: github.com/mdietz94/open-dread-rando-exlaunch.
+# bridge-networking has been merged into main.
 #
 # Upstream sync is abandoned — the wire format is entirely different
 # (Switch is now the TCP dialer with UDP discovery, line-delimited JSON
@@ -54,9 +54,6 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # step). Bump this hash when the fork lands new commits we want to ship.
 PINNED_EXLAUNCH_COMMIT = "e279375"
 EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
-# Branch to check out after clone (the fork's main branch still tracks
-# upstream; the bridge networking lives on `bridge-networking`).
-EXLAUNCH_BRANCH = "bridge-networking"
 
 
 # ---------------------------------------------------------------------------
@@ -232,22 +229,31 @@ def ensure_exlaunch_checkout(on_line: ProgressFn | None = None) -> BuildResult:
     checkout = _exlaunch_checkout_dir()
     if not (checkout / ".git").is_dir():
         if on_line:
-            on_line(f"[exlaunch] cloning {EXLAUNCH_REPO} into {checkout}")
+            on_line(f"[exlaunch] cloning {EXLAUNCH_REPO} (main) into {checkout}")
         checkout.mkdir(parents=True, exist_ok=True)
         # Full clone (not --depth 1) so we can `reset --hard <pinned-sha>`
         # to a sha that may be older than the latest commit.
         r = _stream_subprocess(
-            [git, "clone", EXLAUNCH_REPO, str(checkout)],
+            [git, "clone", "-b", "main", EXLAUNCH_REPO, str(checkout)],
             timeout=_TIMEOUTS["git_clone"],
             on_line=on_line,
         )
         if not r.ok:
             return r
     else:
+        # Point origin at our fork in case this checkout predates the fork
+        # switch (old checkouts pointed at randovania/open-dread-rando-exlaunch).
+        # git remote set-url is idempotent when the URL is already correct.
+        _stream_subprocess(
+            [git, "remote", "set-url", "origin", EXLAUNCH_REPO],
+            cwd=checkout,
+            timeout=10,
+            on_line=None,
+        )
         if on_line:
             on_line(f"[exlaunch] fetching updates into {checkout}")
         r = _stream_subprocess(
-            [git, "fetch", "origin"],
+            [git, "fetch", "origin", "main"],
             cwd=checkout,
             timeout=_TIMEOUTS["git_fetch"],
             on_line=on_line,
@@ -268,8 +274,8 @@ def ensure_exlaunch_checkout(on_line: ProgressFn | None = None) -> BuildResult:
         return BuildResult(
             ok=False, returncode=r.returncode, log=r.log,
             detail=(f"git reset --hard {PINNED_EXLAUNCH_COMMIT} failed — "
-                    f"the pinned sha may have been force-pushed or rebased "
-                    f"upstream. Bump PINNED_EXLAUNCH_COMMIT in "
+                    f"the sha does not exist in {EXLAUNCH_REPO} "
+                    f"(main). Bump PINNED_EXLAUNCH_COMMIT in "
                     f"apworld/dread/_setup/build.py."),
         )
 
