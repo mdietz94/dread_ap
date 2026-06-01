@@ -52,7 +52,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # replaces the binary frame; see docs/wire-protocol.md). The existing
 # Ryujinx-compat patch is folded into the fork (no separate `git apply`
 # step). Bump this hash when the fork lands new commits we want to ship.
-PINNED_EXLAUNCH_COMMIT = "e279375"
+PINNED_EXLAUNCH_COMMIT = "5a8d6d6"
 EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
 
 
