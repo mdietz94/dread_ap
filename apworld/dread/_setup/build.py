@@ -5,23 +5,22 @@ wizard's log box can render live):
 
   1. Ensure a checkout of open-dread-rando-exlaunch under
      %APPDATA%/dread_ap/build/exlaunch-checkout/. First run does
-     `git clone --depth 1 <pinned ref>`. Subsequent runs `git fetch +
-     reset --hard` so the user's local commits / stale apply don't
-     accumulate.
-  2. `git apply` the bundled Ryujinx-fix patch. Idempotent — we probe
-     for the patch's marker strings in the working tree first; if they're
-     present we skip. (This avoids the "patch does not apply" error on
-     re-runs.)
+     `git clone <repo>`. Subsequent runs `git fetch + reset --hard` so
+     the user's local commits / stale apply don't accumulate. The hard
+     reset also clears any previous patch application, so step 2 always
+     starts from a clean tree.
+  2. `git apply` the bundled Ryujinx-fix patch (ships next to this module
+     as `exlaunch-ryujinx-fix.diff`; identical copy lives at
+     `scripts/patches/exlaunch-ryujinx-fix.diff` in the source tree).
+     The patch adds: nn::socket::Poll + <poll.h> for the non-blocking
+     socket loop, and nn::nifm stubs for the network-init calls added by
+     the bridge fork. Because step 1 always hard-resets, this apply is
+     always a clean operation — no idempotency probe needed.
   3. Run `./exlaunch.sh build` under devkitPro's bundled msys2 bash.
      Streams compiler output line-by-line.
   4. Harvest `subsdk9` + `main.npdm` from
      `<checkout>/src/open_dread_rando_exlaunch/deploy/` and return their
      paths via `collect_build_outputs`.
-
-The patch file we apply ships next to this module
-(`apworld/dread/_setup/exlaunch-ryujinx-fix.diff`). It's identical to
-`scripts/patches/exlaunch-ryujinx-fix.diff` in the source tree —
-`install_apworld.py` will sync it at apworld-zip time.
 """
 
 from __future__ import annotations
@@ -45,15 +44,20 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 # Hard fork: github.com/mdietz94/open-dread-rando-exlaunch.
-# bridge-networking has been merged into main.
-#
-# Upstream sync is abandoned — the wire format is entirely different
-# (Switch is now the TCP dialer with UDP discovery, line-delimited JSON
-# replaces the binary frame; see docs/wire-protocol.md). The existing
-# Ryujinx-compat patch is folded into the fork (no separate `git apply`
-# step). Bump this hash when the fork lands new commits we want to ship.
+# bridge-networking (Switch-dials-PC, UDP discovery, JSON envelope) has been
+# merged into main. Bump this hash when the fork lands new commits to ship.
 PINNED_EXLAUNCH_COMMIT = "5a8d6d6"
 EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
+
+# Ryujinx-compatibility patch shipped alongside this module. Applied after
+# every checkout reset (step 2 of the pipeline). Fixes three compile errors
+# that the fork at PINNED_EXLAUNCH_COMMIT carries:
+#   • missing <poll.h> include in source/nn/socket.hpp
+#   • missing nn::socket::Poll declaration (used by the non-blocking loop)
+#   • missing nn::nifm stubs (Initialize / SubmitNetworkRequestAndWait)
+# The identical copy at scripts/patches/exlaunch-ryujinx-fix.diff is the
+# source-tree reference; keep both in sync when updating the patch.
+_PATCH_FILE = Path(__file__).parent / "exlaunch-ryujinx-fix.diff"
 
 
 # ---------------------------------------------------------------------------
@@ -286,9 +290,53 @@ def ensure_exlaunch_checkout(on_line: ProgressFn | None = None) -> BuildResult:
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — run the build under devkitPro's msys2 bash
-#
-# The Ryujinx-fix patch is folded into the fork (no separate apply step).
+# Step 2 — apply the Ryujinx-fix patch
+# ---------------------------------------------------------------------------
+
+def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
+    """Apply the Ryujinx-fix patch to the checkout.
+
+    `ensure_exlaunch_checkout` always does `git reset --hard`, so the tree is
+    always clean here — no need to probe for an existing application first.
+    """
+    git = _resolve_git()
+    if git is None:
+        msg = ("git not found — cannot apply Ryujinx-fix patch. "
+               "Install git from https://git-scm.com/download/win and Retry.")
+        if on_line:
+            on_line(msg)
+        return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
+
+    if not _PATCH_FILE.is_file():
+        msg = (f"Ryujinx-fix patch not found at {_PATCH_FILE}. "
+               "Re-install the apworld and Retry.")
+        if on_line:
+            on_line(msg)
+        return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
+
+    checkout = _exlaunch_checkout_dir()
+    if on_line:
+        on_line(f"[patch] applying {_PATCH_FILE.name} to {checkout}")
+    r = _stream_subprocess(
+        [git, "apply", "--whitespace=fix", str(_PATCH_FILE)],
+        cwd=checkout,
+        timeout=_TIMEOUTS["git_apply"],
+        on_line=on_line,
+    )
+    if not r.ok:
+        return BuildResult(
+            ok=False, returncode=r.returncode, log=r.log,
+            detail=(f"git apply failed for {_PATCH_FILE.name} — "
+                    f"the patch may not apply cleanly to commit "
+                    f"{PINNED_EXLAUNCH_COMMIT}. Check the full log above."),
+        )
+    if on_line:
+        on_line("[patch] Ryujinx-fix applied successfully")
+    return BuildResult(ok=True, returncode=0, log=r.log)
+
+
+# ---------------------------------------------------------------------------
+# Step 3 — run the build under devkitPro's msys2 bash
 # ---------------------------------------------------------------------------
 
 def _resolve_msys2_bash() -> Path | None:
@@ -403,14 +451,15 @@ def _build_manifest_path() -> Path:
 
 
 def _compute_build_inputs_hash() -> str | None:
-    """SHA-256 of PINNED_EXLAUNCH_COMMIT + the baked env overrides.
+    """SHA-256 of PINNED_EXLAUNCH_COMMIT + patch content + baked env overrides.
 
-    No patch file to hash since the fork bundles its own networking changes.
-    A change in detect_lan_ip() (user moved networks) makes the digest
-    change and the wizard triggers a fresh rebake.
+    Any change to the patch or the commit hash triggers a fresh build.
+    A change in detect_lan_ip() (user moved networks) does too.
     """
     h = hashlib.sha256()
     h.update(PINNED_EXLAUNCH_COMMIT.encode())
+    if _PATCH_FILE.is_file():
+        h.update(_PATCH_FILE.read_bytes())
     overrides = _build_env_overrides()
     for k in sorted(overrides):
         h.update(k.encode())
@@ -464,20 +513,25 @@ def build_current() -> bool:
 # ---------------------------------------------------------------------------
 
 def run_build_pipeline(on_line: ProgressFn | None = None) -> BuildResult:
-    """Single-shot fetch → build orchestration.
+    """Single-shot fetch → patch → build orchestration.
 
-    The Ryujinx-fix patch is folded into the fork itself — no separate
-    apply step. BRIDGE_HOST + MOD_VERSION are auto-detected and baked
-    into the sysmodule via config.mk.
+    BRIDGE_HOST + MOD_VERSION are auto-detected and baked into the sysmodule
+    via config.mk CXXFLAGS overrides.
     """
     if on_line:
-        on_line("[build] step 1/2: ensure exlaunch fork checkout")
+        on_line("[build] step 1/3: ensure exlaunch fork checkout")
     r = ensure_exlaunch_checkout(on_line)
     if not r.ok:
         return r
 
     if on_line:
-        on_line("[build] step 2/2: run ./exlaunch.sh build")
+        on_line("[build] step 2/3: apply Ryujinx-fix patch")
+    r = apply_ryujinx_patch(on_line)
+    if not r.ok:
+        return r
+
+    if on_line:
+        on_line("[build] step 3/3: run ./exlaunch.sh build")
     r = run_exlaunch_build(on_line)
     if not r.ok:
         return r
