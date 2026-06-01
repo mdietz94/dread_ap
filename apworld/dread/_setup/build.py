@@ -37,7 +37,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Hard fork: github.com/mdietz94/open-dread-rando-exlaunch.
 # bridge-networking (Switch-dials-PC, UDP discovery, JSON envelope) has been
 # merged into main. Bump this hash when the fork lands new commits to ship.
-PINNED_EXLAUNCH_COMMIT = "60050f7"
+PINNED_EXLAUNCH_COMMIT = "5ad209f"
 EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
 
 
