@@ -10,7 +10,7 @@ sys.path (unit-test isolation).
 from __future__ import annotations
 
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 
 # Re-export the World subclass so Archipelago's autodiscovery
