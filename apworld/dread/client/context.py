@@ -430,13 +430,23 @@ class DreadContext(CommonContext):
         message = f"Received {dread_item.ap_item_name} from {sender}"
         progression = [[{"item_id": dread_item.patcher_item_id,
                          "quantity": dread_item.quantity}]]
+        cls = pickup_class_for(dread_item.patcher_item_id)
         lua = build_receive_pickup_lua(
             message=message,
             progression=progression,
             received_pickup_index=received,
             inventory_index=self.state.game_inventory_index(),
-            cls=pickup_class_for(dread_item.patcher_item_id),
+            cls=cls,
         )
+        # Records the Lua pickup class each delivery routes through. For
+        # progressive beams/missiles this must be the specific class (e.g.
+        # RandomizerWideBeam) — only those run pick_up_beam, which grants the
+        # combined beam item (ITEM_WEAPON_SOLO_WIDE_BEAM, ...) that actually
+        # makes the beam fire. RandomizerPowerup sets ITEM_WEAPON_WIDE_BEAM=1
+        # but never grants the combined item, so the beam appears dead.
+        log.info("delivering %s -> %s (x%d, ri=%d, ii=%d)",
+                 dread_item.ap_item_name, cls, dread_item.quantity,
+                 received, self.state.game_inventory_index())
         try:
             await self._bridge.run_lua(lua)
         except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
