@@ -67,8 +67,10 @@ def test_ensure_checkout_clones_when_no_git_dir(build_root, monkeypatch):
 
 
 def test_ensure_checkout_fetches_when_git_dir_exists(build_root, monkeypatch):
-    """Subsequent runs: a ``.git`` dir under the checkout: should fetch +
-    reset (two subprocess calls; NOT a clone)."""
+    """Subsequent runs: a ``.git`` dir under the checkout: should set-url,
+    fetch the specific branch, then reset (three subprocess calls; NOT a
+    clone).  The set-url step fixes stale checkouts that still point at the
+    upstream randovania repo instead of our fork."""
     checkout = build_root / "exlaunch-checkout"
     (checkout / ".git").mkdir(parents=True)
     monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
@@ -81,7 +83,12 @@ def test_ensure_checkout_fetches_when_git_dir_exists(build_root, monkeypatch):
     monkeypatch.setattr(build, "_stream_subprocess", fake)
     r = build.ensure_exlaunch_checkout()
     assert r.ok is True
-    assert any("fetch" in " ".join(c) for c in commands_run)
+    # origin URL is updated to the fork before fetching
+    assert any("set-url" in " ".join(c) and build.EXLAUNCH_REPO in c
+               for c in commands_run)
+    # fetch targets the specific branch, not a bare "fetch origin"
+    assert any("fetch" in " ".join(c) and build.EXLAUNCH_BRANCH in c
+               for c in commands_run)
     assert not any("clone" in " ".join(c) for c in commands_run)
     assert any("reset" in " ".join(c) and build.PINNED_EXLAUNCH_COMMIT in c
                for c in commands_run)
