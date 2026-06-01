@@ -1,9 +1,9 @@
 """Network helpers — lifted verbatim from smo_archipelago.
 
-Unlike SMO, Dread doesn't need detect_lan_ip for UDP discovery (we don't
-do discovery — the user enters the Switch IP). But the helper is cheap
-and useful for the GUI's "your PC is at X" hint and for headless smoke
-tests, so we keep it.
+``detect_lan_ip`` powers both the build-time BRIDGE_HOST baking (the
+Switch sysmodule uses this as the /24 subnet sweep seed) and the runtime
+UDP discovery reply payload (so the Switch dials our actual LAN IP, not
+the one baked at build time if they differ).
 """
 
 from __future__ import annotations

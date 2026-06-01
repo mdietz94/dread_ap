@@ -4,7 +4,6 @@ function RL.GetInventoryAndSend()
         r[i]=RandomizerPowerup.GetItemAmount(n)
     end
     local inventory = string.format("[%s]",table.concat(r,","))
-    local currentIndex = string.format('"index": %s', RL.InventoryIndex())
-    RL.SendInventory(string.format('{%s,"inventory":%s}', currentIndex, inventory))
+    RL.SendInventory(RL.InventoryIndex(), inventory)
 end
 RL.InventoryItems=TEMPLATE("inventory")

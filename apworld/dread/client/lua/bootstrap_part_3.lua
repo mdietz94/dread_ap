@@ -8,7 +8,7 @@ function RL.GetGameStateAndSend()
         current_scenario = current_state
     end
 
-    RL.SendNewGameState(current_scenario .. ";" .. tostring(has_beaten))
+    RL.SendNewGameState(current_scenario, has_beaten)
 end
 
 function RL.UpdateRDVClient(new_scenario)

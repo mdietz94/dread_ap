@@ -26,9 +26,7 @@ The patch file we apply ships next to this module
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import importlib.resources
 import json
 import os
 import shutil
@@ -45,67 +43,20 @@ from .prereqs import _DEVKITPRO_DEFAULT_ROOTS, _devkitpro_msys2_bash_under, _pre
 # child, stealing focus from the wizard). No-op on non-Windows.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-# Where the patch file lives at runtime. The patch is bundled into the
-# package itself (install_apworld.py packs it via rglob, so it lands at
-# ``apworld/dread/_setup/exlaunch-ryujinx-fix.diff`` inside the zip),
-# AND we keep a repo-root copy at ``scripts/patches/`` for dev checkouts
-# that consume the source directly. Resolution order matters:
+
+# Hard fork: github.com/mdietz94/open-dread-rando-exlaunch (branch
+# `bridge-networking`).
 #
-#   1. ``importlib.resources`` on this package — works whether the apworld
-#      is loaded from disk (folder install) OR from a ``.apworld`` zip.
-#      ``git apply`` needs a real filesystem path, so for the zip case we
-#      materialize the patch to a temp file via ``importlib.resources.
-#      as_file`` (the canonical way to bridge a zip-loaded resource into
-#      a tool that demands a real path).
-#   2. Repo-root ``scripts/patches/exlaunch-ryujinx-fix.diff`` walk-up —
-#      covers dev checkouts where the package directory itself was
-#      stripped down or the patch was removed from _setup/ to avoid the
-#      duplication.
-_SETUP_ROOT = Path(__file__).resolve().parent
-_PATCH_FILENAME = "exlaunch-ryujinx-fix.diff"
-
-
-@contextlib.contextmanager
-def _locate_patch_file():
-    """Yield a real-filesystem ``Path`` to ``exlaunch-ryujinx-fix.diff``,
-    or ``None`` if neither the package resource nor the repo-root fallback
-    can be found.
-
-    Context manager because the importlib.resources zip-extract path
-    needs scoped cleanup of its temp file; the disk-resident cases just
-    yield the existing path and tear down cheaply on exit.
-    """
-    try:
-        resource = importlib.resources.files(__package__).joinpath(_PATCH_FILENAME)
-        if resource.is_file():
-            with importlib.resources.as_file(resource) as p:
-                yield p
-                return
-    except (ModuleNotFoundError, FileNotFoundError, OSError):
-        pass
-    cur = _SETUP_ROOT
-    for _ in range(8):  # _setup → apworld/dread → apworld → repo-root → …
-        cand = cur / "scripts" / "patches" / _PATCH_FILENAME
-        if cand.is_file():
-            yield cand
-            return
-        parent = cur.parent
-        if parent == cur:
-            break
-        cur = parent
-    yield None
-
-
-# Pinned upstream commit. Chosen by the dread_ap maintainers — bump
-# this when upstream lands a relevant change and we've re-validated the
-# patch applies cleanly + the build still works on Ryujinx + real HW.
-#
-# As of the patch's initial landing: open-dread-rando-exlaunch HEAD was
-# 6bc5222 ("Merge pull request #14 from steven11sjf/seed-save"). The
-# pin lets a future Ryujinx-only-bug regression be triaged by diffing
-# what the user's `git fetch` brought down vs this known-working ref.
-PINNED_EXLAUNCH_COMMIT = "6bc5222"
-EXLAUNCH_REPO = "https://github.com/randovania/open-dread-rando-exlaunch.git"
+# Upstream sync is abandoned — the wire format is entirely different
+# (Switch is now the TCP dialer with UDP discovery, line-delimited JSON
+# replaces the binary frame; see docs/wire-protocol.md). The existing
+# Ryujinx-compat patch is folded into the fork (no separate `git apply`
+# step). Bump this hash when the fork lands new commits we want to ship.
+PINNED_EXLAUNCH_COMMIT = "e279375"
+EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
+# Branch to check out after clone (the fork's main branch still tracks
+# upstream; the bridge networking lives on `bridge-networking`).
+EXLAUNCH_BRANCH = "bridge-networking"
 
 
 # ---------------------------------------------------------------------------
@@ -329,86 +280,9 @@ def ensure_exlaunch_checkout(on_line: ProgressFn | None = None) -> BuildResult:
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — apply our Ryujinx-fix patch
-# ---------------------------------------------------------------------------
-
-# Sentinel string introduced by the patch. If we see it in remote_api.cpp
-# we know the patch is already applied and skip re-applying.
-_PATCH_SENTINEL = "nn::socket::Poll DOES work on Ryujinx"
-
-
-def _patch_already_applied(checkout: Path) -> bool:
-    f = checkout / "source" / "program" / "remote_api.cpp"
-    if not f.is_file():
-        return False
-    try:
-        return _PATCH_SENTINEL in f.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
-
-
-def apply_ryujinx_patch(on_line: ProgressFn | None = None) -> BuildResult:
-    """`git apply` the bundled exlaunch-ryujinx-fix.diff. Idempotent — if
-    the patch's sentinel string is already present in the working tree we
-    skip without erroring.
-    """
-    checkout = _exlaunch_checkout_dir()
-    if not (checkout / ".git").is_dir():
-        msg = ("exlaunch checkout missing — run ensure_exlaunch_checkout "
-               "first")
-        return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
-
-    if _patch_already_applied(checkout):
-        msg = "patch already applied (sentinel found in remote_api.cpp)"
-        if on_line:
-            on_line(f"[patch] {msg}")
-        return BuildResult(ok=True, returncode=0, log=msg, detail=msg)
-
-    git = _resolve_git()
-    if git is None:
-        msg = "git not found on PATH or in default Git-for-Windows locations"
-        if on_line:
-            on_line(msg)
-        return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
-
-    with _locate_patch_file() as patch:
-        if patch is None:
-            msg = (
-                f"{_PATCH_FILENAME} not found in the apworld package "
-                "(importlib.resources lookup) and no repo-root "
-                "scripts/patches/ fallback. Rebuild the apworld with "
-                "install_apworld.py so the patch is packed alongside "
-                "_setup/."
-            )
-            if on_line:
-                on_line(msg)
-            return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
-
-        if on_line:
-            on_line(f"[patch] applying {patch.name}")
-        # --ignore-whitespace tolerates the line-ending normalization noise
-        # that vendored-repo checkouts on Windows accumulate.
-        r = _stream_subprocess(
-            [git, "apply", "--ignore-whitespace", str(patch)],
-            cwd=checkout,
-            timeout=_TIMEOUTS["git_apply"],
-            on_line=on_line,
-        )
-
-    if not r.ok:
-        return BuildResult(
-            ok=False, returncode=r.returncode, log=r.log,
-            detail=(f"git apply failed — most likely the pinned upstream "
-                    f"sha has diverged from what the patch was generated "
-                    f"against. Regenerate the patch against "
-                    f"{PINNED_EXLAUNCH_COMMIT} and re-bundle the apworld."),
-        )
-    return BuildResult(ok=True, returncode=0, log=r.log,
-                       detail="patch applied")
-
-
-# ---------------------------------------------------------------------------
-# Step 3 — run the build under devkitPro's msys2 bash
+# Step 2 — run the build under devkitPro's msys2 bash
+#
+# The Ryujinx-fix patch is folded into the fork (no separate apply step).
 # ---------------------------------------------------------------------------
 
 def _resolve_msys2_bash() -> Path | None:
@@ -426,15 +300,33 @@ def _resolve_msys2_bash() -> Path | None:
     return None
 
 
+def _build_env_overrides() -> dict[str, str]:
+    """BRIDGE_HOST + MOD_VERSION baked into the sysmodule at compile time.
+
+    Both flow through config.mk as CXXFLAGS defines. BRIDGE_HOST is the /24
+    seed the Switch sweeps to find this PC (auto-detected from the builder's
+    LAN IP). MOD_VERSION lands verbatim in the HELLO envelope so the
+    BridgeServer can validate compatibility."""
+    from ..client.net_util import detect_lan_ip
+    return {
+        "BRIDGE_HOST": detect_lan_ip(),
+        "MOD_VERSION": "dread-bridge-0.1.0",
+    }
+
+
 def run_exlaunch_build(on_line: ProgressFn | None = None) -> BuildResult:
-    """`./exlaunch.sh build` under devkitPro's msys2 bash, with
-    CHERE_INVOKING=yes so the cd-target in the -lc string takes effect."""
+    """`./exlaunch.sh build` under devkitPro's msys2 bash."""
     checkout = _exlaunch_checkout_dir()
     if not (checkout / "exlaunch.sh").is_file():
         msg = "exlaunch.sh missing — checkout may be incomplete"
         if on_line:
             on_line(msg)
         return BuildResult(ok=False, returncode=1, log=msg, detail=msg)
+
+    overrides = _build_env_overrides()
+    if on_line:
+        on_line(f"[build] BRIDGE_HOST={overrides['BRIDGE_HOST']}")
+        on_line(f"[build] MOD_VERSION={overrides['MOD_VERSION']}")
 
     if os.name == "nt":
         bash = _resolve_msys2_bash()
@@ -446,18 +338,16 @@ def run_exlaunch_build(on_line: ProgressFn | None = None) -> BuildResult:
                 on_line(msg)
             return BuildResult(ok=False, returncode=127, log=msg, detail=msg)
         msys_cwd = _to_msys_path(checkout)
-        # CHERE_INVOKING + MSYSTEM are required so the bash -lc command sees
-        # the right /etc/profile.d sourcing (loads DEVKITPRO env, PATH).
         env = dict(os.environ)
         env["CHERE_INVOKING"] = "yes"
         env["MSYSTEM"] = "MSYS"
+        env.update(overrides)
         cmd = [str(bash), "-lc",
                f"cd {msys_cwd} && ./exlaunch.sh build"]
     else:
-        # POSIX: just invoke directly; devkitPro's env-source script handles
-        # /etc/profile.d on shells with login behavior.
         bash = shutil.which("bash") or "/bin/bash"
         env = dict(os.environ)
+        env.update(overrides)
         cmd = [bash, "-lc",
                f"cd {checkout} && ./exlaunch.sh build"]
 
@@ -507,21 +397,18 @@ def _build_manifest_path() -> Path:
 
 
 def _compute_build_inputs_hash() -> str | None:
-    """SHA-256 of PINNED_EXLAUNCH_COMMIT + bundled patch file contents.
+    """SHA-256 of PINNED_EXLAUNCH_COMMIT + the baked env overrides.
 
-    Returns None if the patch file can't be read (e.g. resources not yet
-    resolved in a fresh install) — callers treat None as "hash unknown,
-    assume stale."
+    No patch file to hash since the fork bundles its own networking changes.
+    A change in detect_lan_ip() (user moved networks) makes the digest
+    change and the wizard triggers a fresh rebake.
     """
     h = hashlib.sha256()
     h.update(PINNED_EXLAUNCH_COMMIT.encode())
-    with _locate_patch_file() as p:
-        if p is None:
-            return None
-        try:
-            h.update(p.read_bytes())
-        except OSError:
-            return None
+    overrides = _build_env_overrides()
+    for k in sorted(overrides):
+        h.update(k.encode())
+        h.update(overrides[k].encode())
     return h.hexdigest()
 
 
@@ -571,27 +458,20 @@ def build_current() -> bool:
 # ---------------------------------------------------------------------------
 
 def run_build_pipeline(on_line: ProgressFn | None = None) -> BuildResult:
-    """Single-shot fetch → patch → build orchestration.
+    """Single-shot fetch → build orchestration.
 
-    Useful from the CLI `/setup` command path (when the user opts out of
-    or hasn't yet integrated the Kivy GUI). The wizard's BuildPage will
-    eventually call the same three step functions individually so it can
-    render per-step progress; this function just chains them.
+    The Ryujinx-fix patch is folded into the fork itself — no separate
+    apply step. BRIDGE_HOST + MOD_VERSION are auto-detected and baked
+    into the sysmodule via config.mk.
     """
     if on_line:
-        on_line("[build] step 1/3: ensure exlaunch checkout")
+        on_line("[build] step 1/2: ensure exlaunch fork checkout")
     r = ensure_exlaunch_checkout(on_line)
     if not r.ok:
         return r
 
     if on_line:
-        on_line("[build] step 2/3: apply Ryujinx fix patch")
-    r = apply_ryujinx_patch(on_line)
-    if not r.ok:
-        return r
-
-    if on_line:
-        on_line("[build] step 3/3: run ./exlaunch.sh build")
+        on_line("[build] step 2/2: run ./exlaunch.sh build")
     r = run_exlaunch_build(on_line)
     if not r.ok:
         return r

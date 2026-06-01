@@ -1,20 +1,17 @@
 """End-to-end test of the Switch→AP path inside DreadContext.
 
-Asserts that a PACKET_COLLECTED_INDICES push lands on ``_on_switch_push``,
-parses the ``locations:`` + bitfield payload, maps to AP location_ids via
-the datapackage, dedupes against BridgeState, and emits a ``LocationChecks``
-message via ``send_msgs``.
+Asserts that a JSON push (``Collected``, ``GameState``, ``Inventory``, ``Log``)
+lands on ``_on_switch_push``, parses correctly, dedupes against BridgeState,
+and emits a ``LocationChecks`` message via ``send_msgs`` where appropriate.
 
-Mocks the AP server connection with a tiny ``send_msgs`` capture; mocks
-the Switch executor entirely (we don't need real sockets here, only the
-push handler).
+Mocks the AP server connection with a tiny ``send_msgs`` capture; no real
+bridge / fake switch — we exercise the push handler directly with constructed
+wire messages.
 
 Run with:  python -m pytest apworld/dread/tests/test_context_e2e.py -v
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import sys
 import unittest.mock
 from pathlib import Path
@@ -24,29 +21,29 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread.client import lua_packets as lp  # noqa: E402
+from dread.client import wire as W  # noqa: E402
 from dread.client.datapackage import DataPackage  # noqa: E402
 from dread.client.state import BridgeState  # noqa: E402
 
 DATA = ROOT / "data"
 
 
-def _bitfield_for(pickup_indices: list[int]) -> bytes:
-    """Build a ``locations:`` + bitfield payload that the Switch would emit."""
+def _hex_for(pickup_indices: list[int]) -> str:
+    """Hex bitfield matching what the bootstrap Lua emits."""
     if not pickup_indices:
-        return b"locations:"
+        return ""
     max_bit = max(pickup_indices)
     num_bytes = (max_bit // 8) + 1
     buf = bytearray(num_bytes)
     for idx in pickup_indices:
         buf[idx // 8] |= 1 << (idx % 8)
-    return b"locations:" + bytes(buf)
+    return buf.hex()
 
 
 @pytest.fixture
 def ctx():
     """Build a DreadContext with mocked AP-server hookup."""
-    from dread.client.context import DreadContext  # noqa: E402
+    from dread.client.context import DreadContext
 
     state = BridgeState()
     dp = DataPackage(apworld_data_dir=DATA)
@@ -55,21 +52,16 @@ def ctx():
         password=None,
         state=state,
         datapackage=dp,
-        switch_host="127.0.0.1",
+        bridge_port=0,
+        discovery_port=0,
     )
-    # Replace send_msgs with an awaitable mock that records calls.
     c.send_msgs = unittest.mock.AsyncMock()  # type: ignore[method-assign]
     return c
 
 
 @pytest.mark.asyncio
-async def test_collected_indices_push_emits_location_checks(ctx):
-    # Build a payload claiming pickup_indices 0, 1, 5 are collected.
-    payload = _bitfield_for([0, 1, 5])
-    resp = lp.Response(success=True, payload=payload)
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES, resp)
-
-    # send_msgs should have been called exactly once with three AP location_ids.
+async def test_collected_push_emits_location_checks(ctx):
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([0, 1, 5])))
     ctx.send_msgs.assert_awaited_once()
     args, _ = ctx.send_msgs.await_args
     msgs = args[0]
@@ -81,84 +73,55 @@ async def test_collected_indices_push_emits_location_checks(ctx):
         ctx.datapackage.pickup_index_to_location_id(5),
     ]
     assert sorted(msgs[0]["locations"]) == sorted(expected_ids)
-    # State should also have absorbed them.
     assert ctx.state.all_collected_ids() == set(expected_ids)
 
 
 @pytest.mark.asyncio
-async def test_duplicate_indices_dont_double_send(ctx):
-    """The bootstrap Lua dumps the FULL collected set on every poll tick.
-    Sending an identical push twice must not emit a second LocationChecks."""
-    payload = _bitfield_for([0, 1, 5])
-    resp = lp.Response(success=True, payload=payload)
-
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES, resp)
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES, resp)
-
-    # Only one send_msgs call: the second push had no new IDs after dedup.
+async def test_duplicate_collected_doesnt_double_send(ctx):
+    """Bootstrap dumps the FULL collected set every poll. Identical push
+    twice = no second LocationChecks."""
+    msg = W.Collected(hex=_hex_for([0, 1, 5]))
+    await ctx._on_switch_push(msg)
+    await ctx._on_switch_push(msg)
     assert ctx.send_msgs.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_partial_overlap_only_sends_new_indices(ctx):
-    """First push: [0, 1]. Second push: [0, 1, 5]. Only 5 should be sent
-    the second time."""
-    first = _bitfield_for([0, 1])
-    second = _bitfield_for([0, 1, 5])
-
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES,
-                              lp.Response(success=True, payload=first))
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES,
-                              lp.Response(success=True, payload=second))
-
+async def test_partial_overlap_only_sends_new(ctx):
+    """First push: [0, 1]. Second push: [0, 1, 5]. Only 5 sent the second time."""
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([0, 1])))
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([0, 1, 5])))
     assert ctx.send_msgs.await_count == 2
-    second_call_args, _ = ctx.send_msgs.await_args_list[1]
-    second_msgs = second_call_args[0]
-    expected_5_id = ctx.datapackage.pickup_index_to_location_id(5)
-    assert second_msgs[0]["locations"] == [expected_5_id]
+    second_args, _ = ctx.send_msgs.await_args_list[1]
+    expected_5 = ctx.datapackage.pickup_index_to_location_id(5)
+    assert second_args[0][0]["locations"] == [expected_5]
 
 
 @pytest.mark.asyncio
-async def test_unknown_index_is_skipped(ctx):
-    """A bootstrap Lua might emit a pickup_index outside the 0..148 range
-    (e.g. if Randovania extends the model). Defensive default: skip + don't
-    crash, don't send a LocationChecks with stray IDs."""
-    # Use a payload where bit 200 is set — beyond our 149 known pickups.
-    payload = _bitfield_for([200])
-    resp = lp.Response(success=True, payload=payload)
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES, resp)
-    # No LocationChecks should fire because no known location matched.
+async def test_unknown_index_skipped(ctx):
+    """A pickup_index beyond known locations: skip, don't crash."""
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([200])))
     ctx.send_msgs.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_empty_bitfield_emits_nothing(ctx):
-    """Just the ``locations:`` prefix with no bitfield bytes — nothing
-    collected yet."""
-    resp = lp.Response(success=True, payload=b"locations:")
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES, resp)
+async def test_empty_collected_emits_nothing(ctx):
+    await ctx._on_switch_push(W.Collected(hex=""))
     ctx.send_msgs.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_malformed_prefix_is_logged_not_sent(ctx):
-    """If the payload lacks the ``locations:`` prefix, we log + skip rather
-    than guessing at a different parser."""
-    resp = lp.Response(success=True, payload=b"surprise_format:\x01\x02\x03")
-    await ctx._on_switch_push(lp.PacketType.COLLECTED_INDICES, resp)
+async def test_malformed_hex_is_logged_not_sent(ctx):
+    """If hex string is not valid hex, log + skip."""
+    await ctx._on_switch_push(W.Collected(hex="zznotahex"))
     ctx.send_msgs.assert_not_called()
-    # State unchanged.
     assert ctx.state.all_collected_ids() == set()
 
 
 @pytest.mark.asyncio
 async def test_game_state_push_updates_state_and_triggers_goal(ctx):
-    """When ``Init.bBeatenSinceLastReboot`` flips true, the goal report fires.
-    The PACKET_GAME_STATE push carries this directly."""
-    resp = lp.Response(success=True, payload=b"s080_shipyard;true")
-    await ctx._on_switch_push(lp.PacketType.GAME_STATE, resp)
+    await ctx._on_switch_push(W.GameState(scenario="s080_shipyard", beaten=True))
     assert ctx.state.is_beaten() is True
-    # One StatusUpdate goal message goes out
     sent = []
     for call in ctx.send_msgs.await_args_list:
         sent.extend(call.args[0])
@@ -166,11 +129,8 @@ async def test_game_state_push_updates_state_and_triggers_goal(ctx):
 
 
 @pytest.mark.asyncio
-async def test_new_inventory_push_updates_state_mirror(ctx):
-    """A NEW_INVENTORY push stashes a positional snapshot."""
-    payload = json.dumps({"index": 3, "inventory": [1.0, 2.0, 3.5]}).encode("utf-8")
-    resp = lp.Response(success=True, payload=payload)
-    await ctx._on_switch_push(lp.PacketType.NEW_INVENTORY, resp)
+async def test_inventory_push_updates_state_mirror(ctx):
+    await ctx._on_switch_push(W.Inventory(index=3, inventory=[1.0, 2.0, 3.5]))
     inv = ctx.state.get_inventory()
     assert inv["slot0"] == 1
     assert inv["slot1"] == 2
@@ -179,8 +139,14 @@ async def test_new_inventory_push_updates_state_mirror(ctx):
 
 
 @pytest.mark.asyncio
-async def test_log_message_push_added_to_log_surface(ctx):
-    resp = lp.Response(success=True, payload=b"hello from lua")
-    await ctx._on_switch_push(lp.PacketType.LOG_MESSAGE, resp)
+async def test_log_push_added_to_log_surface(ctx):
+    await ctx._on_switch_push(W.Log(level="info", msg="hello from lua"))
     assert "hello from lua" in ctx.state.last_messages
+    ctx.send_msgs.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_received_pickups_push_advances_cursor(ctx):
+    await ctx._on_switch_push(W.ReceivedPickups(count=5))
+    assert ctx.state.game_received_pickups() == 5
     ctx.send_msgs.assert_not_called()

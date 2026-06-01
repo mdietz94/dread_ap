@@ -42,72 +42,70 @@ strings are not.
 ## Architecture (three tiers)
 
 ```
-[ Switch / Dread 2.1.0 ]  <--TCP/binary LAN-->  [ PC Client (Python) ]  <--ws-->  [ AP server ]
-   exlaunch sysmodule                              DreadContext(CommonContext)     archipelago.gg
-   (UPSTREAM — no fork)                            Kivy GUI
-   - bootstraps RL.* Lua namespace                 LuaProtocol on port 6969
-   - opens TCP :6969                               Forked apworld machinery
-   - runs arbitrary Lua via PACKET_REMOTE_LUA_EXEC
+[ Switch / Dread 2.1.0 ]  <--UDP discover-->  [ PC Client (Python) ]  <--ws-->  [ AP server ]
+   exlaunch sysmodule       <--TCP dial-->    DreadContext(CommonContext)     archipelago.gg
+   (HARD FORK: mdietz94/                      BridgeServer on :17777
+    open-dread-rando-                         DiscoveryResponder on :17776
+    exlaunch-bridge)                          Kivy GUI (SwitchesPopup)
+   - sweeps /24 for PC                        Forked apworld machinery
+   - dials PC:17777                           - Lua-eval RPC over JSON
+   - JSON envelope wraps                        - per-Switch device_id +
+     Lua-eval RPC                                  active/inactive promotion
    romfs/
    (our forked open-dread-rando output)
 ```
 
-## Wire protocol (exlaunch, port 6969)
+## Wire protocol (line-delimited JSON, TCP :17777, UDP :17776)
 
-Lifted verbatim from [randovania/game_connection/executor/dread_executor.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/executor/dread_executor.py)
-and [randovania/game_connection/connector/dread_remote_connector.py](https://github.com/randovania/randovania/blob/main/randovania/game_connection/connector/dread_remote_connector.py).
-Both are GPL-3.0 (this whole project is GPL-3.0 as a result — see [LICENSE](LICENSE)).
+The Switch is now the TCP **dialer**; DreadClient binds. UDP discovery on
+17776 lets the Switch find the PC on the LAN automatically — no IP entry.
+See [docs/wire-protocol.md](docs/wire-protocol.md) for the full envelope
+reference.
 
-**Packet types** (the upstream `IntEnum(b"N")` trick evaluates as `int("N")==N`,
-so on the wire these are raw `0x01`..`0x09`, not ASCII):
+**Discovery** (UDP 17776):
 
-| Code | Name | Direction |
+  - Switch sweeps `BRIDGE_HOST_STRING` /24 (baked at build time from
+    `detect_lan_ip()`) plus loopback (Ryujinx). 2 s collect window.
+  - Probe: `{"t":"discover","mod_ver":"<x>"}\n`
+  - Reply: `{"t":"bridge","host":"<lan-ip>","port":17777,"seed":"<seed>"}\n`
+
+**TCP envelope** (line-delimited UTF-8 JSON, ≤ 8 KiB / line):
+
+| `t` | Direction | Fields |
 |---|---|---|
-| 0x01 | PACKET_HANDSHAKE | both |
-| 0x02 | PACKET_LOG_MESSAGE | Switch→PC |
-| 0x03 | PACKET_REMOTE_LUA_EXEC | both |
-| 0x04 | PACKET_KEEP_ALIVE | both |
-| 0x05 | PACKET_NEW_INVENTORY | Switch→PC |
-| 0x06 | PACKET_COLLECTED_INDICES | Switch→PC |
-| 0x07 | PACKET_RECEIVED_PICKUPS | Switch→PC |
-| 0x08 | PACKET_GAME_STATE | Switch→PC |
-| 0x09 | PACKET_MALFORMED | Switch→PC |
+| `hello` | Switch→PC | `mod_ver`, `dread_ver`, `layout_uuid`, `device_id` |
+| `hello_ack` | PC→Switch | `ok`, `slot`, `seed`, `subs`, `err?` |
+| `lua_exec` | PC→Switch | `seq`, `src` |
+| `lua_exec_reply` | Switch→PC | `seq`, `ok`, `result` |
+| `log` | Switch→PC | `level`, `msg` |
+| `inventory` | Switch→PC | `index`, `inventory` (array of numbers) |
+| `collected` | Switch→PC | `hex` (lowercase hex bitfield) |
+| `received_pickups` | Switch→PC | `count` |
+| `game_state` | Switch→PC | `scenario`, `beaten` |
+| `layout_uuid` | Switch→PC | `value` |
+| `ping`/`pong` | both | `ts_ms` |
+| `kick` | PC→Switch | `reason` |
 
-Request frames (PC → Switch):
-
-**Lua-exec request**: `[0x03][4-byte LE length][utf-8 source]`
-**Handshake request**: `[0x01][1 interest byte]` (no length; multiworld interest = `0x02`)
-**Keep-alive request**: `[0x04]` (one byte, no reply)
-
-Response frames (Switch → PC) — every frame begins with a 1-byte
-PacketType, then the layout varies by type:
-
-**HANDSHAKE reply** `[0x01][req_num:1]` (2 bytes; no body)
-**REMOTE_LUA_EXEC reply** `[0x03][req_num:1][success:1][len:3 LE u24][payload]`
-**Push frames** (0x02/0x05/0x06/0x07/0x08) `[type:1][len:4 LE u32][payload]`
-**MALFORMED** `[0x09][failing_type:1][rcv:4 LE u32][should:4 LE u32]`
-
-This is the AUTHORITATIVE wire format, confirmed from
-[randovania/open-dread-rando-exlaunch/source/program/{remote_api.cpp,main.cpp}](https://github.com/randovania/open-dread-rando-exlaunch/tree/main/source/program)
-(GPL-2.0, not redistributed here — clone separately if you need to read it).
-Prior versions of this document described the response shape as
-`[success][len_24][payload]` for all frames — that was wrong (see
-[docs/wire-wiring-notes.md](docs/wire-wiring-notes.md)).
+The Lua-eval RPC is preserved as `lua_exec` / `lua_exec_reply` — the
+entire Randovania `RL.*` bootstrap is unchanged at the Lua level; only
+the byte stream underneath it changed shape.
 
 **Connect sequence**:
-1. Open TCP to switch:6969
-2. Send `PACKET_HANDSHAKE` with multiworld interest
-3. Read response
-4. Send Lua-exec: `return string.format('%d,%d,%s,%s,%s', RL.Version, RL.BufferSize, tostring(RL.Bootstrap), Init.sLayoutUUID, GameVersion)`
-5. Read response, split on `,` → `(api_version, buffer_size, bootstrap, layout_uuid, game_version)`
-6. **REQUIRED, not optional** — send the `RL.*` bootstrap Lua (vendored under
-   `client/lua/`, assembled by `client/bootstrap.py`, chunked to `buffer_size`).
-   The exlaunch ROM ships only stubs; without this the API probe at step 4 even
-   fails (`RL.Version` is nil). `connect_switch` does this before polling.
-   Earlier docs called this optional — WRONG; randovania bootstraps every connect.
-7. Start the 2s poll loop, which calls `RL.GetInventoryAndSend` /
-   `GetCollectedIndicesAndSend` / `GetReceivedPickupsAndSend` directly each tick
-   (we don't rely on `RL.UpdateRDVClient` self-scheduling) + reads the goal flag.
+1. Worker thread on Switch: `nn::nifm` init + UDP discovery (loopback +
+   /24 sweep) → first valid `bridge` reply wins.
+2. TCP connect to `host:port`, send `hello` (with empty `layout_uuid`).
+3. PC's BridgeServer responds with `hello_ack`. First Switch becomes
+   ACTIVE; subsequent get `kick("inactive")` and are registered for
+   manual / auto promotion.
+4. PC sends `lua_exec` chunks of the bootstrap Lua (chunker unchanged
+   from before — same `RL.*` definitions, same chunking algorithm).
+5. PC's 2 s poll loop fires `RL.GetInventoryAndSend` /
+   `GetCollectedIndicesAndSend` / `GetReceivedPickupsAndSend` via
+   `lua_exec`; each triggers a push (`inventory` / `collected` /
+   `received_pickups`).
+
+Backoff on disconnect: 1 → 2 → 5 → 10 → 30 s cap (matches SMO).
+TCP `SO_KEEPALIVE = 1` set on connect.
 
 **RL namespace** (the Lua API exposed by the bootstrap files):
 

@@ -4,9 +4,39 @@ This file tracks our local diffs vs. the upstream sources in `vendor/`.
 
 ## Current status
 
-`open-dread-rando-exlaunch/` carries a local patch (see "exlaunch:
-Ryujinx-safe non-blocking socket loop" below). `open-dread-rando/`
-is still clean and reference-only.
+`open-dread-rando-exlaunch/` is now a **HARD FORK** at
+`github.com/mdietz94/open-dread-rando-exlaunch-bridge`. Upstream sync
+is abandoned. The wire format is entirely different: Switch is the TCP
+dialer (UDP-discovered), line-delimited JSON envelope wraps the
+Lua-eval RPC. See [docs/wire-protocol.md](../docs/wire-protocol.md) for
+the full spec.
+
+The previously-separate Ryujinx-fix patch is folded into the fork's
+initial commit. `apworld/dread/_setup/build.py` no longer runs a
+separate `git apply` step.
+
+`open-dread-rando/` is still clean and reference-only.
+
+### 2026-05-31 — Switch sysmodule hard fork (bridge networking)
+
+- New file structure under `source/program/`:
+  - `discovery.{cpp,hpp}` — UDP probe + /24 subnet sweep
+  - `json_line.{cpp,hpp}` — fixed-buffer JSON encoder + Reader (ported
+    from `smo_archipelago/switch-mod/src/util/Json.{cpp,hpp}` with the
+    namespace renamed to `dread::ap::json`)
+  - `remote_api.{cpp,hpp}` — REWRITTEN: TCP client + JSON dispatch +
+    `nn::nifm` init + exponential backoff
+  - `main.cpp` — EDITED: lua_exec_reply emit, JSON push helpers
+  - `config.mk` — passes `BRIDGE_HOST` + `MOD_VERSION` to CXXFLAGS
+- Wire is now line-delimited JSON, max 8 KiB / line. Switch dials PC
+  on TCP 17777; PC binds UDP 17776 for discovery. Backoff: 1/2/5/10/30s.
+- The Lua bootstrap (`apworld/dread/client/lua/bootstrap_part_*.lua`)
+  was edited to emit hex-encoded bitfields (`collected`) and pass
+  separate `(index, jsonArrStr)` args (`inventory`); the C senders
+  build the JSON envelope around the bootstrap-composed inner values.
+
+The remainder of this file describes the OLD soft-fork model that the
+bridge work superseded.
 
 ## Subdirectories
 

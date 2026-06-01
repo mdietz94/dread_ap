@@ -10,7 +10,7 @@ function RL.GetReceivedPickupsAndSend(reset)
     if reset then
         RL.PendingPickup = nil
     end
-    RL.SendReceivedPickups(tostring(RL.ReceivedPickups()))
+    RL.SendReceivedPickups(RL.ReceivedPickups())
 end
 function RL.GivePendingPickup()
     if Scenario.IsUserInteractionEnabled(true) then

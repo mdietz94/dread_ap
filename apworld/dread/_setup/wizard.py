@@ -20,7 +20,7 @@ Pages (sequenced; each calls ``goto("next-page")`` when its work completes):
                         The per-seed patcher reads it at AP-connect time
                         and auto-detects the romfs version.
   4. BuildPage        — drives ``ensure_exlaunch_checkout`` →
-                        ``apply_ryujinx_patch`` → ``run_exlaunch_build``;
+                        ``run_exlaunch_build`` (no separate patch step —
                         streams each subprocess's log line-by-line
   5. DeployPage       — radio: Ryujinx / SD card / Custom folder;
                         auto-detects each; calls ``deploy_to_*``
@@ -30,8 +30,13 @@ Smo-baseline pages this wizard intentionally drops:
 
   - ``DumpPickerPage``/``ExtractPage``: dread has no NSP extraction step.
     ``open_dread_rando`` overlays an already-extracted romfs at AP-connect.
-  - ``BridgeIpPage``: the PC dials the Switch on :6969, so the PC's
-    LAN IP is never baked into the build — no bridge-IP page needed.
+  - ``BridgeIpPage``: the build step auto-detects the PC's LAN IP via
+    ``detect_lan_ip()`` and bakes it as ``BRIDGE_HOST`` (the /24 seed the
+    Switch sweeps to discover us). No user-typed IP needed.
+
+After a successful build, the wizard opens Windows Firewall holes for the
+bridge: TCP 17777 (Switch → PC connect) and UDP 17776 (Switch → PC discovery
+probes). Without these, Windows silently drops the inbound traffic.
 
 Kivy is imported lazily INSIDE this module — never at apworld-import time —
 because AP generation hosts (Linux servers running ``ap_generate.py``)
@@ -47,14 +52,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
+import sys
 import threading
 import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import appdata_root, setup_state_path
 from .build import (
-    apply_ryujinx_patch,
     build_current,
     build_ready,
     collect_build_outputs,
@@ -101,6 +108,79 @@ def save_setup_state(state: dict[str, Any]) -> None:
 
 def _wizard_log_path() -> Path:
     return appdata_root() / "wizard.log"
+
+
+# ---------------------------------------------------------------------------
+# Windows Firewall holes for the bridge
+# ---------------------------------------------------------------------------
+
+_FIREWALL_RULES = [
+    ("DreadClient Bridge (TCP)",
+     ["dir=in", "action=allow", "protocol=TCP", "localport=17777"]),
+    ("DreadClient Bridge (UDP)",
+     ["dir=in", "action=allow", "protocol=UDP", "localport=17776"]),
+]
+
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _ensure_firewall_rules(*, on_line: Callable[[str], None] | None = None) -> None:
+    """Best-effort: add inbound TCP 17777 + UDP 17776 firewall rules on Windows.
+
+    The Switch dials our BridgeServer on TCP 17777 and sends UDP discovery
+    probes to 17776; without firewall holes Windows silently drops both. We
+    invoke ``netsh advfirewall firewall add rule`` which is idempotent at
+    name-uniqueness (adding the same rule name twice creates a second copy,
+    which is harmless but noisy); we first ``show rule`` to skip the add when
+    the rule already exists.
+
+    No-op on non-Windows. A netsh failure (no admin, group policy, etc.) is
+    logged and swallowed — the user can run the netsh lines manually from
+    the wizard log if needed.
+    """
+    if sys.platform != "win32":
+        return
+
+    netsh = "netsh"
+    for name, params in _FIREWALL_RULES:
+        # Check if the rule already exists.
+        try:
+            probe = subprocess.run(
+                [netsh, "advfirewall", "firewall", "show", "rule",
+                 f"name={name}"],
+                capture_output=True, text=True, timeout=10,
+                creationflags=_NO_WINDOW,
+            )
+            if probe.returncode == 0 and name in probe.stdout:
+                if on_line:
+                    on_line(f"[firewall] {name!r} already present; skipping")
+                continue
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            if on_line:
+                on_line(f"[firewall] probe failed for {name!r}: {exc}")
+
+        try:
+            r = subprocess.run(
+                [netsh, "advfirewall", "firewall", "add", "rule",
+                 f"name={name}", *params],
+                capture_output=True, text=True, timeout=10,
+                creationflags=_NO_WINDOW,
+            )
+            if r.returncode == 0:
+                if on_line:
+                    on_line(f"[firewall] added rule: {name}")
+            else:
+                if on_line:
+                    on_line(
+                        f"[firewall] add rule {name!r} failed (exit "
+                        f"{r.returncode}); the rule may need admin "
+                        f"privileges. Run this in an elevated cmd:"
+                    )
+                    on_line(f"  netsh advfirewall firewall add rule "
+                            f"name=\"{name}\" {' '.join(params)}")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            if on_line:
+                on_line(f"[firewall] add rule for {name!r} raised: {exc}")
 
 
 def wizard_log(line: str) -> None:
@@ -706,10 +786,8 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
 
         def run_in_worker() -> None:
             steps: list[tuple[str, Any]] = [
-                ("Cloning open-dread-rando-exlaunch at pinned commit...",
+                ("Cloning open-dread-rando-exlaunch-bridge fork...",
                  lambda: ensure_exlaunch_checkout(on_line=on_line)),
-                ("Applying Ryujinx-fix patch (idempotent)...",
-                 lambda: apply_ryujinx_patch(on_line=on_line)),
                 ("Compiling subsdk9 under devkitPro msys2 bash "
                  "(~30-60s on a warm cache)...",
                  lambda: run_exlaunch_build(on_line=on_line)),
@@ -756,6 +834,11 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 return
             wizard_state["build_done"] = True
             write_build_manifest()
+            # Open Windows firewall holes for the bridge (TCP 17777 +
+            # UDP 17776). Best-effort: a netsh failure (no admin, non-
+            # Windows, etc.) is informational only — the user can re-run
+            # the netsh lines manually.
+            _ensure_firewall_rules(on_line=on_line)
             update_status(
                 f"Build complete: subsdk9 ({outputs['subsdk9'].stat().st_size} bytes), "
                 f"main.npdm ({outputs['main.npdm'].stat().st_size} bytes)."

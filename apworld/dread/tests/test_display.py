@@ -37,16 +37,23 @@ def test_pill_color_error_is_orange():
 
 
 def test_switch_pill_states():
-    assert "connected" in format_switch_pill({"switch_conn": "connected"})
+    # "connected" / "connected (sw-X)" → green pill showing a Switch is active
+    assert "Switch" in format_switch_pill({"switch_conn": "connected"})
     assert _GREEN in format_switch_pill({"switch_conn": "connected"})
-    assert "off" in format_switch_pill({"switch_conn": "disconnected"})
-    assert "error" in format_switch_pill({"switch_conn": "error: nope"})
-    assert _ORANGE in format_switch_pill({"switch_conn": "error: nope"})
+    assert "Switch" in format_switch_pill({"switch_conn": "connected (sw-A)"})
+    # "listening" → bridge up but no Switch yet → orange + "waiting"
+    assert "waiting" in format_switch_pill({"switch_conn": "listening"})
+    assert _ORANGE in format_switch_pill({"switch_conn": "listening"})
+    # "disconnected" → gray + "idle"
+    assert "idle" in format_switch_pill({"switch_conn": "disconnected"})
+    # Bootstrap/other errors → orange + "error"
+    assert "error" in format_switch_pill({"switch_conn": "bootstrap error: nope"})
+    assert _ORANGE in format_switch_pill({"switch_conn": "bootstrap error: nope"})
 
 
-def test_switch_pill_defaults_to_off_when_missing():
-    # Empty snapshot (no switch_conn key) must not raise and reads as off.
-    assert "off" in format_switch_pill({})
+def test_switch_pill_defaults_to_idle_when_missing():
+    # Empty snapshot (no switch_conn key) must not raise and reads as idle.
+    assert "idle" in format_switch_pill({})
 
 
 def test_status_panel_disconnected_defaults():
