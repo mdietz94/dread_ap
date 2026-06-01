@@ -2,12 +2,11 @@
 
 ``DreadWorld._generate_nav_hints`` (run from ``pre_output``) turns real
 cross-world placement facts into the text baked onto the game's Nav Station
-plaques, and registers each pick as a genuine AP server hint
-(``start_location_hints`` for "what sits at one of my pickups",
-``start_hints`` for "where one of my items landed"). The patcher-side
+plaques. No AP server hints are registered — Nav Stations have no AP location
+check, so there is no in-game event to gate the broadcast on. The patcher-side
 consumption (``_apply_nav_hints``) is covered by
 ``scripts/tests/test_build_patcher_json.py``; this file pins the world-side
-generation + server registration.
+generation.
 
 The generator needs the Archipelago runtime (``BaseClasses`` for real
 ``Item`` objects whose ``.advancement`` flag drives the "prefer interesting
@@ -152,33 +151,18 @@ def test_nav_hints_fill_all_plaques_with_text():
 
 
 @pytestmark_runtime
-def test_nav_hints_register_real_server_hints():
-    """Every pick is also registered as a genuine AP hint via this slot's own
-    options: location-style picks through start_location_hints (the location is
-    ours), item-style through start_hints (the item is ours)."""
-    world, mw = _make_world(_scenario())
+def test_nav_hints_do_not_register_ap_server_hints():
+    """Nav Station hints must NOT populate start_location_hints or start_hints.
+    There is no in-game AP location check for a Nav Station visit, so there is
+    no event to gate the broadcast on — adding them would reveal hint content
+    to all players immediately at session start."""
+    world, _ = _make_world(_scenario())
     world._generate_nav_hints()
 
-    loc_hints = world.options.start_location_hints.value
-    item_hints = world.options.start_hints.value
-
-    # Something landed in each bucket (the scenario feeds both).
-    assert loc_hints, "no start_location_hints registered"
-    assert item_hints, "no start_hints registered"
-
-    # Registered location names are all player 1's own locations.
-    my_loc_names = {loc.name for loc in mw.get_filled_locations(1)}
-    assert loc_hints <= my_loc_names
-
-    # Registered item names are all player 1's own items, and each is unique in
-    # player 1's pool (so the server-side start_hints entry resolves to exactly
-    # one location).
-    mine = [loc for loc in mw.get_filled_locations() if loc.item.player == 1]
-    from collections import Counter
-    counts = Counter(loc.item.name for loc in mine)
-    my_item_names = set(counts)
-    assert item_hints <= my_item_names
-    assert all(counts[name] == 1 for name in item_hints)
+    assert not world.options.start_location_hints.value, \
+        "start_location_hints must stay empty (no Nav Station AP locations)"
+    assert not world.options.start_hints.value, \
+        "start_hints must stay empty (no Nav Station AP locations)"
 
 
 @pytestmark_runtime
