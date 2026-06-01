@@ -437,31 +437,25 @@ class DreadWorld(World):
         }
 
     def pre_output(self) -> None:
-        """Generate the in-game Nav Station hints and register them as real AP
-        server hints.
+        """Generate the in-game Nav Station hint text.
 
-        This runs after fill (every location has its item) and before AP builds
-        the multidata — the only window where mutating ``start_location_hints``
-        / ``start_hints`` still feeds AP's precollected-hint pass (so the picks
-        also show in the tracker and notify recipients). The rendered text is
-        stashed on ``self`` for :meth:`_build_placements_payload`, which runs
-        later (and concurrently) inside ``generate_output`` / ``fill_slot_data``
-        and bakes it into the patcher output."""
+        Runs after fill so every location has its item. The rendered text is
+        stashed on ``self`` for :meth:`_build_placements_payload`, which bakes
+        it into the patcher output so the game's Nav Station plaques show real
+        placement facts. No AP server hints are registered here — Nav Stations
+        have no AP location check, so there is no in-game event to gate the
+        broadcast on."""
         self._nav_hints = self._generate_nav_hints()
 
     def _generate_nav_hints(self) -> list[dict[str, Any]]:
         """Pick real cross-world placement facts and render them as Nav Station
-        hint text, registering each as a real AP server hint as we go.
+        hint text.
 
         Half are "location" hints (what sits at one of THIS slot's own pickups);
         half are "item" hints (where one of THIS slot's own items ended up).
-        Both flavours are scoped to this slot so they're registrable through
-        this slot's own options: location hints via ``start_location_hints``
-        (the location is ours), item hints via ``start_hints`` (the item is
-        ours, restricted to item names unique in our pool so the entry resolves
-        to exactly one location). Deterministic under ``self.random``. ``{c1}``
-        / ``{c5}`` / ``{c0}`` are the game's colour escapes, kept so the lines
-        render like the starter preset's originals."""
+        Deterministic under ``self.random``. ``{c1}`` / ``{c5}`` / ``{c0}``
+        are the game's colour escapes, kept so the lines render like the
+        starter preset's originals."""
         mw = self.multiworld
         me = self.player
         rng = self.random
@@ -475,8 +469,8 @@ class DreadWorld(World):
         my_locs = [loc for loc in mw.get_filled_locations(me)
                    if loc.address is not None and loc.item is not None]
         # "item" candidates: where this slot's own items landed, anywhere in the
-        # multiworld. Keep only item names unique in our pool, so the matching
-        # start_hints entry maps to a single location.
+        # multiworld. Keep only item names unique in our pool so each hint text
+        # resolves to exactly one location.
         mine_anywhere = [loc for loc in mw.get_filled_locations()
                          if loc.item is not None and loc.item.player == me
                          and loc.address is not None]
@@ -509,7 +503,6 @@ class DreadWorld(World):
                     who = mw.get_player_name(item.player)
                     text = (f"{place(loc)} holds {{c1}}{item.name}{{c0}} "
                             f"for {{c5}}{who}{{c0}}.")
-                self.options.start_location_hints.value.add(loc.name)
                 return {"text": text}
             return None
 
@@ -520,7 +513,6 @@ class DreadWorld(World):
                     continue
                 used.add(key)
                 text = f"Your {{c1}}{loc.item.name}{{c0}} is at {place(loc)}."
-                self.options.start_hints.value.add(loc.item.name)
                 return {"text": text}
             return None
 
