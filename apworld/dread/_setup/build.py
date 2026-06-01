@@ -304,7 +304,7 @@ def _build_env_overrides() -> dict[str, str]:
 
 
 def run_exlaunch_build(on_line: ProgressFn | None = None) -> BuildResult:
-    ""`./exlaunch.sh build` under devkitPro's msys2 bash."""
+    """`./exlaunch.sh build` under devkitPro's msys2 bash."""
     checkout = _exlaunch_checkout_dir()
     if not (checkout / "exlaunch.sh").is_file():
         msg = "exlaunch.sh missing — checkout may be incomplete"
