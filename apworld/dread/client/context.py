@@ -1,21 +1,16 @@
-"""DreadContext — CommonContext subclass owning AP + Switch wire.
+"""DreadContext — CommonContext subclass owning AP + Switch bridge.
 
-Counterpart to smo_archipelago.client.context.SMOContext, but dramatically
-simpler because:
+Lifecycle inversion (vs the old code): the Switch is now the TCP dialer.
+We host a TCP server on ``0.0.0.0:17777`` + a UDP discovery responder on
+``0.0.0.0:17776``. Bridge fires :meth:`_on_switch_ready` when a Switch
+HELLOs and becomes active; that callback sends the ``RL.*`` bootstrap
+and starts the poll loop. On Switch disconnect the bridge either auto-
+promotes an inactive Switch (re-firing :meth:`_on_switch_ready`) or
+fires :meth:`_on_switch_gone` to stop the poll loop.
 
-  1. The Switch-side connection is **outbound** (we dial in to exlaunch on
-     port 6969) rather than a TCP server we run. So no SwitchServer.
-  2. We have no kingdoms, captures, talkatoo, multi-Switch routing,
-     deathlink, or capture-lock gating to implement. Just item flow + goal.
-  3. The patcher already does seed-time item placement; runtime is purely
-     state synchronization.
-
-The class structure mirrors SMOContext on purpose so the smo_archipelago
-patterns (replay-on-reconnect, position-based dedup of AP items_received,
-ClientStatus on goal) transfer with minimal cognitive overhead.
-
-Skipping for v0.1: Kivy GUI (gui.py). DreadClient runs headless first; we
-add Kivy once the wire flow is proven end-to-end.
+The :meth:`_attempt_delivery` semantics are unchanged — we still compose
+``RL.ReceivePickup`` Lua and ship it via ``bridge.run_lua``; the only
+difference is the wire format on the way.
 """
 from __future__ import annotations
 
@@ -30,10 +25,11 @@ from typing import Any, Optional
 from CommonClient import CommonContext, ClientCommandProcessor
 from NetUtils import ClientStatus
 
-from .commands import parse_command, parse_switch_target
+from .commands import parse_command
 from .datapackage import DataPackage
-from .lua_executor import DreadExecutor
-from .lua_packets import PacketType, Response, parse_received_pickups_count
+from .bridge_server import BridgeServer, ActiveConnInfo, DEFAULT_PORT as BRIDGE_DEFAULT_PORT
+from .discovery import DiscoveryResponder, DEFAULT_DISCOVERY_PORT
+from . import wire as W
 from .protocol import (
     DreadItem,
     ReceivedItemEvent,
@@ -48,18 +44,8 @@ from .._setup.deploy import DREAD_TITLE_ID, RYU_MOD_NAME
 
 log = logging.getLogger(__name__)
 
-# Parent package logger ("<pkg>.client") that the GUI log pane tails; the
-# per-module loggers (context, lua_executor, …) propagate into it. Derived
-# from __name__ so it's right whether installed as worlds.dread.* (AP folder
-# install) or apworld.dread.* (tests / dev). The GUI computes the same name.
 _CLIENT_LOGGER = __name__.rpartition(".")[0]
-# Switch-forwarded device logs land here (a child of _CLIENT_LOGGER) so they
-# appear in the GUI log pane, tagged distinct from PC-side diagnostics.
 _switch_log = logging.getLogger(f"{_CLIENT_LOGGER}.switch")
-# The "Client" logger is what the GUI maps to the **Archipelago** tab
-# (DreadManager.logging_pairs = [("Client", "Archipelago")]). User-facing
-# setup guidance (e.g. the exact `pip install` command) goes here so it lands
-# in the tab AP users watch by default.
 _ap_log = logging.getLogger("Client")
 
 
@@ -67,22 +53,15 @@ GAME_NAME = "Metroid Dread"
 
 
 def _expand(path: str) -> str:
-    """Expand ~ and %ENV%/$ENV references — users paste paths from their
-    shell, which already does this for them. We want /patch to behave the
-    same whether the user typed the env reference verbatim or shell-
-    expanded it."""
     return os.path.expandvars(os.path.expanduser(path))
 
 
 def _user_config_path() -> Path:
-    """Per-user config location for the Dread client. Survives across
-    Archipelago launcher restarts so the auto-detected patcher Python
-    (recorded by ``_ensure_patcher_python``) is reused across sessions
-    without re-probing every connect.
+    """Per-user config location for the Dread client.
 
     Windows: ``%APPDATA%\\dread_ap\\config.json``.
-    Other:   ``~/.config/dread_ap/config.json`` (XDG-ish; this client is
-    Windows-targeted in practice but the AP launcher is cross-platform)."""
+    Other:   ``~/.config/dread_ap/config.json``.
+    """
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
     else:
@@ -91,8 +70,6 @@ def _user_config_path() -> Path:
 
 
 def _load_user_config() -> dict:
-    """Best-effort load. Missing/corrupt file → empty dict; we never want
-    a bad config to block client startup."""
     path = _user_config_path()
     if not path.is_file():
         return {}
@@ -104,8 +81,6 @@ def _load_user_config() -> dict:
 
 
 def _save_user_config(cfg: dict) -> None:
-    """Best-effort save. Logs and swallows OS errors — persistence is a
-    convenience, never a correctness requirement."""
     path = _user_config_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -116,27 +91,17 @@ def _save_user_config(cfg: dict) -> None:
 
 def _field(obj: Any, name: str, idx: int) -> Any:
     """Pluck a field from a NetworkItem-like that may be NamedTuple, dict,
-    or plain (positionally-ordered) tuple/list. The AP wire layer is not
-    consistent — Connected/scout flows return NamedTuples; some
-    ReceivedItems handlers see plain lists post-JSON round-trip. Using
-    ``getattr(...) or obj[name]`` is unsafe because (a) NamedTuples
-    don't support string subscript, and (b) ``0 or X`` triggers the
-    fallback for legitimate zero-valued fields (server slot id = 0)."""
+    or plain (positionally-ordered) tuple/list."""
     if hasattr(obj, name):
         return getattr(obj, name)
     if isinstance(obj, dict):
         return obj[name]
     return obj[idx]
 
+
 # Polling cadence for the periodic Switch-state pull. 2.0s matches
 # Randovania's RL.UpdateRDVClient self-scheduling interval.
 POLL_INTERVAL_SECONDS = 2.0
-
-# Switch auto-connect backoff bounds (seconds). The supervisor doubles from
-# START up to MAX between failed dials; MAX also caps the idle re-check cadence
-# while connected.
-_SWITCH_BACKOFF_START = 1.0
-_SWITCH_BACKOFF_MAX = 30.0
 
 
 class DreadClientCommandProcessor(ClientCommandProcessor):
@@ -156,49 +121,49 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         self._emit(result)
         return True
 
-    def _cmd_switch_host(self, host: str = "") -> bool:
-        """Repoint the Switch IP. ``/switch_host 192.168.1.42``"""
+    def _cmd_bridge_status(self) -> bool:
+        """``/bridge_status`` — show the Bridge listener + connected Switches."""
         ctx = self.ctx
-        if not host:
-            self.output(f"current switch_host = {ctx.switch_host!r}")
+        bridge = ctx._bridge
+        if bridge is None:
+            self.output("bridge: not started")
             return True
-        ctx.switch_host = host
-        self.output(f"switch_host set to {host!r}; use /switch_reconnect to apply")
+        self.output(f"bridge: listening on TCP {bridge.host}:{bridge.port}")
+        self.output(f"discovery: UDP 0.0.0.0:{DEFAULT_DISCOVERY_PORT}")
+        switches = bridge.list_switches()
+        if not switches:
+            self.output("no Switches connected (waiting for HELLO)")
+            return True
+        for s in switches:
+            tag = "ACTIVE" if s["active"] else "inactive"
+            self.output(
+                f"  {tag} {s['device_id']} (peer={s['peer_ip']} "
+                f"mod_ver={s['mod_ver']!r} dread={s['dread_ver']!r})"
+            )
         return True
 
-    def _cmd_dread_connect(self, host: str = "") -> bool:
-        """``/dread_connect [ip[:port]]`` — (re)dial the Switch.
+    def _cmd_switches(self) -> bool:
+        """Alias of /bridge_status."""
+        return self._cmd_bridge_status()
 
-        The initial dial sometimes loses the race with Dreadvania finishing
-        its own startup, so this is the recovery hatch. With no argument it
-        just re-dials the current target; pass ``ip`` (optionally ``ip:port``)
-        to re-point first — e.g. ``/dread_connect 192.168.1.42`` or
-        ``/dread_connect localhost:6969``.
-        """
+    def _cmd_promote_switch(self, device_id: str = "") -> bool:
+        """``/promote_switch <device_id>`` — make this Switch the active one."""
         ctx = self.ctx
-        if host:
-            try:
-                new_host, new_port = parse_switch_target(host)
-            except ValueError as exc:
-                self.output(f"err: {exc}")
-                self.output("usage: /dread_connect [ip[:port]]")
-                return True
-            ctx.switch_host = new_host
-            if new_port is not None:
-                ctx.switch_port = new_port
-        # reconnect_switch wakes the backoff supervisor (request_redial) once
-        # it has re-dialed, so no explicit signal is needed here.
-        asyncio.ensure_future(ctx.reconnect_switch())
-        self.output(f"reconnecting to Switch at {ctx.switch_host}:{ctx.switch_port} …")
+        bridge = ctx._bridge
+        if bridge is None:
+            self.output("err: bridge not started")
+            return True
+        if not device_id:
+            self.output("usage: /promote_switch <device_id>")
+            return True
+        async def _go():
+            ok = await bridge.manual_promote(device_id)
+            self.output(f"promote {device_id}: {'OK' if ok else 'unknown device_id'}")
+        asyncio.ensure_future(_go())
         return True
-
-    def _cmd_switch_reconnect(self) -> bool:
-        """Drop the current Switch connection and re-dial. Alias of
-        ``/dread_connect`` (kept for muscle memory)."""
-        return self._cmd_dread_connect()
 
     def _cmd_poke(self, *lua_words: str) -> bool:
-        """``/poke <lua-source>`` — run arbitrary Lua. Debug only."""
+        """``/poke <lua-source>`` — run arbitrary Lua on the active Switch."""
         if not lua_words:
             self.output("usage: /poke <lua-source>")
             return True
@@ -209,13 +174,8 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
     def _cmd_patch(self, *args) -> bool:
         """``/patch`` is deprecated — the romfs patcher now runs
         automatically on AP-connect.
-
-        Run ``/setup`` once per machine to open the wizard — it walks
-        you through prereqs, vanilla romfs picker, sysmodule build, and
-        deploy target. Every subsequent seed re-patches on connect — no
-        /patch typing needed.
         """
-        del args  # accepted-and-ignored so old aliases don't error
+        del args
         self.output(
             "/patch is deprecated. The romfs patcher now runs "
             "automatically on AP-connect once /setup has recorded your "
@@ -225,28 +185,8 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         return True
 
     def _cmd_setup(self, *_args: str) -> bool:
-        """``/setup`` — open the Kivy setup wizard in a new window.
-
-        Covers first-time setup and re-runs alike: prereq install
-        (devkitPro / Python 3.12 / open-dread-rando), vanilla romfs
-        picker, exlaunch sysmodule build, and deploy-target picker
-        (Ryujinx / SD card / custom folder). Spawns the wizard as a
-        subprocess so DreadClient stays open while it runs — close it
-        any time; DreadClient is unaffected.
-
-        Mirrors smo_archipelago's ``/setup`` pattern: the slash command
-        delegates entirely to the wizard, which is the single canonical
-        UI for build + deploy. Earlier behavior (``/setup [ryujinx|sd]``
-        as an inline one-shot build pipeline) is gone — the wizard's
-        DeployPage handles target selection with auto-detection. The
-        positional arg is accepted-and-ignored so old muscle memory
-        doesn't error.
-        """
+        """``/setup`` — open the Kivy setup wizard in a new window."""
         from worlds.LauncherComponents import launch_subprocess
-        # Defer to a module-level callable so the subprocess-pickling
-        # path in launch_subprocess can reach it by qualified name.
-        # ``_run_setup_wizard_no_dreadap`` is the only sanctioned entry
-        # point exported by the apworld root __init__ for the wizard.
         from .. import _run_setup_wizard_no_dreadap
         launch_subprocess(_run_setup_wizard_no_dreadap, name="DreadSetup")
         self.output(
@@ -260,18 +200,11 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
 
 class DreadContext(CommonContext):
     """Top-level glue. Connects to AP server (inherited) and to the Switch
-    (via :class:`DreadExecutor`). Forwards AP items to Lua, AP server
+    (via :class:`BridgeServer`). Forwards AP items to Lua, AP server
     receives collected-checks from the periodic poll."""
 
     command_processor = DreadClientCommandProcessor
     game = GAME_NAME
-    # Receive ONLY items found in OTHER players' worlds (bit 0). Dread's own
-    # items and the starting inventory are baked into the patched ROM by
-    # open-dread-rando (real resources per pedestal + starting_items), so the
-    # game grants them locally. Setting bit 1 (own-world items) or bit 2
-    # (starting inventory) would make the server re-send those too, double-
-    # granting them — exactly the "starting Charge Beam re-delivered as a popup"
-    # symptom. Only cross-world items flow through RL.ReceivePickup.
     items_handling = 0b001
 
     def __init__(
@@ -281,57 +214,33 @@ class DreadContext(CommonContext):
         *,
         state: BridgeState,
         datapackage: DataPackage,
-        switch_host: str = "127.0.0.1",
-        switch_port: int = 6969,
+        bridge_port: int = BRIDGE_DEFAULT_PORT,
+        discovery_port: int = DEFAULT_DISCOVERY_PORT,
+        expected_mod_ver: str = "",
     ):
         super().__init__(server_address, password)
         self.state = state
         self.datapackage = datapackage
         self.scout_cache = ScoutCache()
-        self.switch_host = switch_host
-        self.switch_port = switch_port
-        self.executor: Optional[DreadExecutor] = None
+        self.bridge_port = bridge_port
+        self.discovery_port = discovery_port
+        self._expected_mod_ver = expected_mod_ver
+
+        # Bridge + discovery responder created at start_bridge() time.
+        self._bridge: Optional[BridgeServer] = None
+        self._discovery: Optional[DiscoveryResponder] = None
+
+        # Per-active-Switch session state. Reset on each promote/demote.
         self._poll_task: Optional[asyncio.Task[None]] = None
-        self._reconnect_lock = asyncio.Lock()
-        # Set by the backoff supervisor / manual reconnect to interrupt the
-        # exponential-backoff sleep and dial the Switch immediately. See
-        # _switch_supervisor.
-        self._redial_event = asyncio.Event()
-        # Current exponential-backoff interval the supervisor sleeps for between
-        # failed dials. Hoisted to an instance attribute (rather than a local in
-        # _switch_supervisor) so a manual /dread_connect can RESET it to the
-        # start value via request_redial — otherwise a user-initiated retry that
-        # races a climbed backoff would still inherit the long (up to 30s) sleep.
-        self._switch_backoff = _SWITCH_BACKOFF_START
+        self._bootstrapped: bool = False
+        self._active_info: Optional[ActiveConnInfo] = None
+
         self._goal_reported = False
-        # Whether the RL.* bootstrap has been sent to the Switch this connection.
-        # Until it has, RL.GetCollectedIndicesAndSend / RL.ReceivePickup / etc.
-        # don't exist on the Switch side, so polling + delivery must wait.
-        self._bootstrapped = False
-        # Full ordered AP items_received list (indexed by AP receive position).
-        # Delivery sends the item at position == the game's ReceivedPickups
-        # count; we never advance a local cursor on send. See _attempt_delivery.
         self._ap_items: list[Any] = []
-        # Per-slot placements payload delivered by the server in the
-        # Connected packet (DreadWorld.fill_slot_data bundles it). The
-        # /patch command reads from here so users don't need a local seed
-        # zip to run the patcher.
         self.slot_data: dict = {}
-        # Cached path to the external Python the per-seed romfs patcher
-        # subprocess invokes. Auto-detected by ``_ensure_patcher_python``
-        # via ``patcher_pipeline.autodetect_patcher_python`` and persisted
-        # in ``_user_config_path()`` so the resolved interpreter survives
-        # across Archipelago launcher restarts. ``sys.executable`` is
-        # explicitly NOT used — inside the frozen Archipelago launcher
-        # the bundled site-packages can't ``pip install``, so we always
-        # shell out to an external interpreter the user already has set
-        # up. The setup wizard's prereqs page surfaces the same probe.
         self.dreadvania_python: Optional[str] = _load_user_config().get(
             "dreadvania_python"
         )
-        # Human-readable result of the last patcher-Python autodetect; mirrored
-        # to the GUI panel + logged to the Archipelago tab. See
-        # _ensure_patcher_python.
         self.patcher_python_status: str = ""
 
     # ---- CommonContext overrides --------------------------------------
@@ -354,229 +263,121 @@ class DreadContext(CommonContext):
             self.state.seed = args.get("seed_name", "")
 
     async def shutdown(self) -> None:
-        if self._poll_task:
+        await self._stop_active_session()
+        if self._discovery is not None:
+            self._discovery.stop()
+            self._discovery = None
+        if self._bridge is not None:
+            await self._bridge.close()
+            self._bridge = None
+        await super().shutdown()
+
+    def run_gui(self) -> None:
+        """Lazy-import + start the Kivy UI."""
+        from .gui import DreadManager
+        self.ui = DreadManager(self)
+        self.ui_task = asyncio.create_task(self.ui.async_run(), name="DreadUI")
+
+    # ---- Bridge lifecycle ---------------------------------------------
+
+    async def start_bridge(self) -> None:
+        """Bind the BridgeServer + DiscoveryResponder. Idempotent.
+
+        Raises ``OSError`` if either port is in use — the caller (main.py)
+        should surface this loudly per the plan. Callers should invoke
+        this once at process start; the bridge persists across AP
+        connect/disconnect cycles.
+        """
+        if self._bridge is None:
+            self._bridge = BridgeServer(
+                slot=self.username or "",
+                seed=self.state.seed or "",
+                expected_mod_ver=self._expected_mod_ver,
+                port=self.bridge_port,
+                on_push=self._on_switch_push,
+                on_active_connected=self._on_switch_ready,
+                on_active_disconnected=self._on_switch_gone,
+            )
+            await self._bridge.start()
+            self.state.set_switch_conn("listening")
+        if self._discovery is None:
+            self._discovery = DiscoveryResponder(
+                tcp_port=self.bridge_port,
+                get_seed=lambda: self.state.seed or "",
+                port=self.discovery_port,
+            )
+            await self._discovery.start()
+
+    async def _on_switch_ready(self, info: ActiveConnInfo) -> None:
+        """Called by BridgeServer once a Switch HELLOs + becomes active.
+
+        Sends the ``RL.*`` bootstrap and starts polling. Mirrors the old
+        ``connect_switch`` flow minus the dial-out half.
+        """
+        await self._stop_active_session()
+        self._active_info = info
+        self._bootstrapped = False
+        self.state.set_switch_conn(f"connected ({info.device_id})")
+        self.state.update_game_state(layout_uuid=info.layout_uuid)
+        log.info("Switch %s connected (peer=%s, mod_ver=%s, dread=%s)",
+                 info.device_id, info.peer_ip, info.mod_ver, info.dread_ver)
+        try:
+            await self._send_bootstrap()
+        except Exception as exc:
+            log.exception("bootstrap failed for %s: %s", info.device_id, exc)
+            self.state.set_switch_conn(f"bootstrap error: {exc}")
+            self._active_info = None
+            return
+        self._bootstrapped = True
+        log.info("Switch %s bootstrapped; starting poll loop", info.device_id)
+        self._poll_task = asyncio.create_task(self._poll_loop(), name="dread-poll")
+        # If AP items were already received before bootstrap finished, drive
+        # delivery now so we catch up without waiting one full poll.
+        await self._attempt_delivery()
+
+    async def _on_switch_gone(self) -> None:
+        """BridgeServer fires this when the active Switch disconnects and
+        no inactive is available for auto-promote."""
+        log.info("active Switch gone; stopping poll loop")
+        await self._stop_active_session()
+        self.state.set_switch_conn("listening")
+        self._active_info = None
+
+    async def _stop_active_session(self) -> None:
+        """Cancel the poll loop and clear per-session state. Idempotent."""
+        if self._poll_task is not None:
             self._poll_task.cancel()
             try:
                 await self._poll_task
             except (asyncio.CancelledError, Exception):
                 pass
-        if self.executor:
-            await self.executor.close()
-        await super().shutdown()
+            self._poll_task = None
+        self._bootstrapped = False
 
-    def run_gui(self) -> None:
-        """Lazy-import + start the Kivy UI.
+    async def _send_bootstrap(self) -> None:
+        """Send the vendored ``RL.*`` bootstrap, chunked to the negotiated
+        buffer size. Same logic as before — only the transport changed.
 
-        gui.py pulls kvui/Kivy, which crashes on headless generation hosts
-        (no display server). The apworld __init__ is imported at generation
-        time, so we must never import gui.py at module load — defer it to
-        here, which only runs inside ``launch()`` from the Launcher
-        subprocess. Mirrors ``SMOContext.run_gui``."""
-        from .gui import DreadManager
-        self.ui = DreadManager(self)
-        self.ui_task = asyncio.create_task(self.ui.async_run(), name="DreadUI")
-
-    # ---- Switch connection lifecycle ----------------------------------
-
-    async def connect_switch(self) -> None:
-        if self.executor is not None:
-            return
-        self.executor = DreadExecutor(
-            host=self.switch_host,
-            port=self.switch_port,
-            on_push=self._on_switch_push,
-            on_disconnect=self._on_switch_disconnect,
-        )
-        try:
-            self._bootstrapped = False
-            api = await self.executor.connect()
-            self.state.update_game_state(layout_uuid=api.layout_uuid)
-            # The exlaunch ROM only ships RL.* stubs; the real query/delivery
-            # functions are Lua we must send every connect (matching
-            # randovania's dread_executor.bootstrap). Until this lands, nothing
-            # else on the wire works.
-            await self._send_bootstrap(api.buffer_size)
-            self._bootstrapped = True
-            self.state.set_switch_conn("connected")
-            # Remember the host that actually worked so the next session dials
-            # it without the user re-typing (default is Ryujinx loopback).
-            self._remember_switch_target()
-            log.info("Switch connected + bootstrapped: api=%s game=%s layout=%s",
-                     api.api_version, api.game_version, api.layout_uuid)
-            self._poll_task = asyncio.create_task(self._poll_loop(), name="dread-poll")
-        except Exception as exc:
-            log.warning("Switch dial/bootstrap failed: %s", exc)
-            self.state.set_switch_conn(f"error: {exc}")
-            if self.executor is not None:
-                await self.executor.close()
-            self.executor = None
-
-    async def _send_bootstrap(self, buffer_size: int) -> None:
-        """Send the vendored RL.* bootstrap, chunked to the negotiated buffer
-        size. Raises if the Switch reports a Lua error for any chunk — a failed
-        bootstrap means the rest of the protocol can't run, so surfacing it is
-        better than limping on with half the namespace defined."""
-        assert self.executor is not None
+        The Switch's buffer_size used to be read from the API version probe;
+        in the new wire it's implicit (Switch tells us via HELLO's mod_ver,
+        but our bootstrap chunks are conservatively sized for any plausible
+        Switch). We assume a safe 4096-byte chunk size to leave room for the
+        JSON envelope inside the 8 KiB line cap.
+        """
+        assert self._bridge is not None
         from .bootstrap import load_bootstrap_code, chunk_lua_blocks
-
+        BUFFER_SIZE = 4096
         blocks = load_bootstrap_code()
-        chunks = chunk_lua_blocks(blocks, buffer_size)
-        log.info("Sending RL bootstrap: %d blocks in %d chunk(s)", len(blocks), len(chunks))
+        chunks = chunk_lua_blocks(blocks, BUFFER_SIZE)
+        log.info("Sending RL bootstrap: %d blocks in %d chunk(s)",
+                 len(blocks), len(chunks))
         for i, chunk in enumerate(chunks):
-            resp = await self.executor.run_lua(chunk)
+            resp = await self._bridge.run_lua(chunk)
             if not resp.success:
                 raise RuntimeError(
                     f"bootstrap chunk {i + 1}/{len(chunks)} failed: "
                     f"{resp.payload.decode('utf-8', 'replace')[:200]}"
                 )
-
-    async def reconnect_switch(self) -> None:
-        """Tear down any live connection (or in-flight dial) completely, then
-        re-dial from scratch. Serialized against the supervisor + other manual
-        reconnects via ``_reconnect_lock`` so there is never more than one
-        executor or poll loop alive at a time. Awaiting the cancelled poll task
-        and the executor close (which cancels + frees the read / keep-alive
-        tasks and the socket) guarantees no orphaned tasks or half-open sockets
-        survive across repeated reconnects."""
-        async with self._reconnect_lock:
-            if self._poll_task is not None:
-                self._poll_task.cancel()
-                try:
-                    await self._poll_task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
-                self._poll_task = None
-            if self.executor is not None:
-                await self.executor.close()
-                self.executor = None
-            # connect_switch resets _bootstrapped itself, but clear it here too
-            # so the window between teardown and re-dial never looks "ready".
-            self._bootstrapped = False
-            await self.connect_switch()
-        # Wake the supervisor + reset its backoff so it resumes watching and a
-        # failed manual dial is retried promptly (request_redial does both).
-        self.request_redial()
-
-    def request_redial(self) -> None:
-        """Signal the backoff supervisor to dial the Switch immediately AND
-        reset the exponential backoff to its starting value.
-
-        Both ``/dread_connect`` and the GUI reconnect popup go through
-        ``reconnect_switch``, which calls this so a manual retry never has to
-        wait out the current (possibly maxed-out) backoff sleep, and so the
-        NEXT auto-redial after a user retry is prompt rather than inheriting a
-        climbed interval. Resetting ``_switch_backoff`` here (not only on the
-        supervisor's wake path) makes the reset observable even when the
-        supervisor is mid-dial rather than sleeping."""
-        self._switch_backoff = _SWITCH_BACKOFF_START
-        self._redial_event.set()
-
-    async def _on_switch_disconnect(self) -> None:
-        """Fired by ``DreadExecutor`` when its read loop (or keep-alive
-        loop) exits because the socket died mid-session.
-
-        The supervisor's "is the wire up?" gate is ``self.executor is
-        None`` — without this callback the dead executor object stays
-        set, the supervisor sleeps at ``_SWITCH_BACKOFF_MAX`` (30 s),
-        and ``_poll_loop`` just logs ``Switch poll failed`` over and
-        over with no redial. Users observed that as "had to type
-        /dread_connect to recover" after a Ryujinx-side socket drop;
-        the fix is to drop the executor reference here so the next
-        supervisor tick (woken immediately via ``request_redial``)
-        sees a missing wire and reconnects.
-
-        Reentrancy note: we're called from inside the executor's own
-        read loop coroutine, so we MUST NOT ``await
-        self.executor.close()`` here — close cancels the read task
-        we're running in. We just drop our reference and let the
-        outgoing executor unwind naturally (its writer / keep-alive
-        will fail their next write and exit), then schedule a best-
-        effort close on a separate task so the socket descriptor is
-        released promptly without us awaiting it.
-        """
-        gone = self.executor
-        if gone is None:
-            return
-        log.info("Switch connection lost mid-session; redialing")
-        self.state.set_switch_conn("disconnected")
-        self.executor = None
-        self._bootstrapped = False
-        self.request_redial()
-        # Best-effort socket cleanup off-loop. close() cancels the read
-        # task — which IS the caller of this method — so launching it as
-        # a separate task avoids self-cancellation while still releasing
-        # the writer + keep-alive resources.
-        asyncio.create_task(gone.close(), name="dread-exec-cleanup")
-
-    def _remember_switch_target(self) -> None:
-        """Persist the current Switch host/port so the next session reuses it."""
-        cfg = _load_user_config()
-        cfg["switch_host"] = self.switch_host
-        cfg["switch_port"] = self.switch_port
-        _save_user_config(cfg)
-
-    async def _switch_supervisor(self) -> None:
-        """Keep a Switch connection up, retrying with exponential backoff.
-
-        The initial dial often loses the race with Dreadvania finishing its own
-        boot; rather than make the user hit /dread_connect, we retry 1, 2, 4 …
-        up to 30s. A manual reconnect (``request_redial``) interrupts the sleep
-        and resets the backoff (it writes ``self._switch_backoff`` directly, so
-        the reset sticks even if the supervisor is mid-dial). While connected we
-        idle until the wire drops (``executor`` cleared by a failed reconnect or
-        close), then resume."""
-        self._switch_backoff = _SWITCH_BACKOFF_START
-        while not self.exit_event.is_set():
-            if self.executor is None:
-                # connect_switch is a no-op if already connected and is
-                # serialized against manual reconnects via _reconnect_lock.
-                await self.connect_switch()
-                if self.executor is not None:
-                    self._switch_backoff = _SWITCH_BACKOFF_START
-                    continue
-                wait = self._switch_backoff
-                self._switch_backoff = min(
-                    self._switch_backoff * 2, _SWITCH_BACKOFF_MAX)
-            else:
-                wait = _SWITCH_BACKOFF_MAX
-            self._redial_event.clear()
-            try:
-                await asyncio.wait_for(self._redial_event.wait(), timeout=wait)
-                # Woken by a manual redial — request_redial already reset the
-                # backoff; dial now (loop top) with that fresh value.
-            except asyncio.TimeoutError:
-                pass
-
-    async def _ensure_patcher_python(self) -> None:
-        """Ensure a usable patcher Python is configured and tell the user.
-
-        Keeps a previously-saved interpreter if its deps still import; else
-        auto-detects one (persisting it on success). The actionable result —
-        an OK line or the exact ``pip install`` command — is logged to the
-        Archipelago tab. Dep checks shell out, so they run off the loop."""
-        from ..patcher_pipeline import autodetect_patcher_python, check_dependencies
-
-        def _resolve() -> tuple[Optional[str], str]:
-            configured = self.dreadvania_python
-            if configured and check_dependencies(configured) is None:
-                return configured, f"patcher Python OK: {configured}"
-            return autodetect_patcher_python()
-
-        path, message = await asyncio.to_thread(_resolve)
-        self.patcher_python_status = message
-        if path:
-            if path != self.dreadvania_python:
-                self.dreadvania_python = path
-                cfg = _load_user_config()
-                cfg["dreadvania_python"] = path
-                _save_user_config(cfg)
-            self.state.set_patcher_python(f"ready ({Path(path).name})")
-            _ap_log.info(message)
-        else:
-            self.state.set_patcher_python("not installed — see Archipelago tab")
-            _ap_log.warning("Patcher setup needed for /patch:")
-            for line in message.splitlines():
-                _ap_log.warning("  %s", line)
 
     # ---- AP-driven flows ---------------------------------------------
 
@@ -585,39 +386,19 @@ class DreadContext(CommonContext):
         self.state.slot = self.username or ""
         self.state.seed = args.get("seed_name", self.state.seed)
         self._goal_reported = False
-        # Fresh AP connection: AP resends ReceivedItems from index 0, so rebuild
-        # the ordered list from scratch. Delivery keys off the game's counter,
-        # not this list's length, so a rebuild never re-grants.
         self._ap_items = []
-        # Stash slot_data for /patch. fill_slot_data bundles the placements
-        # payload (everything seed_to_patcher_overrides used to extract from
-        # the seed zip).
         sd = args.get("slot_data")
         if isinstance(sd, dict):
             self.slot_data = sd
-        # Auto-run the per-seed romfs patcher if /setup recorded the romfs
-        # path and a deploy target. Schedule it rather than await — the
-        # ~3s patcher subprocess shouldn't delay the rest of the connect
-        # handshake. _maybe_auto_patch logs a clear actionable line if the
-        # setup state is missing or stale, so the AP session is never
-        # blocked nor crashed by a misconfiguration.
         asyncio.ensure_future(self._maybe_auto_patch())
-        # Phase 1.5 — once we have all_location_ids from datapackage, scout
-        # them all so we know which AP item lives at each pickup before the
-        # player collects it (used to compose in-game popup text).
         loc_ids = self.datapackage.all_location_ids()
         if loc_ids:
             await request_scout(self, loc_ids, cache=self.scout_cache)
-        # Kick off the Switch wire if it isn't already up.
-        if self.executor is None:
-            await self.connect_switch()
+        # Bridge stays up across AP reconnects — no per-connection action.
 
     async def _on_received_items(self, args: dict) -> None:
         """Absorb a ``ReceivedItems`` package into the ordered AP-items list,
-        then attempt delivery. We place items at their absolute positions
-        (``index + offset``) so the list mirrors AP's authoritative ordering;
-        delivery decides what to send based on the *game's* counter, not this
-        list, so re-absorbing the same items (reconnect resend) is harmless."""
+        then attempt delivery."""
         index = int(args.get("index", 0))
         items = args.get("items") or []
         end = index + len(items)
@@ -630,15 +411,9 @@ class DreadContext(CommonContext):
     async def _attempt_delivery(self) -> None:
         """Send the one pickup the game is next expecting, if any.
 
-        The game's ``ReceivedPickups`` count is the cursor: we deliver the AP
-        item at that position, tagged with the game's current ``InventoryIndex``.
-        ``RL.ReceivePickup`` accepts it only if both indices still match, guards
-        against a second in-flight pickup, defers through cutscenes, and bumps
-        ``ReceivedPickups`` on confirm. The resulting push re-enters here and
-        clocks the next one. So we send exactly one per call and never advance a
-        local cursor — making reconnect/restart and mid-cutscene delivery safe
-        by construction (CLAUDE.md risk #1)."""
-        if self.executor is None or not self._bootstrapped:
+        Semantics unchanged — only the transport call differs (``self._bridge.run_lua``
+        in place of ``self.executor.run_lua``)."""
+        if self._bridge is None or not self._bridge.is_connected() or not self._bootstrapped:
             return
         received = self.state.game_received_pickups()
         target = len(self._ap_items)
@@ -646,12 +421,9 @@ class DreadContext(CommonContext):
             return
         network_item = self._ap_items[received]
         if network_item is None:
-            # Gap in the list (out-of-order absorb) — wait for it to fill.
             return
         dread_item, sender = self._resolve_item(network_item)
         if dread_item is None:
-            # Can't deliver AND can't skip — skipping would desync the contiguous
-            # received-pickup index the game enforces. Stall loudly instead.
             log.error("no Dread mapping for AP item id %s at received index %d; "
                       "delivery stalled", _field(network_item, "item", 0), received)
             return
@@ -666,8 +438,8 @@ class DreadContext(CommonContext):
             cls=pickup_class_for(dread_item.patcher_item_id),
         )
         try:
-            await self.executor.run_lua(lua)
-        except (ConnectionError, asyncio.TimeoutError) as exc:
+            await self._bridge.run_lua(lua)
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
             log.warning("ReceivePickup send failed for %s: %s; will retry",
                         dread_item.ap_item_name, exc)
 
@@ -681,18 +453,6 @@ class DreadContext(CommonContext):
     # ---- /setup auto-run hookup --------------------------------------
 
     def _dreadvania_install_dir_from_state(self, state: dict) -> Optional[Path]:
-        """Compute the dreadvania mod-install dir (where the patcher writes
-        romfs overlays) from the /setup wizard's persisted state.
-
-        Mirrors the layouts in `_setup.deploy`:
-          - ryujinx -> ``<ryu>/mods/contents/<title>/DreadRandovania``
-          - sd      -> ``<sd>/atmosphere/contents/<title>``
-          - custom  -> ``<custom>/atmosphere/contents/<title>``
-
-        Returns ``None`` if ``deploy_target`` is unset/unknown, or the
-        corresponding root key is missing/empty in the state. The caller
-        logs a clear remediation hint rather than crashing.
-        """
         target = state.get("deploy_target")
         if target == "ryujinx":
             root = state.get("ryujinx_root") or ""
@@ -709,18 +469,6 @@ class DreadContext(CommonContext):
         return None
 
     async def _maybe_auto_patch(self) -> None:
-        """Run the per-seed romfs patcher if /setup has recorded the paths.
-
-        Hand-off contract: when setup_state.json is missing, the romfs path
-        is stale, the deploy dir can't be computed, or slot_data has no
-        placements, log a clear actionable message on the Archipelago tab
-        and return. We never raise — a misconfiguration must not crash or
-        even slow the AP connect path.
-
-        When everything lines up, schedule ``_run_patch`` via
-        ``asyncio.ensure_future`` so the patcher's ~3s subprocess overlaps
-        with the rest of the connect handshake (scout absorb, Switch dial).
-        """
         state_path = setup_state_path()
         if not state_path.is_file():
             _ap_log.info(
@@ -782,32 +530,44 @@ class DreadContext(CommonContext):
             self._run_patch(str(deploy_dir), str(romfs_path))
         )
 
+    async def _ensure_patcher_python(self) -> None:
+        from ..patcher_pipeline import autodetect_patcher_python, check_dependencies
+
+        def _resolve() -> tuple[Optional[str], str]:
+            configured = self.dreadvania_python
+            if configured and check_dependencies(configured) is None:
+                return configured, f"patcher Python OK: {configured}"
+            return autodetect_patcher_python()
+
+        path, message = await asyncio.to_thread(_resolve)
+        self.patcher_python_status = message
+        if path:
+            if path != self.dreadvania_python:
+                self.dreadvania_python = path
+                cfg = _load_user_config()
+                cfg["dreadvania_python"] = path
+                _save_user_config(cfg)
+            self.state.set_patcher_python(f"ready ({Path(path).name})")
+            _ap_log.info(message)
+        else:
+            self.state.set_patcher_python("not installed — see Archipelago tab")
+            _ap_log.warning("Patcher setup needed for /patch:")
+            for line in message.splitlines():
+                _ap_log.warning("  %s", line)
+
     # ---- /patch implementation ---------------------------------------
 
     async def _run_patch(self, dreadvania_dir: str, vanilla_romfs_dir: str) -> None:
-        """Run the patcher pipeline against the current session's slot_data.
-
-        Runs in a worker thread to keep the asyncio loop responsive while
-        the patcher CLI churns through romfs extraction (~3s typical, up
-        to several seconds on cold caches)."""
-        # Late import keeps the apworld importable in environments where
-        # open_dread_rando isn't installed (e.g. read-only test runners).
-        # patcher_pipeline.check_dependencies() handles the real reporting.
         from ..patcher_pipeline import patch
         from .._setup.build import collect_build_outputs
 
         log.info("/patch: starting…")
 
-        # The patcher overwrites the mod's exefs with the UPSTREAM (server-mode,
-        # port 6969) subsdk9 it bundles. Re-assert our locally-built patched
-        # sysmodule on top so the Switch keeps dialing the client. Empty when
-        # the user hasn't built (e.g. fresh checkout) — warn loudly because the
-        # symptom (Switch listening on 6969, no connection) is otherwise opaque.
         exefs_overlay = collect_build_outputs() or None
         if not exefs_overlay:
             log.warning(
                 "/patch: no built sysmodule found to re-assert — the patcher's "
-                "upstream subsdk9 (port 6969) will be used and the Switch won't "
+                "upstream subsdk9 (server-mode) will be used and the Switch won't "
                 "dial the client. Run /setup's Build + Deploy steps."
             )
 
@@ -822,7 +582,7 @@ class DreadContext(CommonContext):
 
         try:
             result = await asyncio.to_thread(_do)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.exception("/patch: unhandled exception: %s", exc)
             return
 
@@ -838,49 +598,6 @@ class DreadContext(CommonContext):
                 for line in result.cli_stderr_tail.splitlines():
                     log.error("  | %s", line)
 
-    async def _patch_interactive(self) -> None:
-        """``/patch`` with no args: pop native folder pickers (pre-filled with
-        the last-used folders) for the Dreadvania install dir and the vanilla
-        romfs dir, remember the choices, then run the patch.
-
-        Falls back to printing the text-arg usage if no native dialog backend
-        is available (e.g. a tkinter-less frozen launcher)."""
-        from .filedialog import ask_directory, FileDialogUnavailable
-
-        cfg = _load_user_config()
-        dv_init = cfg.get("dreadvania_dir")
-        if not dv_init:
-            guess = _expand(
-                r"%APPDATA%\Ryujinx\mods\contents\010093801237c000\DreadRandovania"
-            )
-            if Path(guess).is_dir():
-                dv_init = guess
-        romfs_init = cfg.get("vanilla_romfs_dir")
-
-        try:
-            dreadvania_dir = await asyncio.to_thread(
-                ask_directory, "Select your Dreadvania mod install folder", dv_init)
-            if not dreadvania_dir:
-                log.info("/patch: cancelled (no Dreadvania folder chosen)")
-                return
-            vanilla_romfs_dir = await asyncio.to_thread(
-                ask_directory, "Select your extracted Dread romfs folder",
-                romfs_init)
-            if not vanilla_romfs_dir:
-                log.info("/patch: cancelled (no romfs folder chosen)")
-                return
-        except FileDialogUnavailable as exc:
-            log.warning(
-                "/patch: no folder picker available (%s). Pass the paths "
-                "directly:\n  /patch <dreadvania-install-dir> <vanilla-romfs-dir>",
-                exc)
-            return
-
-        cfg["dreadvania_dir"] = dreadvania_dir
-        cfg["vanilla_romfs_dir"] = vanilla_romfs_dir
-        _save_user_config(cfg)
-        await self._run_patch(dreadvania_dir, vanilla_romfs_dir)
-
     # ---- Switch poll loop --------------------------------------------
 
     async def _poll_loop(self) -> None:
@@ -889,102 +606,66 @@ class DreadContext(CommonContext):
         try:
             while True:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
-                if self.executor is None:
+                if self._bridge is None or not self._bridge.is_connected():
                     return
                 try:
                     await self._poll_once()
-                except (ConnectionError, asyncio.TimeoutError) as exc:
-                    log.warning("Switch poll failed: %s; will retry", exc)
+                except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+                    # asyncio.TimeoutError stringifies to '' — include the
+                    # class name so the warning is actionable.
+                    msg = str(exc) or type(exc).__name__
+                    log.warning("Switch poll failed: %s; will retry", msg)
                     await asyncio.sleep(POLL_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             raise
 
     async def _poll_once(self) -> None:
-        """One poll tick. Each ``RL.Get*AndSend`` triggers a push that lands on
-        ``_on_switch_push``; the reply payloads here are just triggers.
-
-        We fetch inventory FIRST (so ``InventoryIndex`` is fresh before the
-        received-pickups push drives a delivery), then collected indices, then
-        received pickups. All three feed delivery/checks; none is optional."""
-        if self.executor is None or not self._bootstrapped:
+        if self._bridge is None or not self._bootstrapped:
             return
-        await self.executor.run_lua("RL.GetInventoryAndSend(); return ''")
-        await self.executor.run_lua("RL.GetCollectedIndicesAndSend(); return ''")
-        await self.executor.run_lua("RL.GetReceivedPickupsAndSend(); return ''")
-        # Direct game-state poll. The Switch's PACKET_GAME_STATE push covers
-        # this too, but it only fires on scenario transitions; this explicit
-        # read covers the case where the player reaches the goal while
-        # already in s080_shipyard.
-        state_resp = await self.executor.run_lua(
+        await self._bridge.run_lua("RL.GetInventoryAndSend(); return ''")
+        await self._bridge.run_lua("RL.GetCollectedIndicesAndSend(); return ''")
+        await self._bridge.run_lua("RL.GetReceivedPickupsAndSend(); return ''")
+        state_resp = await self._bridge.run_lua(
             "return tostring(Init.bBeatenSinceLastReboot)"
         )
         if state_resp.success and state_resp.payload == b"true":
             self.state.update_game_state(beaten_since_reboot=True)
             await self._maybe_report_goal()
-        # Belt-and-suspenders: drive delivery even if the received-pickups push
-        # raced the reply ordering this tick.
         await self._attempt_delivery()
 
-    async def _on_switch_push(self, packet_type: PacketType, resp: Response) -> None:
-        """Handle Switch-originated push frames.
+    # ---- Push handlers (JSON dataclass dispatch) ---------------------
 
-        * ``COLLECTED_INDICES`` is the meat: parse the bitfield, map each
-          set index to an AP location_id, dedup, and send ``LocationChecks``.
-        * ``NEW_INVENTORY`` and ``GAME_STATE`` get stashed in BridgeState
-          for diagnostics (the authoritative inventory comes from
-          ``items_received`` on the AP server side).
-        * ``LOG_MESSAGE`` and ``MALFORMED`` are surfaced as logs.
-        * ``RECEIVED_PICKUPS`` carries the game's ``ReceivedPickups`` count —
-          the delivery cursor. Updating it drives the next ``RL.ReceivePickup``.
-        * ``NEW_INVENTORY`` carries ``InventoryIndex`` (the other half of the
-          delivery index match) plus a diagnostic item snapshot."""
-        if packet_type == PacketType.COLLECTED_INDICES:
-            await self._handle_collected_indices(resp)
+    async def _on_switch_push(self, msg: Any) -> None:
+        """Bridge fans push messages here. ``msg`` is a wire dataclass."""
+        if isinstance(msg, W.Collected):
+            await self._handle_collected(msg)
             return
-        if packet_type == PacketType.NEW_INVENTORY:
-            self._handle_new_inventory(resp)
+        if isinstance(msg, W.Inventory):
+            self._handle_inventory(msg)
             return
-        if packet_type == PacketType.RECEIVED_PICKUPS:
-            await self._handle_received_pickups(resp)
+        if isinstance(msg, W.ReceivedPickups):
+            await self._handle_received_pickups(msg)
             return
-        if packet_type == PacketType.GAME_STATE:
-            await self._handle_game_state(resp)
+        if isinstance(msg, W.GameState):
+            await self._handle_game_state(msg)
             return
-        if packet_type == PacketType.LOG_MESSAGE:
-            if resp.payload:
-                text = resp.payload.decode("utf-8", errors="replace")
-                self.state.add_log(text)
-                # Surface device-side logs in the GUI log pane (which tails
-                # the _CLIENT_LOGGER tree). "[switch]" tags them apart from
-                # PC-side client diagnostics.
-                _switch_log.info("[switch] %s", text)
+        if isinstance(msg, W.Log):
+            self.state.add_log(msg.msg)
+            _switch_log.info("[switch] %s", msg.msg)
             return
-        if packet_type == PacketType.MALFORMED:
-            log.warning("Switch reported MALFORMED for our request (payload=%r)", resp.payload)
+        if isinstance(msg, W.LayoutUuid):
+            self.state.update_game_state(layout_uuid=msg.value)
             return
-        # Unknown push type: log and skip.
-        log.debug("push %s payload (%d bytes): %r",
-                  packet_type.name, len(resp.payload), resp.payload[:80])
+        log.debug("ignoring push of type %s", type(msg).__name__)
 
-    async def _handle_collected_indices(self, resp: Response) -> None:
-        """Parse a ``PACKET_COLLECTED_INDICES`` push and emit ``LocationChecks``.
-
-        Payload shape (per upstream MercuryConnector.new_collected_locations_received):
-
-            b"locations:" + bitfield_bytes
-
-        where bit ``i`` of byte ``b`` (0-indexed) being set means
-        ``pickup_index == b*8 + i`` has been collected. The bootstrap Lua
-        dumps the FULL set on every poll tick (and every reconnect), so we
-        dedupe against ``self.state`` and only forward genuinely-new
-        locations to the AP server."""
-        payload = resp.payload
-        prefix = b"locations:"
-        if not payload.startswith(prefix):
-            log.warning("COLLECTED_INDICES payload lacks 'locations:' prefix: %r",
-                        payload[:32])
+    async def _handle_collected(self, msg: W.Collected) -> None:
+        """Parse the ``hex`` bitfield and emit ``LocationChecks`` for any
+        newly-collected pickup_indices."""
+        try:
+            bitfield = bytes.fromhex(msg.hex) if msg.hex else b""
+        except ValueError:
+            log.warning("Collected.hex was not valid hex: %r", msg.hex[:64])
             return
-        bitfield = payload[len(prefix):]
         new_loc_ids: list[int] = []
         for byte_idx, byte_val in enumerate(bitfield):
             if not byte_val:
@@ -1007,19 +688,15 @@ class DreadContext(CommonContext):
             await self.send_msgs([{"cmd": "LocationChecks",
                                    "locations": new_loc_ids}])
 
-    async def _handle_received_pickups(self, resp: Response) -> None:
+    async def _handle_received_pickups(self, msg: W.ReceivedPickups) -> None:
         """Record the game's ``Blackboard.ReceivedPickups`` count (the delivery
         cursor) and log newly-confirmed items into the diagnostics mirror.
 
-        This runs ON the read loop, so it must NOT call ``run_lua`` — doing so
-        would await a reply that only the read loop can read, deadlocking until
-        timeout. The actual ``RL.ReceivePickup`` send is driven from the poll
-        task and the AP-message task (``_attempt_delivery``); the next poll
-        picks up this advanced count and clocks the next delivery."""
-        count = parse_received_pickups_count(resp.payload)
-        if count is None:
-            log.debug("RECEIVED_PICKUPS payload not an integer: %r", resp.payload[:32])
-            return
+        Like the old binary-wire handler, this runs on the bridge's read loop;
+        it must NOT call ``run_lua`` directly. Delivery is driven from the poll
+        task and the AP-message task via ``_attempt_delivery``.
+        """
+        count = msg.count
         previous = self.state.game_received_pickups()
         if count > previous:
             for idx in range(previous, min(count, len(self._ap_items))):
@@ -1033,14 +710,9 @@ class DreadContext(CommonContext):
             log.debug("game ReceivedPickups advanced %d -> %d", previous, count)
         self.state.set_game_received_pickups(count)
         if count < previous:
-            # Regression — drive a delivery now so we don't wait up to one
-            # poll for the inventory-index push + next tick. Lua's index match
-            # silently drops anything the player still has.
             await self._attempt_delivery()
 
     def _resolve_item(self, network_item: Any) -> tuple[Optional[DreadItem], str]:
-        """Map an AP NetworkItem to its DreadItem + sender display name.
-        Returns ``(None, "")`` if the item id has no Dread mapping."""
         item_id = _field(network_item, "item", 0)
         sender_idx = _field(network_item, "player", 2)
         dread_item = self.datapackage.ap_id_to_dread(int(item_id))
@@ -1048,38 +720,15 @@ class DreadContext(CommonContext):
             return None, ""
         return dread_item, self._sender_name(int(sender_idx))
 
-    def _handle_new_inventory(self, resp: Response) -> None:
-        """Parse PACKET_NEW_INVENTORY (JSON ``{"index":int,"inventory":[float...]}``).
-
-        ``index`` is the game's ``InventoryIndex`` — half of the delivery index
-        match, so we record it. The ``inventory`` array is positional (no
-        slot↔name map yet) and stashed only for diagnostics."""
-        try:
-            import json
-            blob = json.loads(resp.payload.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as exc:
-            log.warning("NEW_INVENTORY JSON decode failed: %s payload=%r",
-                        exc, resp.payload[:80])
-            return
-        index = blob.get("index")
-        if isinstance(index, (int, float)):
-            self.state.set_game_inventory_index(int(index))
-        inv_list = blob.get("inventory") or []
-        stashed = {f"slot{i}": int(round(v)) for i, v in enumerate(inv_list)}
+    def _handle_inventory(self, msg: W.Inventory) -> None:
+        self.state.set_game_inventory_index(int(msg.index))
+        stashed = {f"slot{i}": int(round(v)) for i, v in enumerate(msg.inventory)}
         self.state.set_inventory(stashed)
 
-    async def _handle_game_state(self, resp: Response) -> None:
-        """Parse PACKET_GAME_STATE (``<state>[;<beaten_bool>]``)."""
-        try:
-            text = resp.payload.decode("utf-8")
-        except UnicodeDecodeError:
-            return
-        parts = text.split(";")
-        scenario_id = parts[0] if parts else ""
-        beaten = (len(parts) > 1 and parts[1] == "true")
-        self.state.update_game_state(scenario_id=scenario_id,
-                                     beaten_since_reboot=beaten)
-        if beaten:
+    async def _handle_game_state(self, msg: W.GameState) -> None:
+        self.state.update_game_state(scenario_id=msg.scenario,
+                                     beaten_since_reboot=msg.beaten)
+        if msg.beaten:
             await self._maybe_report_goal()
 
     async def _maybe_report_goal(self) -> None:
@@ -1093,8 +742,12 @@ class DreadContext(CommonContext):
     # ---- Misc --------------------------------------------------------
 
     async def _poke_lua(self, source: str) -> None:
-        if self.executor is None:
-            log.warning("no Switch connection; /poke ignored")
+        if self._bridge is None or not self._bridge.is_connected():
+            log.warning("no active Switch; /poke ignored")
             return
-        resp = await self.executor.run_lua(source)
+        try:
+            resp = await self._bridge.run_lua(source)
+        except (RuntimeError, ConnectionError, asyncio.TimeoutError) as exc:
+            log.warning("/poke failed: %s", exc)
+            return
         log.info("poke reply: success=%s payload=%r", resp.success, resp.payload[:200])

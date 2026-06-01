@@ -2,29 +2,29 @@
 
 Pure functions: ``state.snapshot()`` dict in, Kivy BBCode-markup string out.
 Deliberately holds NO Kivy import so it stays unit-testable in the headless
-pytest env (gui.py — which DOES pull Kivy — only ever calls into here). This
-is the one bit of presentation logic that's worth testing, so unlike SMO's
-inlined ``_format_odyssey`` we keep it in its own module.
+pytest env (gui.py — which DOES pull Kivy — only ever calls into here).
 
-Colors carry connection state, mirroring the SMO Switch-pill convention:
-green = connected/healthy, orange = problem/error, gray = idle/disconnected.
+Colors carry connection state: green = healthy, orange = problem,
+gray = idle.
 """
 from __future__ import annotations
 
-# Status colors (hex, no leading '#': callers wrap in [color=...]).
 _GREEN = "#4caf50"
 _ORANGE = "#ff9800"
 _GRAY = "#888888"
 
 
 def _conn_color(conn: str) -> str:
-    """Map a connection string to a status color.
+    """Map a Switch-connection string to a status color.
 
-    ``"connected"`` → green; ``"disconnected"``/empty → gray; anything else
-    (e.g. ``"error: [Errno 111] Connection refused"``) → orange.
+    Recognised states:
+      * ``connected (...)``   → green (active Switch up and bootstrapped)
+      * ``listening``         → orange (bridge up, no Switch yet)
+      * ``disconnected`` / "" → gray
+      * anything else (e.g. ``bootstrap error: …``) → orange
     """
     c = (conn or "").strip().lower()
-    if c == "connected":
+    if c.startswith("connected"):
         return _GREEN
     if c in ("", "disconnected"):
         return _GRAY
@@ -32,7 +32,7 @@ def _conn_color(conn: str) -> str:
 
 
 def switch_pill_color(conn: str) -> str:
-    """Public alias used by the top-bar Switch pill."""
+    """Public alias used by the top-bar pill."""
     return _conn_color(conn)
 
 
@@ -41,31 +41,26 @@ def _colored(text: str, color: str) -> str:
 
 
 def format_switch_pill(snap: dict) -> str:
-    """One-line Switch status for the top-bar pill, colored by state.
+    """One-line bridge / Switch status for the top-bar pill.
 
-    Short by design — the pill auto-fits its width to this text, and a long
-    ``error: …`` string would crowd out the AP server-address input. The full
-    error text lives in the status panel + log pane.
+    Short by design — long error text lives in the status panel + log pane.
     """
     conn = snap.get("switch_conn", "disconnected") or "disconnected"
     color = _conn_color(conn)
     c = conn.strip().lower()
-    if c == "connected":
-        label = "Switch: connected"
+    if c.startswith("connected"):
+        label = "Bridge: 1 Switch"
+    elif c == "listening":
+        label = "Bridge: waiting"
     elif c in ("", "disconnected"):
-        label = "Switch: off"
+        label = "Bridge: idle"
     else:
-        label = "Switch: error"
+        label = "Bridge: error"
     return _colored(label, color)
 
 
 def format_status_panel(snap: dict) -> str:
-    """At-a-glance client state for the left half of the "Dread" tab.
-
-    Shows the two wires (AP + Switch), the slot/seed, the current in-game
-    scenario, item-delivery / location-check counts, and goal status. Returns
-    Kivy BBCode markup (the caller renders it in a ``markup=True`` Label).
-    """
+    """At-a-glance client state for the left half of the "Dread" tab."""
     ap_conn = snap.get("ap_conn", "disconnected") or "disconnected"
     switch_conn = snap.get("switch_conn", "disconnected") or "disconnected"
     slot = snap.get("slot") or "—"
@@ -86,9 +81,15 @@ def format_status_panel(snap: dict) -> str:
     else:
         patcher_color = _ORANGE
 
+    # AP coloring: "connected" exactly = green; anything else handled as
+    # before. (AP server state uses the older single-word convention.)
+    ap_color = (_GREEN if ap_conn.strip().lower() == "connected"
+                else _GRAY if ap_conn.strip().lower() in ("", "disconnected")
+                else _ORANGE)
+
     lines = [
         "[b]Connections[/b]",
-        f"  AP server : {_colored(ap_conn, _conn_color(ap_conn))}",
+        f"  AP server : {_colored(ap_conn, ap_color)}",
         f"  Switch    : {_colored(switch_conn, _conn_color(switch_conn))}",
         f"  Patcher   : {_colored(patcher, patcher_color)}",
         "",

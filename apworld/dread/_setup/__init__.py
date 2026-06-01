@@ -26,9 +26,11 @@ The packages here are organized so each step is independently testable:
                        devkitPro is detection-only (their Windows installer
                        is interactive Inno Setup; a link points the user at
                        devkitpro.org and the wizard re-checks on retry).
-  - `build.py`       — clone open-dread-rando-exlaunch at the pinned commit,
-                       `git apply` our scripts/patches/exlaunch-ryujinx-fix.diff,
-                       run `./exlaunch.sh build` under devkitPro's msys2 bash,
+  - `build.py`       — clone the open-dread-rando-exlaunch-bridge fork
+                       (ours, networking-rewritten), run
+                       `./exlaunch.sh build` under devkitPro's msys2 bash
+                       with BRIDGE_HOST + MOD_VERSION baked from
+                       detect_lan_ip() and the apworld version,
                        harvest the resulting subsdk9 + main.npdm.
   - `deploy.py`      — copy outputs to SD card / Ryujinx / custom folder.
   - `launcher_errors.py` — surface uncaught launch-time exceptions via Tk +

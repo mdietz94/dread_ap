@@ -1,6 +1,6 @@
 """Dread-side protocol dataclasses — small, replaces SMO's 600-line equivalent.
 
-This is NOT the wire format; that lives in ``lua_packets.py``. These are
+This is NOT the wire format; that lives in ``wire.py``. These are
 the *semantic* item / location records that the rest of the client
 shuffles around: a friendly normalization of what comes out of AP and
 what we send into Lua via ``RL.ReceivePickup``.

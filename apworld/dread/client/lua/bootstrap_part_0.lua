@@ -5,9 +5,9 @@ function RL.GetCollectedIndicesAndSend()
     local r,v,i,p = {},0,1,Game.GetPlayerBlackboardSectionName()
     for _,t in ipairs(RL.Pickups) do
         if Blackboard.GetProp(p,t) then v=v+i end
-        i=i*2;if i>=256 then table.insert(r,string.char(v));v=0;i=1 end
+        i=i*2;if i>=256 then table.insert(r,string.format("%02x",v));v=0;i=1 end
     end
-    if i>1 then table.insert(r,string.char(v)) end
-    RL.SendIndices("locations:"..table.concat(r))
+    if i>1 then table.insert(r,string.format("%02x",v)) end
+    RL.SendIndices(table.concat(r))
 end
 for i=1,TEMPLATE("num_pickup_nodes") do RL.Pickups[i]='' end

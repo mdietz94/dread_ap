@@ -112,92 +112,9 @@ def test_ensure_checkout_reset_failure_blames_pinned_sha(build_root, monkeypatch
     assert "PINNED_EXLAUNCH_COMMIT" in r.detail
 
 
-# ---- apply_ryujinx_patch -----------------------------------------------
-
-def _make_checkout_with_remote_api(build_root: Path, sentinel: bool) -> Path:
-    """Create a checkout dir with a stub remote_api.cpp; ``sentinel`` toggles
-    whether the patch's sentinel string is present (idempotence trigger)."""
-    checkout = build_root / "exlaunch-checkout"
-    (checkout / ".git").mkdir(parents=True)
-    src_dir = checkout / "source" / "program"
-    src_dir.mkdir(parents=True)
-    remote_api = src_dir / "remote_api.cpp"
-    content = "// upstream content\n"
-    if sentinel:
-        content += f"// {build._PATCH_SENTINEL}\n"
-    remote_api.write_text(content, encoding="utf-8")
-    return checkout
-
-
-def test_apply_patch_idempotent_when_sentinel_present(build_root, monkeypatch):
-    """Re-running setup after a successful build: the sentinel string is
-    in remote_api.cpp: skip the apply step entirely (no git invocation)."""
-    _make_checkout_with_remote_api(build_root, sentinel=True)
-    spy: list = []
-    monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
-
-    def fake_stream(*args, **kw):
-        spy.append(args)
-        return build.BuildResult(ok=True, returncode=0, log="should not run")
-
-    monkeypatch.setattr(build, "_stream_subprocess", fake_stream)
-    r = build.apply_ryujinx_patch()
-    assert r.ok is True
-    assert "already applied" in r.detail
-    assert spy == []  # _stream_subprocess was never called
-
-
-def test_apply_patch_missing_checkout_returns_actionable_error(build_root, monkeypatch):
-    """No ``.git`` dir means the checkout step didn't run yet; the apply
-    step should refuse with a 'run ensure_exlaunch_checkout first' hint."""
-    r = build.apply_ryujinx_patch()
-    assert r.ok is False
-    assert "checkout" in r.detail.lower()
-
-
-def test_apply_patch_missing_patch_file_returns_actionable_error(
-    build_root, monkeypatch
-):
-    """Sentinel absent + .git present, but the patch file can't be located:
-    failure should name the expected paths."""
-    import contextlib
-    _make_checkout_with_remote_api(build_root, sentinel=False)
-    monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
-
-    @contextlib.contextmanager
-    def _yield_none():
-        yield None
-    monkeypatch.setattr(build, "_locate_patch_file", _yield_none)
-    r = build.apply_ryujinx_patch()
-    assert r.ok is False
-    assert "exlaunch-ryujinx-fix.diff" in r.detail
-
-
-def test_apply_patch_calls_git_apply_with_ignore_whitespace(
-    build_root, monkeypatch, tmp_path
-):
-    """Happy path: sentinel absent, patch file locatable: invoke
-    ``git apply --ignore-whitespace <patch>``."""
-    import contextlib
-    _make_checkout_with_remote_api(build_root, sentinel=False)
-    patch = tmp_path / "exlaunch-ryujinx-fix.diff"
-    patch.write_text("--- a\n+++ b\n", encoding="utf-8")
-
-    @contextlib.contextmanager
-    def _yield_patch():
-        yield patch
-    monkeypatch.setattr(build, "_locate_patch_file", _yield_patch)
-    monkeypatch.setattr(build.shutil, "which", lambda _name: "/fake/git")
-    commands_run: list[list[str]] = []
-
-    def fake(cmd, *, cwd=None, env=None, timeout, on_line):
-        commands_run.append(list(cmd))
-        return build.BuildResult(ok=True, returncode=0, log="")
-
-    monkeypatch.setattr(build, "_stream_subprocess", fake)
-    r = build.apply_ryujinx_patch()
-    assert r.ok is True
-    assert any("apply" in c and "--ignore-whitespace" in c for c in commands_run)
+# Patch-application tests removed: the Ryujinx-fix patch is folded into the
+# fork (see PINNED_EXLAUNCH_COMMIT note in build.py). No separate apply step
+# means no apply_ryujinx_patch / _locate_patch_file / _PATCH_SENTINEL to test.
 
 
 # ---- collect_build_outputs / build_ready -------------------------------
@@ -244,12 +161,10 @@ def test_build_ready_requires_both_files(build_root):
 # ---- run_build_pipeline orchestration ----------------------------------
 
 def test_run_build_pipeline_short_circuits_on_first_failure(monkeypatch):
-    """If ensure_exlaunch_checkout fails, neither apply nor build runs."""
+    """If ensure_exlaunch_checkout fails, the build step is never called."""
     monkeypatch.setattr(build, "ensure_exlaunch_checkout",
                         lambda on_line=None: build.BuildResult(
                             ok=False, returncode=1, log="no net", detail="net err"))
-    monkeypatch.setattr(build, "apply_ryujinx_patch",
-                        lambda on_line=None: pytest.fail("should not be called"))
     monkeypatch.setattr(build, "run_exlaunch_build",
                         lambda on_line=None: pytest.fail("should not be called"))
     r = build.run_build_pipeline()
@@ -258,11 +173,9 @@ def test_run_build_pipeline_short_circuits_on_first_failure(monkeypatch):
 
 
 def test_run_build_pipeline_returns_outputs_on_success(build_root, monkeypatch):
-    """All three steps succeed AND collect_build_outputs reports both
-    files: orchestrator returns ok with outputs dict populated."""
+    """Both steps succeed AND collect_build_outputs reports both files:
+    orchestrator returns ok with outputs dict populated."""
     monkeypatch.setattr(build, "ensure_exlaunch_checkout",
-                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
-    monkeypatch.setattr(build, "apply_ryujinx_patch",
                         lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
     monkeypatch.setattr(build, "run_exlaunch_build",
                         lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
@@ -280,12 +193,9 @@ def test_run_build_pipeline_returns_outputs_on_success(build_root, monkeypatch):
 def test_run_build_pipeline_succeeds_but_outputs_missing_reports_failure(
     build_root, monkeypatch
 ):
-    """All three steps return ok=True but the deploy dir is empty (the
-    Windows subprocess-success-without-output gap): orchestrator reports
-    failure with the missing-files list."""
+    """Both steps return ok=True but the deploy dir is empty: orchestrator
+    reports failure with the missing-files list."""
     monkeypatch.setattr(build, "ensure_exlaunch_checkout",
-                        lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
-    monkeypatch.setattr(build, "apply_ryujinx_patch",
                         lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
     monkeypatch.setattr(build, "run_exlaunch_build",
                         lambda on_line=None: build.BuildResult(ok=True, returncode=0, log=""))
