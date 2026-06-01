@@ -126,8 +126,11 @@ def _stream_subprocess(
     log = "\n".join(captured)
     if proc.returncode == 0:
         return BuildResult(ok=True, returncode=0, log=log)
-    return BuildResult(ok=False, returncode=proc.returncode, log=log,
-                       detail=f"{cmd[0]} exited {proc.returncode}")
+    last_line = next((l for l in reversed(captured) if l.strip()), "")
+    detail = f"{cmd[0]} exited {proc.returncode}"
+    if last_line:
+        detail = f"{detail} — last line: {last_line}"
+    return BuildResult(ok=False, returncode=proc.returncode, log=log, detail=detail)
 
 
 # ---------------------------------------------------------------------------
