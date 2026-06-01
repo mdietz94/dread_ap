@@ -87,7 +87,7 @@ def test_ensure_checkout_fetches_when_git_dir_exists(build_root, monkeypatch):
     assert any("set-url" in " ".join(c) and build.EXLAUNCH_REPO in c
                for c in commands_run)
     # fetch targets the specific branch, not a bare "fetch origin"
-    assert any("fetch" in " ".join(c) and build.EXLAUNCH_BRANCH in c
+    assert any("fetch" in " ".join(c) and "main" in c
                for c in commands_run)
     assert not any("clone" in " ".join(c) for c in commands_run)
     assert any("reset" in " ".join(c) and build.PINNED_EXLAUNCH_COMMIT in c
