@@ -335,13 +335,13 @@ def run_exlaunch_build(on_line: ProgressFn | None = None) -> BuildResult:
         env["MSYSTEM"] = "MSYS"
         env.update(overrides)
         cmd = [str(bash), "-lc",
-               f"cd {msys_cwd} && ./exlaunch.sh build"]
+               f"cd '{msys_cwd}' && ./exlaunch.sh build"]
     else:
         bash = shutil.which("bash") or "/bin/bash"
         env = dict(os.environ)
         env.update(overrides)
         cmd = [bash, "-lc",
-               f"cd {checkout} && ./exlaunch.sh build"]
+               f"cd '{checkout}' && ./exlaunch.sh build"]
 
     return _stream_subprocess(
         cmd, env=env,
