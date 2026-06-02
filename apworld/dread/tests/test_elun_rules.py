@@ -73,11 +73,11 @@ VANILLA_LATE_GAME = {
 # ---- Acceptance: each Elun pickup has a non-trivial rule ----
 
 ELUN_LOCATIONS = (
-    "Elun: energytank_000",
-    "Elun: plasmabeam_000",
-    "Elun: powerbombtank_000",
-    "Elun: missiletank_002",
-    "Elun: missiletank_000",
+    "Elun: Ammo Recharge Station",
+    "Elun: Plasma Beam Room",
+    "Elun: Vertical Bomb Maze",
+    "Elun: Fan Room",
+    "Elun: Horizontal Bomb Maze",
 )
 
 
@@ -125,7 +125,7 @@ def test_energy_tank_requires_plasma_beam(rules):
     the pickup is unreachable. Source: Elun.txt §Ammo Recharge Station
     "Plasma Beam Door to Purple Drapes/Door to Ammo Recharge Station".
     """
-    pred = compile_to_lambda(rules["Elun: energytank_000"], player=1)
+    pred = compile_to_lambda(rules["Elun: Ammo Recharge Station"], player=1)
     fully_equipped_except_plasma = {
         k: v for k, v in VANILLA_LATE_GAME.items() if k != "Plasma Beam"
     }
@@ -138,7 +138,7 @@ def test_energy_tank_requires_morph_ball(rules):
     'Lay Any Bomb' (template) which needs Morph Ball. Source:
     Elun.txt §Ammo Recharge Station ›Door to Chozo Soldier Arena›
     ›Pickup (Energy Tank): Lay Any Bomb."""
-    pred = compile_to_lambda(rules["Elun: energytank_000"], player=1)
+    pred = compile_to_lambda(rules["Elun: Ammo Recharge Station"], player=1)
     fully_equipped_except_morph = {
         k: v for k, v in VANILLA_LATE_GAME.items() if k != "Morph Ball"
     }
@@ -154,7 +154,7 @@ def test_plasma_beam_pickup_requires_morph_ball(rules):
     Source: Elun.txt §Purple Drapes ›Tunnel to Ammo Recharge Station
     (Morph Ball Launcher), §Plasma Beam Room ›Door from Ammo Recharge
     Station (Missile Door)."""
-    pred = compile_to_lambda(rules["Elun: plasmabeam_000"], player=1)
+    pred = compile_to_lambda(rules["Elun: Plasma Beam Room"], player=1)
     fully_equipped_except_morph = {
         k: v for k, v in VANILLA_LATE_GAME.items() if k != "Morph Ball"
     }
@@ -168,7 +168,7 @@ def test_plasma_beam_pickup_reachable_with_late_game(rules):
     longer makes it cheap), but a full loadout must reach it. (The old M1
     assertion that it needs no Plasma Beam is an area-local property that global
     reachability supersedes.)"""
-    pred = compile_to_lambda(rules["Elun: plasmabeam_000"], player=1)
+    pred = compile_to_lambda(rules["Elun: Plasma Beam Room"], player=1)
     assert pred(State(VANILLA_LATE_GAME)), \
         "Plasma Beam pickup must be reachable with a full loadout"
 
@@ -178,7 +178,7 @@ def test_power_bomb_tank_requires_morph_ball(rules):
     morph-tunnel-only sub-region. No way in without Morph. Source:
     Elun.txt §Vertical Bomb Maze ›Pickup (Power Bomb Tank): Morph Ball
     (from Grapple Block Alcove)."""
-    pred = compile_to_lambda(rules["Elun: powerbombtank_000"], player=1)
+    pred = compile_to_lambda(rules["Elun: Vertical Bomb Maze"], player=1)
     fully_equipped_except_morph = {
         k: v for k, v in VANILLA_LATE_GAME.items() if k != "Morph Ball"
     }
@@ -191,7 +191,7 @@ def test_horizontal_bomb_maze_missile_requires_power_bomb(rules):
     reached via Vertical Bomb Maze through Power-Bomb-gated tunnels.
     Source: Elun.txt §Vertical Bomb Maze ›Tunnel to Horizontal Bomb
     Maze (Upper): 'Power Bombs ≥ 2 and Lay Power Bomb'."""
-    pred = compile_to_lambda(rules["Elun: missiletank_000"], player=1)
+    pred = compile_to_lambda(rules["Elun: Horizontal Bomb Maze"], player=1)
     no_pb = {k: v for k, v in VANILLA_LATE_GAME.items() if k != "Power Bomb"}
     assert not pred(State(no_pb)), \
         "Horizontal Bomb Maze missile should require Power Bomb"

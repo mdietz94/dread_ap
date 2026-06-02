@@ -89,7 +89,7 @@ def test_own_slot_item_becomes_pickup_resource():
         "starting_area": 0,
         "starting_items": {"ITEM_WEAPON_MISSILE_MAX": 0},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                  "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
         ],
     }
@@ -112,7 +112,7 @@ def test_cross_slot_item_becomes_placeholder_with_caption():
         "starting_area": 0,
         "starting_items": {},
         "placements": [
-            _cross("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _cross("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                    "The Big Button", "ButtonPusher", 0),
         ],
     }
@@ -138,7 +138,7 @@ def test_own_slot_item_emits_its_own_model():
         "starting_area": 0,
         "starting_items": {},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                  "Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 2, 0,
                  patcher_model="item_missiletank"),
         ],
@@ -157,7 +157,7 @@ def test_own_slot_item_without_model_leaves_template_model():
         "starting_area": 0,
         "starting_items": {},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                  "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0,
                  patcher_model=""),
         ],
@@ -337,7 +337,7 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
         "starting_area": 0,
         "starting_items": {"ITEM_WEAPON_MISSILE_MAX": 15},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                  "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
             _cross("Artaria: MissileTank011", "s010_cave", "Item_MissileTank011",
                    "Big Button", "ButtonPusher", 1),

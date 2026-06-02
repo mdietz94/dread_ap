@@ -120,7 +120,7 @@ def test_artaria_invisible_corpius_missile_reachable_with_late_game(rules):
     """item_missiletank_000 in 'Invisible Corpius Room'. Under the global
     item-only (forward-resolver) rules it carries the real cross-region cost
     rather than being trivial, but a full loadout must reach it."""
-    ast = rules["Artaria: missiletank_000"]
+    ast = rules["Artaria: Invisible Corpius Room"]
     pred = compile_to_lambda(ast, player=1)
     assert pred(State(LATE_GAME)), \
         "Invisible Corpius missile should be reachable with a full loadout"
@@ -131,7 +131,7 @@ def test_artaria_varia_suit_requires_varia_or_workaround(rules):
     canonical path requires Varia Suit (self-loop, harmless to AP).
     Tested as 'late-game reaches it'. Don't assert specific blockers
     since the area-isolated compile may pick odd alternate paths."""
-    ast = rules["Artaria: VARIA_GEN_001"]
+    ast = rules["Artaria: Varia Suit Room"]
     pred = compile_to_lambda(ast, player=1)
     assert pred(State(LATE_GAME)), "late-game must reach Varia pickup"
     # Should NOT be trivially reachable without anything
@@ -143,7 +143,7 @@ def test_dairon_bomb_pickup_is_item_gated(rules):
     """Dairon's Bomb pickup is in 'Bomb Room'. Events are inlined into the
     item-only rule (their cost folded into items), so it's no longer trivially
     reachable and a full loadout reaches it."""
-    ast = rules["Dairon: bomb"]
+    ast = rules["Dairon: Bomb Room - Bomb"]
     pred = compile_to_lambda(ast, player=1)
     assert not pred(State({})), \
         "Dairon Bomb pickup should NOT be trivially reachable"
@@ -159,7 +159,7 @@ def test_event_gated_rules_still_satisfy_with_late_game(rules):
     new event entered compiled_rules.json without LATE_GAME picking it
     up, or the per-event reach rule itself doesn't accept the late-game
     loadout — both are real bugs."""
-    ast = rules["Burenia: gravitysuit"]
+    ast = rules["Burenia: Gravity Suit Room - Gravity Suit"]
     pred = compile_to_lambda(ast, player=1)
     assert pred(State(LATE_GAME))
 
@@ -171,14 +171,14 @@ def test_artaria_charge_beam_requires_some_traversal(rules):
     Shift, Space Jump) blocks every disjunct (each path requires at
     least one of those traversal items). Charge Beam itself is
     excluded to defeat the harmless self-loop disjunct."""
-    ast = rules["Artaria: ChargeBeam"]
+    ast = rules["Artaria: Charge Beam Room"]
     pred = compile_to_lambda(ast, player=1)
-    assert not pred(State({})), "ChargeBeam must not be trivially reachable"
+    assert not pred(State({})), "Charge Beam Room must not be trivially reachable"
     no_traversal = {k: v for k, v in LATE_GAME.items()
                     if k not in ("Charge Beam", "Morph Ball", "Slide",
                                  "Flash Shift", "Space Jump")}
     assert not pred(State(no_traversal)), \
-        "ChargeBeam should require at least one traversal item"
+        "Charge Beam Room should require at least one traversal item"
 
 
 def test_total_compiled_rule_count_is_149(rules):

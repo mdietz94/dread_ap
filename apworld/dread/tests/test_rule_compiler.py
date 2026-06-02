@@ -196,8 +196,8 @@ def test_compiled_elun_energy_tank_rule_is_item_gated():
     import json
     raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
     rules = raw["rules"]
-    assert "Elun: energytank_000" in rules
-    pred = compile_to_lambda(rules["Elun: energytank_000"], player=1)
+    assert "Elun: Ammo Recharge Station" in rules
+    pred = compile_to_lambda(rules["Elun: Ammo Recharge Station"], player=1)
     assert pred(StubState({})) is False  # gated, not trivial
     full = {n: 99 for n in (
         "Morph Ball", "Bomb", "Cross Bomb", "Charge Beam", "Wide Beam",
