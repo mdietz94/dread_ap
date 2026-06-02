@@ -57,11 +57,22 @@ def _patcher_subprocess_env(env: Optional[dict[str, str]] = None) -> dict[str, s
 
 
 # A neutral placeholder item used when the AP placement is for ANOTHER
-# slot. The byte pattern doesn't matter to the game (the patcher writes
-# whatever resource we say), and the player sees the cross-slot caption
-# instead of the resource icon. Picking a vanilla Missile Tank shape
-# means no special handling is needed by open-dread-rando.
-CROSS_SLOT_PLACEHOLDER = {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 2}
+# slot. The player sees the cross-slot caption instead of the resource
+# icon, and — crucially — collecting it must grant the local Dread player
+# NOTHING (the real item is sent to the recipient over the wire).
+#
+# We use ``quantity: 0``: this is exactly Randovania's own coop/multiworld
+# convention. open-dread-rando's ``lua_editor.get_parent_for`` special-cases
+# quantity 0 ("coop uses the correct item_id ... but with quantity of 0"),
+# routing it through the generic ``RandomizerPowerup`` whose additive grant
+# of +0 adds nothing. The item_id is kept as a valid resource name only so
+# the patcher has something well-formed to write; its value is otherwise
+# inert at quantity 0.
+#
+# Previously this granted a real Missile Tank (``quantity: 2``), so picking
+# up a foreign item visibly handed the local player +2 missile capacity —
+# the reported bug.
+CROSS_SLOT_PLACEHOLDER = {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 0}
 
 # Sprite to render for in-world pickups that hold ANOTHER slot's item.
 # "itemsphere" is the patcher's own neutral-orb model (also its fallback in
