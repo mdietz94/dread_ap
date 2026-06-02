@@ -133,13 +133,16 @@ DEATH_SUPPRESS_WINDOW_SECONDS = 15.0
 
 # When more than one received item is waiting (an AP "release" sends a burst),
 # we override the bootstrap's lone-item popup/reschedule timings so the backlog
-# drains quickly instead of one item every ~7.5s. The grant itself is immediate;
+# drains faster than one item every ~7.5s. The grant itself is immediate;
 # BURST_RESCHEDULE_SECONDS only gates how soon the next item is accepted, and
-# BURST_POPUP_SECONDS keeps each notification briefly visible without piling up a
-# long popup queue. The last item of a burst falls back to the lone-item default
-# so the player gets a normal, readable popup once the flood ends.
-BURST_POPUP_SECONDS = 1.5
-BURST_RESCHEDULE_SECONDS = 0.3
+# BURST_POPUP_SECONDS is the popup display time. We keep popup < reschedule (same
+# 0.5s relationship as the lone-item 7.0/7.5 default) so popups never pile up: a
+# popup finishes before the next item lands. 3.0/3.5 roughly halves the per-item
+# time during a release while keeping each notification readable. The last item
+# of a burst falls back to the lone-item default (7.0/7.5) so the player gets a
+# normal, lingering popup once the flood ends.
+BURST_POPUP_SECONDS = 3.0
+BURST_RESCHEDULE_SECONDS = 3.5
 
 
 class DreadClientCommandProcessor(ClientCommandProcessor):

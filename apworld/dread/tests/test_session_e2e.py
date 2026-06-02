@@ -251,9 +251,10 @@ async def test_release_burst_drains_fast_and_uses_burst_timings():
                 continue
             idx = int(m.group(1))
             granted.setdefault(idx, src)
-        # Items 0..3 had more behind them → burst timings; item 4 was last → default.
+        # Items 0..3 had more behind them → burst timings (3.0/3.5, rendered by
+        # _lua_number as "3"/"3.5"); item 4 was last → lone-item default (5-arg).
         for idx in range(4):
-            assert ", 1.5, 0.3)" in granted[idx], (idx, granted.get(idx))
+            assert ", 3, 3.5)" in granted[idx], (idx, granted.get(idx))
         assert granted[4].rstrip().endswith(", 4, 4)"), granted[4]
     finally:
         await _teardown(ctx, fake)

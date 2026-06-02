@@ -15,9 +15,10 @@ optional trailing args (`popup`, `delay`) so the PC client can override the
 hard-coded 7.0s popup / 7.5s reschedule per delivery. Upstream gates every
 received item to ~7.5s, which makes an Archipelago "release" (a burst of items)
 crawl in at one item every several seconds. When more items are queued behind
-the current one the client sends short values so the backlog drains fast, and
-falls back to the upstream defaults (`... or 7.0` / `... or 7.5`) for a lone
-item so its popup still lingers. `GivePendingPickup` also re-sends
+the current one the client sends shorter values (3.0s / 3.5s) so the backlog
+drains roughly twice as fast while each popup stays readable, and falls back to
+the upstream defaults (`... or 7.0` / `... or 7.5`) for a lone item so its popup
+still lingers. `GivePendingPickup` also re-sends
 `InventoryIndex` alongside `ReceivedPickups` on the reschedule, so the client's
 next `ReceivePickup` carries the post-grant index. See `client/protocol.py`
 (`build_receive_pickup_lua`) and `client/context.py` (`_attempt_delivery`).
