@@ -20,6 +20,7 @@ Run with:  python -m pytest apworld/dread/tests/test_session_e2e.py -v
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import time
 import unittest.mock
@@ -219,6 +220,41 @@ async def test_multiple_items_delivered_in_order_exactly_once():
         assert fake.received_pickups == 3
         assert len(fake.onpickedup_calls) == 3
         assert fake.inventory_of(MISSILE_ITEM) == 6
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_release_burst_drains_fast_and_uses_burst_timings():
+    """A release (burst of received items) drains via the post-grant pushes
+    without one poll per item, and every item except the last carries the short
+    burst popup/reschedule overrides so it isn't gated to ~7.5s each."""
+    ctx, dp, fake = await _setup()
+    try:
+        missile = _ap_id_for(dp, "Missile Tank")
+        items = [_network_item(missile) for _ in range(5)]
+        await ctx._on_received_items({"index": 0, "items": items})
+        # _on_received_items kicks off delivery; the fake's post-grant pushes
+        # then clock each subsequent item — no explicit per-item poll needed.
+        assert await _await_until(lambda: fake.received_pickups >= 5, timeout=5.0)
+        assert fake.received_pickups == 5
+        assert len(fake.onpickedup_calls) == 5
+        assert fake.inventory_of(MISSILE_ITEM) == 10
+
+        # Only calls that actually granted matter for the timing assertion;
+        # rejected (stale-index) retries are harmless no-ops. Group the granted
+        # sources by received index to find the first accepted call per item.
+        granted = {}
+        for src in fake.receive_srcs:
+            m = re.search(r',\s*(\d+)\s*,\s*\d+(?:\s*,[^)]*)?\)\s*$', src)
+            if m is None:
+                continue
+            idx = int(m.group(1))
+            granted.setdefault(idx, src)
+        # Items 0..3 had more behind them → burst timings; item 4 was last → default.
+        for idx in range(4):
+            assert ", 1.5, 0.3)" in granted[idx], (idx, granted.get(idx))
+        assert granted[4].rstrip().endswith(", 4, 4)"), granted[4]
     finally:
         await _teardown(ctx, fake)
 

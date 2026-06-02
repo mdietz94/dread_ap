@@ -129,6 +129,8 @@ def build_receive_pickup_lua(
     received_pickup_index: int,
     inventory_index: int,
     cls: str = "RandomizerPowerup",
+    popup_seconds: float | None = None,
+    reschedule_seconds: float | None = None,
 ) -> str:
     """Construct the Lua call that delivers one received item via the
     bootstrap's ``RL.ReceivePickup`` — the idempotent, cutscene-safe path.
@@ -153,14 +155,29 @@ def build_receive_pickup_lua(
     (bareword); ``RandomizerPowerup`` is the generic path that grants additive
     resources — per-item classes (input-toggle for Speed Booster / Phantom
     Cloak, progressive beam/missile models) are a follow-up.
+
+    ``popup_seconds`` / ``reschedule_seconds`` are optional overrides for the
+    on-Switch popup display duration and the delay before the bootstrap clears
+    ``PendingPickup`` and re-sends its counters (which clocks the *next*
+    delivery). Omitting both keeps the bootstrap's lone-item defaults
+    (7.0s / 7.5s). The client passes short values while a backlog drains (an AP
+    "release") so items aren't gated to one every ~7.5s. See ``_attempt_delivery``.
     """
     progression_src = _to_lua_table(progression)
-    return "RL.ReceivePickup({msg}, {cls}, {prog}, {ri}, {ii})".format(
+    extra = ""
+    if popup_seconds is not None or reschedule_seconds is not None:
+        # Default either omitted value to the bootstrap's lone-item constant so
+        # a partial override still produces a valid 7-arg call.
+        popup = 7.0 if popup_seconds is None else float(popup_seconds)
+        delay = 7.5 if reschedule_seconds is None else float(reschedule_seconds)
+        extra = ", {p}, {d}".format(p=_lua_number(popup), d=_lua_number(delay))
+    return "RL.ReceivePickup({msg}, {cls}, {prog}, {ri}, {ii}{extra})".format(
         msg=_lua_string(message),
         cls=cls,
         prog=_lua_string(progression_src),
         ri=int(received_pickup_index),
         ii=int(inventory_index),
+        extra=extra,
     )
 
 
@@ -364,6 +381,12 @@ def _lua_string(value: str) -> str:
     """Render a Python string as a double-quoted Lua string literal (escaping
     backslashes and quotes — same convention as ``_to_lua_table``)."""
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _lua_number(value: float) -> str:
+    """Render a number as a plain Lua numeric literal (no scientific notation,
+    no trailing-zero noise) — used for the popup/reschedule second overrides."""
+    return ("%g" % float(value))
 
 
 def _to_lua_table(obj) -> str:

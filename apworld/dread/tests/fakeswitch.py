@@ -43,7 +43,9 @@ _RECEIVE_RE = re.compile(
     r'(\w+)\s*,\s*'                 # 2: cls
     r'("(?:[^"\\]|\\.)*")\s*,\s*'   # 3: progression source (quoted)
     r'(-?\d+)\s*,\s*'              # 4: receivedPickupIndex
-    r'(-?\d+)\s*\)'                # 5: inventoryIndex
+    r'(-?\d+)\s*'                 # 5: inventoryIndex
+    r'(?:,[^)]*)?'                # optional popup/reschedule overrides (burst)
+    r'\)'
 )
 
 
@@ -99,6 +101,9 @@ class FakeDreadGame:
         # ---- observability ----
         self.onpickedup_calls: list[list[tuple[str, int]]] = []
         self.lua_log: list[str] = []
+        # Full RL.ReceivePickup(...) source strings, in arrival order — lets
+        # tests assert the burst popup/reschedule overrides the client sends.
+        self.receive_srcs: list[str] = []
         self.bootstrap_chunks: list[str] = []
         self.bootstrapped: bool = False
         self.hello_ack: Optional[W.HelloAck] = None
@@ -221,21 +226,26 @@ class FakeDreadGame:
         self.inventory_index += 1
         self.received_pickups += 1
 
-    def _receive_pickup(self, src: str) -> None:
+    def _receive_pickup(self, src: str) -> bool:
+        """Apply one ``RL.ReceivePickup`` call. Returns True iff it granted
+        (so the caller can mirror the bootstrap's post-grant counter pushes)."""
+        self.receive_srcs.append(src)
         m = _RECEIVE_RE.search(src)
         if m is None:
-            return
+            return False
         msg = _unescape_lua_string(m.group(1))
         prog = _unescape_lua_string(m.group(3))
         recv_index = int(m.group(4))
         inv_index = int(m.group(5))
         self.lua_log.append(msg)
         if self._pending is not None:
-            return
+            return False
         if recv_index != self.received_pickups or inv_index != self.inventory_index:
-            return
+            return False
+        before = self.received_pickups
         self._pending = [(item_id, int(qty)) for item_id, qty in _RESOURCE_RE.findall(prog)]
         self._try_grant_pending()
+        return self.received_pickups > before
 
     # ---- wire / dispatch ----------------------------------------------
 
@@ -275,8 +285,18 @@ class FakeDreadGame:
             return
 
         if "RL.ReceivePickup(" in src:
-            self._receive_pickup(src)
+            granted = self._receive_pickup(src)
             await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            if granted:
+                # Mirror the bootstrap's post-grant reschedule
+                # (RL.GivePendingPickup): it re-sends InventoryIndex then
+                # ReceivedPickups, which is what clocks the next delivery.
+                # Inventory first so the client's next ReceivePickup carries the
+                # post-grant index. (In the real mod this fires after the
+                # reschedule delay; here it is immediate, which is fine — the
+                # client drives delivery off these pushes, not off wall-clock.)
+                await self._send(W.Inventory(index=self.inventory_index, inventory=[]))
+                await self._send(W.ReceivedPickups(count=self.received_pickups))
             return
 
         if "Game.LoadScenario(" in src:

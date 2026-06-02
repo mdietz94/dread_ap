@@ -107,6 +107,38 @@ def test_build_receive_pickup_lua_shape():
     assert "quantity=2" in lua
 
 
+def test_build_receive_pickup_lua_default_is_five_args():
+    # No popup/reschedule overrides → the lone-item 5-arg call (bootstrap
+    # defaults to 7.0s / 7.5s). This keeps normal single-item receipt unchanged.
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_X", "quantity": 1}]],
+        received_pickup_index=2, inventory_index=4,
+    )
+    assert lua.endswith(", 2, 4)")
+
+
+def test_build_receive_pickup_lua_burst_emits_timing_overrides():
+    # During a release the client passes short popup/reschedule seconds so the
+    # backlog drains fast instead of one item every ~7.5s.
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_X", "quantity": 1}]],
+        received_pickup_index=2, inventory_index=4,
+        popup_seconds=1.5, reschedule_seconds=0.3,
+    )
+    assert lua.endswith(", 2, 4, 1.5, 0.3)")
+
+
+def test_build_receive_pickup_lua_partial_override_fills_default():
+    # A single override still produces a valid 7-arg call, defaulting the other
+    # to the bootstrap's lone-item constant.
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_X", "quantity": 1}]],
+        received_pickup_index=0, inventory_index=0,
+        reschedule_seconds=0.3,
+    )
+    assert lua.endswith(", 0, 0, 7, 0.3)")
+
+
 def test_build_receive_pickup_lua_custom_class():
     lua = build_receive_pickup_lua(
         message="m", progression=[[{"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1}]],
