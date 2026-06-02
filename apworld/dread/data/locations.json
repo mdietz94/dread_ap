@@ -236,7 +236,7 @@
     "scenario": "s010_cave",
     "actor": "IT_VARIA_GEN_001",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Super Missile",
     "pickup_index": 23
   },
   {
@@ -676,7 +676,7 @@
     "scenario": "s030_baselab",
     "actor": "item_missiletank_008",
     "pickup_type": "actor",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Super Missile",
     "pickup_index": 67
   },
   {
@@ -1386,7 +1386,7 @@
     "scenario": "s010_cave",
     "actor": "OnCorpiusDeath_CUSTOM",
     "pickup_type": "corpius",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Metroid DNA 1",
     "pickup_index": 138
   },
   {
@@ -1436,7 +1436,7 @@
     "scenario": "s070_basesanc",
     "actor": "OnEmmySancDead",
     "pickup_type": "emmi",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Metroid DNA 3",
     "pickup_index": 143
   },
   {
@@ -1486,7 +1486,7 @@
     "scenario": "s020_magma",
     "actor": "OnKraidDeath_CUSTOM",
     "pickup_type": "cutscene",
-    "vanilla_item": "Missile Tank",
+    "vanilla_item": "Metroid DNA 2",
     "pickup_index": 148
   }
 ]
