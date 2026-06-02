@@ -150,14 +150,14 @@ def test_expected_lock_pairs():
     set chosen from the trick-L1 diagnostic; any change to this list should
     re-run scripts/diagnose_reverse_reachability.py first."""
     expected = {
-        ("Artaria: GrappleBeam",       "Grapple Beam"),
-        ("Artaria: ScrewAttack",       "Screw Attack"),
-        ("Artaria: VARIA_GEN_001",     "Varia Suit"),
-        ("Artaria: missiletank_002",   "Gravity Suit"),
-        ("Dairon: powerbombtank_002",  "Bomb"),
-        ("Ferenia: energyfragment",    "Storm Missile"),
-        ("Ferenia: energyfragment_002","Wide Beam"),
-        ("Ghavoran: missiletank",      "Ice Missile"),
+        ("Artaria: Grapple Beam Room",                     "Grapple Beam"),
+        ("Artaria: Screw Attack Room - Screw Attack",      "Screw Attack"),
+        ("Artaria: Varia Suit Room",                       "Varia Suit"),
+        ("Artaria: Screw Attack Room - Missile Tank, Top", "Gravity Suit"),
+        ("Dairon: EMMI Zone Exit North",                   "Bomb"),
+        ("Ferenia: Path to Escue",                         "Storm Missile"),
+        ("Ferenia: Total Recharge Station",                "Wide Beam"),
+        ("Ghavoran: Golzuna Tower - Missile Tank",         "Ice Missile"),
     }
     table = json.loads((DATA / "softlock_locks.json").read_text())
     actual = {(e["location"], e["item"])
@@ -167,10 +167,10 @@ def test_expected_lock_pairs():
 
 def test_expected_filler_only_locations():
     expected = {
-        "Artaria: energytank_000",
-        "Ferenia: missiletank_004",
-        "Ghavoran: missiletank_006",
-        "Ghavoran: powerup_sonar",
+        "Artaria: Shutter Platform Puzzle",
+        "Ferenia: Twin Robot Arena",
+        "Ghavoran: Above Pulse Radar",
+        "Ghavoran: Pulse Radar Room",
     }
     table = json.loads((DATA / "softlock_locks.json").read_text())
     actual = {e["location"]
