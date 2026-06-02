@@ -50,6 +50,7 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "apworld"))
 
 from dread.patcher_pipeline import (  # noqa: E402
+    CROSS_SLOT_MAP_BASE_ICON,
     CROSS_SLOT_PLACEHOLDER,
     STARTING_AREA_INDEX_TO_LOCATION,
     placements_to_overrides,

@@ -29,6 +29,10 @@ def _template() -> dict:
                 "resources": [[{"item_id": "ITEM_MORPH_BALL", "quantity": 1}]],
                 "pickup_actor": {"scenario": "s010_cave", "actor": "ItemSphere_ChargeBeam"},
                 "model": ["powerup_morphball"],
+                "map_icon": {
+                    "icon_id": "powerup_morphball",
+                    "original_actor": {"scenario": "s010_cave", "actor": "powerup_chargebeam"},
+                },
             },
             {
                 "pickup_type": "actor",
@@ -36,6 +40,7 @@ def _template() -> dict:
                 "resources": [[{"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 2}]],
                 "pickup_actor": {"scenario": "s010_cave", "actor": "Item_MissileTank011"},
                 "model": ["item_missiletank"],
+                "map_icon": {"icon_id": "item_missiletank"},
             },
             {
                 "pickup_type": "corpius",
@@ -143,6 +148,64 @@ def test_pickup_model_override_skips_non_actor_pickups():
     })
     corpius = next(p for p in out["pickups"] if p["pickup_actor"] is None)
     assert "model" not in corpius
+
+
+def test_pickup_map_icon_override_icon_id_preserves_original_actor():
+    """An ``icon_id`` map-icon override replaces the icon while keeping the
+    template's ``original_actor`` (it anchors the icon to the right map prop)."""
+    t = _template()
+    out = merge_overrides(t, {
+        "pickup_map_icons": {
+            "s010_cave/ItemSphere_ChargeBeam": {"icon_id": "item_powerbombtank"},
+        },
+    })
+    charge = next(p for p in out["pickups"]
+                  if p["pickup_actor"]["actor"] == "ItemSphere_ChargeBeam")
+    assert charge["map_icon"] == {
+        "icon_id": "item_powerbombtank",
+        "original_actor": {"scenario": "s010_cave", "actor": "powerup_chargebeam"},
+    }
+    # Unrelated pickup keeps its vanilla map icon.
+    missile = next(p for p in out["pickups"]
+                   if p["pickup_actor"]["actor"] == "Item_MissileTank011")
+    assert missile["map_icon"] == {"icon_id": "item_missiletank"}
+
+
+def test_pickup_map_icon_override_custom_icon_drops_icon_id_branch():
+    """A ``custom_icon`` override must drop the template's ``icon_id`` branch —
+    the schema's map_icon is a oneOf, so the two icon branches can't coexist."""
+    t = _template()
+    out = merge_overrides(t, {
+        "pickup_map_icons": {
+            "s010_cave/ItemSphere_ChargeBeam": {
+                "custom_icon": {"label": "SOME ITEM", "base_icon": "unknown"},
+            },
+        },
+    })
+    charge = next(p for p in out["pickups"]
+                  if p["pickup_actor"]["actor"] == "ItemSphere_ChargeBeam")
+    assert "icon_id" not in charge["map_icon"]
+    assert charge["map_icon"]["custom_icon"] == {"label": "SOME ITEM", "base_icon": "unknown"}
+    # original_actor still carried over.
+    assert charge["map_icon"]["original_actor"] == {
+        "scenario": "s010_cave", "actor": "powerup_chargebeam"
+    }
+
+
+def test_pickup_map_icon_override_skips_non_actor_pickups():
+    """Non-actor pickups (boss / EMMI drops) have no ``map_icon`` in the
+    template — they don't appear on the item map — so the override must not
+    inject one."""
+    t = _template()
+    out = merge_overrides(t, {
+        "pickup_map_icons": {
+            "s010_cave/OnCorpiusDeath_CUSTOM": {
+                "custom_icon": {"label": "DNA", "base_icon": "unknown"},
+            },
+        },
+    })
+    corpius = next(p for p in out["pickups"] if p["pickup_actor"] is None)
+    assert "map_icon" not in corpius
 
 
 def test_unknown_pickup_key_raises():
