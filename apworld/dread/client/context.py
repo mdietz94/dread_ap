@@ -552,6 +552,13 @@ class DreadContext(CommonContext):
                 state_path,
             )
             return
+        if state.get("deploy_target") == "sd" and not deploy_dir.is_dir():
+            _ap_log.info(
+                "Auto-patch skipped: SD card not mounted at %s. "
+                "The Switch will use its existing romfs from the last session.",
+                state.get("sd_root"),
+            )
+            return
         if not self.slot_data or "placements" not in self.slot_data:
             _ap_log.info(
                 "Auto-patch skipped: slot_data has no placements. Older "
@@ -668,7 +675,7 @@ class DreadContext(CommonContext):
         # is actually in the game world (not the title/load menu). Delivering on
         # a menu sets a PendingPickup against transient pre-save state that can
         # be orphaned across the menu→save transition, head-of-line-blocking the
-        # whole delivery queue (RL.ReceivePickup ignores resends while a pending
+        # delivery queue (RL.ReceivePickup ignores resends while a pending
         # is set). Gating here keeps us out of that state in the first place;
         # mid-cutscene deliveries are still safe because the bootstrap's
         # GivePendingPickup defers them until Scenario.IsUserInteractionEnabled.
