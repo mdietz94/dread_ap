@@ -82,7 +82,7 @@ RDV_ITEM_TO_AP: dict[str, str | None] = {
     "PowerSuit": None,             # Vanilla starting suit
     "MissileLauncher": "Missile Tank",   # First Missile Tank unlocks firing
     "MainPB": "Power Bomb",        # Bomb capability == having the Power Bomb item
-    "Supers": "Missile+ Tank",     # Super Missile gating == having a Missile+ Tank
+    "Supers": "Super Missile",     # green-door (Super Missile) gating == the Super Missile item
     "Hyper": None,                 # Hyper Beam is the final-form-only weapon
     "HyperSuit": None,             # Metroid Suit is plot-granted in vanilla
     "Metroidnization": None,       # Plot event (no item-pool entry in v0.1)
@@ -134,8 +134,10 @@ RDV_ITEM_TO_AP: dict[str, str | None] = {
 
 
 # Items where Randovania's "amount" is an unlock-flag, not a count: any one
-# pickup satisfies the requirement. (Supers is gated by any Missile+ Tank,
-# MissileLauncher/MainPB by any tank/PB.) These stay collapsed to amount=1.
+# pickup satisfies the requirement. (Supers is the single Super Missile item,
+# MissileLauncher/MainPB by any tank/PB.) These stay collapsed to amount=1 —
+# for Super Missile that's a no-op (the pool only has one copy), but it keeps
+# the unlock-flag semantics explicit alongside the genuinely-counted tanks.
 #
 # Counted resources have moved out:
 #   - ETank / EFragment: state.has(name, player, N) handles "have N tanks"

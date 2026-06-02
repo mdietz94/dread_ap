@@ -108,6 +108,15 @@
     "model_name": "powerup_stormmissile"
   },
   {
+    "name": "Super Missile",
+    "ap_id": 21554,
+    "patcher_item_id": "ITEM_WEAPON_SUPER_MISSILE",
+    "quantity": 1,
+    "pool_count": 1,
+    "classification": "progression",
+    "model_name": "powerup_supermissile"
+  },
+  {
     "name": "Varia Suit",
     "ap_id": 21536,
     "patcher_item_id": "ITEM_VARIA_SUIT",

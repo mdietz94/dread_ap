@@ -125,6 +125,15 @@ ITEM_TABLE: list[tuple[str, str, int, int, str]] = [
     # Each Power Bomb Tank pickup grants +1 PB capacity (vanilla).
     ("Power Bomb Tank",     "ITEM_WEAPON_POWER_BOMB_MAX", 1, 13, "filler"),
     ("Energy Part",         "ITEM_LIFE_SHARDS",         1, 16, "filler"),
+    # Super Missile (green-door key) is grouped with the other missiles
+    # conceptually, but is appended LAST on purpose: ap_id is assigned by
+    # row offset (items_seed + offset), so inserting it next to Ice/Storm
+    # would shift every subsequent item's id and force a seed regen. Appended
+    # here it takes the next free id (21554, in the old-event gap) and leaves
+    # all existing ids untouched. model_name ("powerup_supermissile") is
+    # applied directly in items.json, like the other rows (this table predates
+    # the model_name column — see Items.py).
+    ("Super Missile",       "ITEM_WEAPON_SUPER_MISSILE", 1, 1, "progression"),
 ]
 
 
