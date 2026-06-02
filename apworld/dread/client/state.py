@@ -214,6 +214,12 @@ class BridgeState:
         with self._lock:
             return self.game_state.beaten_since_reboot
 
+    def game_mode(self) -> str:
+        """Last known ``Game.GetCurrentGameModeID()`` (e.g. 'INGAME',
+        'MENU', 'CUTSCENE', ...). Empty until the first poll reads it."""
+        with self._lock:
+            return self.game_state.game_mode_id
+
     # ---- Patcher Python status (for the GUI panel) ----
 
     def set_patcher_python(self, status: str) -> None:

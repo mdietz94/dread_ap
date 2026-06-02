@@ -401,6 +401,45 @@ class DreadWorld(World):
             data = item_name_to_item.get(name)
             if data and data.patcher_item_id:
                 starting_items[data.patcher_item_id] = max(1, int(data.quantity))
+
+        # User-configured AP start_inventory / start_inventory_from_pool. AP
+        # precollects these into logic and also streams them to the client as
+        # ReceivedItems, but that wire-delivery path is best-effort and strictly
+        # head-of-line ordered (RL.ReceivePickup only grants when its index ==
+        # the game's ReceivedPickups counter, so one stalled grant blocks the
+        # rest). Bake the *abilities* into the ROM's starting_items so they are
+        # granted at save creation, reliably, the same way the forced starters
+        # above are — and harmlessly, since re-granting a boolean ability over
+        # the wire is idempotent (SetItemAmount stays >0).
+        #
+        # Counter items are deliberately EXCLUDED: their OnPickedUp grant is
+        # additive, so a ROM grant + the (working) wire grant would stack
+        # (e.g. a start_inventory Missile Tank would add its capacity twice).
+        # The artifacts are the DNA goal — granting one at start would satisfy
+        # the in-game gate early. Both stay on the wire path, which already
+        # grants additive items correctly.
+        _NON_BAKEABLE_PREFIXES = ("ITEM_RANDO_ARTIFACT_",)
+        _NON_BAKEABLE_IDS = {
+            "ITEM_WEAPON_MISSILE_MAX", "ITEM_WEAPON_POWER_BOMB_MAX",
+            "ITEM_ENERGY_TANKS", "ITEM_LIFE_SHARDS", "ITEM_MAX_LIFE",
+            "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", "ITEM_UPGRADE_SPEED_BOOST_CHARGE",
+        }
+        start_inv: set[str] = set()
+        for opt_name in ("start_inventory", "start_inventory_from_pool"):
+            opt = getattr(o, opt_name, None)
+            if opt is None:
+                continue
+            for name, count in dict(getattr(opt, "value", {}) or {}).items():
+                if int(count) > 0:
+                    start_inv.add(name)
+        for name in start_inv:
+            data = item_name_to_item.get(name)
+            if not (data and data.patcher_item_id):
+                continue
+            pid = data.patcher_item_id
+            if pid in _NON_BAKEABLE_IDS or pid.startswith(_NON_BAKEABLE_PREFIXES):
+                continue
+            starting_items[pid] = max(1, int(data.quantity))
         # Resolve cosmetic/combat options to the exact patcher values here so
         # patcher_pipeline stays AP-import-free. Choices map their current_key
         # to the schema string (room name is upper-cased; raven beak keys ARE
