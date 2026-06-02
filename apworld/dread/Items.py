@@ -21,6 +21,12 @@ class DreadItemData:
     quantity: int  # capacity-per-pickup granted by the patcher
     pool_count: int  # default copies in the AP pool (overridable via Options)
     classification: str  # "progression" | "progression_skip_balancing" | "useful" | "filler"
+    # open-dread-rando model name for the in-world pickup sphere. Authoritative
+    # source: Randovania's dread pickup-database ``model_name``. Names absent
+    # from the pinned patcher's ``ALL_MODEL_DATA`` (Slide, DNA) degrade to
+    # ``itemsphere`` via ``model_data.get_data``'s fallback. Defaulted so older
+    # data files (and tests) without the field still load.
+    model_name: str = ""
 
 
 class DreadItem(Item):
