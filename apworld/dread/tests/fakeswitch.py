@@ -75,6 +75,10 @@ class FakeDreadGame:
         self.inventory_index: int = 0
         self.beaten: bool = False
         self.in_cutscene: bool = False
+        # Game.GetCurrentGameModeID(): 'INGAME' when the player is in the game
+        # world. Default INGAME so delivery tests run; set to a menu value
+        # (e.g. 'MENU') to exercise the client's pre-game delivery gate.
+        self.game_mode: str = "INGAME"
 
         # ---- delivery internals (RL.PendingPickup) ----
         self._pending: Optional[list[tuple[str, int]]] = None
@@ -244,6 +248,11 @@ class FakeDreadGame:
                 index=self.inventory_index,
                 inventory=[],
             ))
+            return
+
+        if "Game.GetCurrentGameModeID" in src:
+            await self._send(W.LuaExecReply(
+                seq=seq, ok=True, result=self.game_mode))
             return
 
         if "Init.bBeatenSinceLastReboot" in src:

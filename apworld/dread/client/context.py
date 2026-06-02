@@ -237,6 +237,12 @@ class DreadContext(CommonContext):
 
         self._goal_reported = False
         self._ap_items: list[Any] = []
+        # Delivery diagnostics: the received index we last attempted to deliver
+        # and how many polls we've re-sent it without the game's ReceivedPickups
+        # advancing past it (a head-of-line stall — RL.ReceivePickup silently
+        # no-ops on an index mismatch or a stuck PendingPickup).
+        self._delivery_index: int = -1
+        self._delivery_attempts: int = 0
         self.slot_data: dict = {}
         self.dreadvania_python: Optional[str] = _load_user_config().get(
             "dreadvania_python"
@@ -415,6 +421,19 @@ class DreadContext(CommonContext):
         in place of ``self.executor.run_lua``)."""
         if self._bridge is None or not self._bridge.is_connected() or not self._bootstrapped:
             return
+        # Only deliver while the player is in the game world. We require a
+        # confirmed 'INGAME' (the same gate the bootstrap's RL.UpdateRDVClient
+        # uses) rather than merely "not a known menu" — game_mode is empty until
+        # the first poll reads it, and at connect (the moment AP streams
+        # start_inventory) we must NOT fire a pickup at the title/load menu.
+        # Holding self-corrects within one poll: _poll_once reads the mode and
+        # then calls us. A pickup delivered on a menu sets a PendingPickup
+        # against transient pre-save state that can be orphaned across the
+        # menu→save transition, head-of-line-blocking the whole queue.
+        mode = self.state.game_mode()
+        if mode != "INGAME":
+            log.debug("delivery held: game mode is %r, not INGAME", mode or "<unknown>")
+            return
         received = self.state.game_received_pickups()
         target = len(self._ap_items)
         if received >= target:
@@ -430,11 +449,31 @@ class DreadContext(CommonContext):
         message = f"Received {dread_item.ap_item_name} from {sender}"
         progression = [[{"item_id": dread_item.patcher_item_id,
                          "quantity": dread_item.quantity}]]
+        inv_idx = self.state.game_inventory_index()
+        # Surface each delivery attempt. The game grants only when the sent
+        # received/inventory indices match its live counters, then silently
+        # advances ReceivedPickups; if it never advances, we re-send the same
+        # index every poll — a head-of-line stall that blocks every later item.
+        if received != self._delivery_index:
+            self._delivery_index = received
+            self._delivery_attempts = 1
+            log.info("delivering #%d %s (cls=%s, inv_idx=%d)", received,
+                     dread_item.ap_item_name,
+                     pickup_class_for(dread_item.patcher_item_id), inv_idx)
+        else:
+            self._delivery_attempts += 1
+            if self._delivery_attempts in (3, 10, 30):
+                log.warning(
+                    "delivery of #%d %s has not landed after %d attempts "
+                    "(game ReceivedPickups stuck at %d, inv_idx=%d) — "
+                    "later items are blocked behind it",
+                    received, dread_item.ap_item_name, self._delivery_attempts,
+                    received, inv_idx)
         lua = build_receive_pickup_lua(
             message=message,
             progression=progression,
             received_pickup_index=received,
-            inventory_index=self.state.game_inventory_index(),
+            inventory_index=inv_idx,
             cls=pickup_class_for(dread_item.patcher_item_id),
         )
         try:
@@ -625,6 +664,20 @@ class DreadContext(CommonContext):
         await self._bridge.run_lua("RL.GetInventoryAndSend(); return ''")
         await self._bridge.run_lua("RL.GetCollectedIndicesAndSend(); return ''")
         await self._bridge.run_lua("RL.GetReceivedPickupsAndSend(); return ''")
+        # Refresh the game mode so _attempt_delivery only fires while the player
+        # is actually in the game world (not the title/load menu). Delivering on
+        # a menu sets a PendingPickup against transient pre-save state that can
+        # be orphaned across the menu→save transition, head-of-line-blocking the
+        # whole delivery queue (RL.ReceivePickup ignores resends while a pending
+        # is set). Gating here keeps us out of that state in the first place;
+        # mid-cutscene deliveries are still safe because the bootstrap's
+        # GivePendingPickup defers them until Scenario.IsUserInteractionEnabled.
+        mode_resp = await self._bridge.run_lua(
+            "return tostring(Game.GetCurrentGameModeID())"
+        )
+        if mode_resp.success and mode_resp.payload is not None:
+            self.state.update_game_state(
+                game_mode_id=mode_resp.payload.decode("utf-8", "replace"))
         state_resp = await self._bridge.run_lua(
             "return tostring(Init.bBeatenSinceLastReboot)"
         )
