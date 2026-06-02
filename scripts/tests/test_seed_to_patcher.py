@@ -119,6 +119,9 @@ def test_cross_slot_item_becomes_placeholder_with_caption():
     out = placements_to_overrides(placements)
     key = "s010_cave/ItemSphere_ChargeBeam"
     assert out["pickup_resources"][key] == [[dict(CROSS_SLOT_PLACEHOLDER)]]
+    # The placeholder must grant nothing locally (the real item is sent to the
+    # recipient over the wire); quantity 0 is Randovania's coop convention.
+    assert CROSS_SLOT_PLACEHOLDER["quantity"] == 0
     assert out["pickup_captions"][key] == "Sent The Big Button to ButtonPusher"
     # The in-world sprite is rewritten to the neutral orb so foreign items
     # look generic instead of leaking what they grant via the vanilla model.
@@ -361,5 +364,8 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
     missile = next(p for p in merged["pickups"]
                    if p["pickup_actor"]["actor"] == "Item_MissileTank011")
     assert missile["resources"][0][0]["item_id"] == "ITEM_WEAPON_MISSILE_MAX"
+    # ...but quantity 0, so collecting a foreign item grants the local player
+    # NOTHING (regression guard: it used to bake quantity 2 → +2 missiles).
+    assert missile["resources"][0][0]["quantity"] == 0
     assert missile["caption"] == "Sent Big Button to ButtonPusher"
     assert missile["model"] == ["itemsphere"]
