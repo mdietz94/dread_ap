@@ -231,6 +231,11 @@ async def test_release_burst_drains_fast_and_uses_burst_timings():
     burst popup/reschedule overrides so it isn't gated to ~7.5s each."""
     ctx, dp, fake = await _setup()
     try:
+        # Prime the client's game-mode mirror to INGAME (a poll would normally
+        # read this) so delivery isn't held by the menu gate. We do this once,
+        # NOT per item — the point of this test is that the post-grant pushes
+        # clock the backlog without a poll between each item.
+        ctx.state.update_game_state(game_mode_id="INGAME")
         missile = _ap_id_for(dp, "Missile Tank")
         items = [_network_item(missile) for _ in range(5)]
         await ctx._on_received_items({"index": 0, "items": items})
