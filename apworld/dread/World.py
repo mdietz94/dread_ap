@@ -358,12 +358,17 @@ class DreadWorld(World):
             is_own = (item.player == self.player)
             patcher_item_id = ""
             quantity = 1
+            patcher_model = ""
             ap_item_name = item.name
             if is_own:
                 own_item_data = item_name_to_item.get(item.name)
                 if own_item_data is not None:
                     patcher_item_id = own_item_data.patcher_item_id
                     quantity = own_item_data.quantity
+                    # In-world sphere model for THIS item, so a shuffled pickup
+                    # shows what it grants instead of the starter preset's stale
+                    # vanilla model (cross-slot items get CROSS_SLOT_MODEL).
+                    patcher_model = own_item_data.model_name
                     # Main Power Bomb pickup grants weapon + N PB capacity.
                     # The option overrides items.json's vanilla default (2).
                     if item.name == "Power Bomb":
@@ -376,6 +381,7 @@ class DreadWorld(World):
                 "pickup_index": loc_data.pickup_index,
                 "ap_item_name": ap_item_name,
                 "patcher_item_id": patcher_item_id,
+                "patcher_model": patcher_model,
                 "quantity": quantity,
                 "recipient_slot_name": recipient_slot,
                 "is_own_player": is_own,

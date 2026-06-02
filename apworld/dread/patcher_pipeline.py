@@ -184,6 +184,15 @@ def placements_to_overrides(
             ap_item_name = p.get("ap_item_name", "")
             if ap_item_name:
                 pickup_captions[key] = f"{ap_item_name} acquired."
+            # Re-skin the in-world sphere to THIS item's model for the same
+            # reason as the caption: the starter preset baked Randovania's own
+            # placement model (often a progressive multi-model) at each location,
+            # so after AP shuffling the vanilla model rarely matches what the
+            # pickup actually grants. Only own-slot items have a concrete Dread
+            # model; cross-slot items are handled by CROSS_SLOT_MODEL below.
+            patcher_model = p.get("patcher_model", "")
+            if patcher_model:
+                pickup_models[key] = [patcher_model]
         else:
             ap_item_name = p.get("ap_item_name", "Item")
             pickup_resources[key] = [[dict(CROSS_SLOT_PLACEHOLDER)]]

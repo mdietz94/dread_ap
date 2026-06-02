@@ -30,7 +30,8 @@ from seed_to_patcher_overrides import (  # noqa: E402
 
 # ---- pure-function tests --------------------------------------------------
 
-def _own(name, sc, ac, item_name, patcher_id, qty, idx, pickup_type="actor"):
+def _own(name, sc, ac, item_name, patcher_id, qty, idx, pickup_type="actor",
+         patcher_model="powerup_chargebeam"):
     return {
         "location_name": name,
         "scenario": sc,
@@ -39,6 +40,7 @@ def _own(name, sc, ac, item_name, patcher_id, qty, idx, pickup_type="actor"):
         "pickup_index": idx,
         "ap_item_name": item_name,
         "patcher_item_id": patcher_id,
+        "patcher_model": patcher_model,
         "quantity": qty,
         "recipient_slot_name": "Samus",
         "is_own_player": True,
@@ -98,6 +100,9 @@ def test_own_slot_item_becomes_pickup_resource():
     assert res == [[{"item_id": "ITEM_WEAPON_CHARGE_BEAM", "quantity": 1}]]
     # Own-item captions are overwritten to name the AP item (was: stale template).
     assert out["pickup_captions"][key] == "Charge Beam acquired."
+    # ...and so is the in-world model, so the sphere matches the item granted
+    # instead of keeping the starter preset's vanilla/progressive model.
+    assert out["pickup_models"][key] == ["powerup_chargebeam"]
 
 
 def test_cross_slot_item_becomes_placeholder_with_caption():
@@ -120,9 +125,10 @@ def test_cross_slot_item_becomes_placeholder_with_caption():
     assert out["pickup_models"][key] == ["itemsphere"]
 
 
-def test_own_slot_item_does_not_emit_model_override():
-    """Own-slot pickups must keep their template-baked model so e.g. a Charge
-    Beam pedestal still looks like a beam — only foreign items become orbs."""
+def test_own_slot_item_emits_its_own_model():
+    """Own-slot pickups are re-skinned to the model of the item they grant, so a
+    location the starter preset baked as (say) a Charge Beam now shows the
+    shuffled item's model instead of the stale vanilla one."""
     placements = {
         "slot_name": "Samus",
         "seed_id": "12345678",
@@ -130,7 +136,27 @@ def test_own_slot_item_does_not_emit_model_override():
         "starting_items": {},
         "placements": [
             _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
-                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
+                 "Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 2, 0,
+                 patcher_model="item_missiletank"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_models"]["s010_cave/ItemSphere_ChargeBeam"] == ["item_missiletank"]
+
+
+def test_own_slot_item_without_model_leaves_template_model():
+    """When the placement carries no model (older payloads / the offline CLI
+    flow predating the field), the template's baked model is left untouched
+    rather than guessed — backward compatible, no crash."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0,
+                 patcher_model=""),
         ],
     }
     out = placements_to_overrides(placements)
@@ -323,11 +349,12 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
     assert merged["starting_location"] == {"scenario": "s010_cave", "actor": "StartPoint0"}
     assert merged["starting_items"] == {"ITEM_WEAPON_MISSILE_MAX": 15}
 
-    # Own-slot pickup overridden with our item — model stays vanilla.
+    # Own-slot pickup overridden with our item AND re-skinned to its model, so
+    # the template's stale vanilla model ("x") no longer leaks through.
     morph = next(p for p in merged["pickups"]
                  if p["pickup_actor"]["actor"] == "ItemSphere_ChargeBeam")
     assert morph["resources"][0][0]["item_id"] == "ITEM_WEAPON_CHARGE_BEAM"
-    assert morph["model"] == ["x"]
+    assert morph["model"] == ["powerup_chargebeam"]
 
     # Cross-slot pickup gets placeholder resource + custom caption + the
     # neutral itemsphere model so it doesn't visually leak the dest item.
