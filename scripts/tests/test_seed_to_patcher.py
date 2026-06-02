@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from seed_to_patcher_overrides import (  # noqa: E402
+    CROSS_SLOT_MAP_BASE_ICON,
     CROSS_SLOT_PLACEHOLDER,
     _layout_uuid_from_seed,
     find_placements_in_zip,
@@ -145,6 +146,87 @@ def test_own_slot_item_emits_its_own_model():
     }
     out = placements_to_overrides(placements)
     assert out["pickup_models"]["s010_cave/ItemSphere_ChargeBeam"] == ["item_missiletank"]
+
+
+def test_own_slot_item_emits_icon_id_map_icon():
+    """An own-slot item with a concrete model also re-skins its MAP icon to
+    that model's icon_id, mirroring the in-world model rewrite — otherwise the
+    minimap legend keeps showing whatever item the starter preset baked here."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 2, 0,
+                 patcher_model="item_missiletank"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
+        "icon_id": "item_missiletank"
+    }
+
+
+def test_own_slot_orb_item_emits_custom_icon_label():
+    """Items rendered as the neutral orb (model ``itemsphere`` — e.g. Metroid
+    DNA) have no dedicated icon_id, so they get a labelled custom_icon instead,
+    matching Randovania's own exporter for itemsphere-model pickups."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Corpius Reward", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Metroid DNA 1", "ITEM_RANDO_ARTIFACT_1", 1, 0,
+                 patcher_model="itemsphere"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
+        "custom_icon": {"label": "METROID DNA 1"}
+    }
+
+
+def test_own_slot_item_without_model_leaves_map_icon_untouched():
+    """No model on the placement ⇒ no map-icon override either, so the
+    template's baked icon is left alone (same backward-compat rule as the
+    in-world model)."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0,
+                 patcher_model=""),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"] == {}
+
+
+def test_cross_slot_item_emits_unknown_custom_icon():
+    """A foreign item's map icon becomes the neutral "?" (base_icon ``unknown``)
+    labelled with the item name — it must not keep advertising the Dread item
+    the starter preset baked at this spot."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _cross("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                   "The Big Button", "ButtonPusher", 0),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
+        "custom_icon": {"label": "THE BIG BUTTON", "base_icon": CROSS_SLOT_MAP_BASE_ICON}
+    }
 
 
 def test_own_slot_item_without_model_leaves_template_model():

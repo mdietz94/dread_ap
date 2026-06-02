@@ -342,6 +342,28 @@ Without this fix, the user-visible bug was that Wide/Plasma Beam, Speed
 Booster, Ice Missile did nothing on a remote send and Storm Missile charged-
 but-didn't-lock-on, while Space Jump/Varia worked.
 
+Map-screen item icons: SHIPPED. The in-game pause map shows a per-pickup icon
+(`map_icon` on each template pickup); the starter preset bakes Randovania's OWN
+placement icon at every spot, so after AP shuffling each icon LIED — a relocated
+Missile Tank still showed whatever vanilla item used to sit there, and a foreign
+item advertised the Dread item it replaced. `patcher_pipeline` now rewrites
+`map_icon` alongside the model + caption it already rewrote, mirroring
+Randovania's own exporter (`patch_data_factory._pickup_detail_for_target`) via
+`_map_icon_override`: own item w/ a concrete model → `{"icon_id": <model>}`; own
+item rendered as the orb (model `itemsphere`, e.g. Metroid DNA) →
+`{"custom_icon": {"label": NAME}}`; cross-slot item (always the orb here) →
+`{"custom_icon": {"label": NAME, "base_icon": "unknown"}}` (the "?" glyph, =
+`CROSS_SLOT_MAP_BASE_ICON`, matching upstream's off-world treatment and pairing
+with `CROSS_SLOT_MODEL`'s neutral orb). `merge_overrides` only rewrites an
+EXISTING `map_icon` (every actor pickup has one; the 12 non-actor boss/EMMI
+drops don't, and don't show on the item map) and preserves the template's
+`original_actor` via `_merge_map_icon` (the schema's `map_icon` is a oneOf of
+{empty, icon_id, custom_icon} + optional original_actor, so we swap exactly one
+icon branch). Verified: a full 137-pickup merge (own/cross mix) validates against
+the real upstream `open_dread_rando` `schema.json`, and all 12 original_actor
+refs survive. Tests in `scripts/tests/test_seed_to_patcher.py` +
+`test_build_patcher_json.py`.
+
 Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
 collapse ammo to >=1 and damage to suit ownership); per-trick-category
 granularity; door/elevator randomization. Real-hardware (or Ryujinx)

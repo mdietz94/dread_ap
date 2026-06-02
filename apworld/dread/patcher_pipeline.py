@@ -82,6 +82,13 @@ CROSS_SLOT_PLACEHOLDER = {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 0}
 # use a one-element list; multi-element lists are the progressive-item case).
 CROSS_SLOT_MODEL: list[str] = ["itemsphere"]
 
+# Base map-icon for an in-world pickup that holds ANOTHER slot's item. "unknown"
+# is open-dread-rando's "?" minimap glyph (open_dread_rando/pickups/map_icons.py
+# ALL_ICONS["unknown"] -> ItemUnknown). It's the icon Randovania itself uses for
+# off-world items (see _map_icon_override), and it pairs with CROSS_SLOT_MODEL's
+# neutral orb so the map legend and the in-world sphere agree.
+CROSS_SLOT_MAP_BASE_ICON = "unknown"
+
 # Starting-area option index → (scenario, actor). v0.1 only supports
 # Artaria (option 0 == vanilla start). Future versions extend this.
 STARTING_AREA_INDEX_TO_LOCATION: dict[int, dict[str, str]] = {
@@ -140,6 +147,37 @@ def layout_uuid_from_seed(seed_id: str, slot_name: str) -> str:
     return f"{chars[0:8]}-{chars[8:12]}-{chars[12:16]}-{chars[16:20]}-{chars[20:32]}"
 
 
+def _map_icon_override(is_own: bool, model: str, ap_item_name: str) -> Optional[dict]:
+    """Map-screen icon override for one placement.
+
+    Mirrors Randovania's own Dread exporter (``patch_data_factory.
+    _pickup_detail_for_target``) so the minimap legend matches what we already
+    do for the in-world model + caption:
+
+      * own item with a concrete model    → ``{"icon_id": <model>}``
+      * own item rendered as the orb      → ``{"custom_icon": {"label": NAME}}``
+        (e.g. Metroid DNA, whose ``model_name`` is ``itemsphere``)
+      * cross-slot item (always the orb)  → ``{"custom_icon": {"label": NAME,
+        "base_icon": "unknown"}}`` — the "?" glyph, matching Randovania's
+        off-world treatment.
+
+    The starter preset bakes Randovania's OWN placement icon at every map spot,
+    so after AP shuffling each minimap icon lies: a relocated Missile Tank still
+    shows the icon of whatever vanilla item used to sit there, and a foreign
+    item advertises the Dread item it replaced. Rewriting the icon keeps the map
+    honest. Returns ``None`` when there's nothing to override (own item whose
+    model we don't know — older payloads / the offline CLI flow) so the
+    template's icon is left untouched, exactly like the model path."""
+    label = (ap_item_name or "").upper()
+    if not is_own:
+        return {"custom_icon": {"label": label, "base_icon": CROSS_SLOT_MAP_BASE_ICON}}
+    if not model:
+        return None
+    if model == CROSS_SLOT_MODEL[0]:  # the neutral orb ("itemsphere")
+        return {"custom_icon": {"label": label}}
+    return {"icon_id": model}
+
+
 def placements_to_overrides(
     placements: dict[str, Any],
     *,
@@ -160,6 +198,7 @@ def placements_to_overrides(
     pickup_resources: dict[str, list] = {}
     pickup_captions: dict[str, str] = {}
     pickup_models: dict[str, list[str]] = {}
+    pickup_map_icons: dict[str, dict] = {}
 
     for p in placements.get("placements", []):
         scenario = p.get("scenario")
@@ -204,11 +243,17 @@ def placements_to_overrides(
             patcher_model = p.get("patcher_model", "")
             if patcher_model:
                 pickup_models[key] = [patcher_model]
+            # Re-skin the map-screen icon the same way as the model: the baked
+            # icon names Randovania's placement, stale after AP shuffling.
+            map_icon = _map_icon_override(True, patcher_model, ap_item_name)
+            if map_icon is not None:
+                pickup_map_icons[key] = map_icon
         else:
             ap_item_name = p.get("ap_item_name", "Item")
             pickup_resources[key] = [[dict(CROSS_SLOT_PLACEHOLDER)]]
             pickup_captions[key] = f"Sent {ap_item_name} to {recipient}"
             pickup_models[key] = list(CROSS_SLOT_MODEL)
+            pickup_map_icons[key] = _map_icon_override(False, "", ap_item_name)
 
     if layout_uuid is None:
         layout_uuid = layout_uuid_from_seed(str(seed_id), slot_name)
@@ -226,6 +271,7 @@ def placements_to_overrides(
         "pickup_resources": pickup_resources,
         "pickup_captions": pickup_captions,
         "pickup_models": pickup_models,
+        "pickup_map_icons": pickup_map_icons,
     }
 
 
@@ -245,6 +291,22 @@ def _pickup_key(pickup: dict[str, Any]) -> Optional[str]:
     if cb:
         return f"{cb.get('scenario')}/{cb.get('function')}"
     return None
+
+
+def _merge_map_icon(existing: Any, override: dict) -> dict:
+    """Rewrite the icon branch of a template ``map_icon`` in place-safe fashion.
+
+    The schema models ``map_icon`` as a ``oneOf`` of {empty, ``icon_id``,
+    ``custom_icon``} alongside an optional ``original_actor`` — so exactly one
+    icon branch may be present. We carry over the template's ``original_actor``
+    (it points the icon at the correct map prop) and drop whichever icon branch
+    the template had, replacing it with ours (``override`` holds exactly one of
+    ``icon_id`` / ``custom_icon``)."""
+    merged: dict[str, Any] = {}
+    if isinstance(existing, dict) and "original_actor" in existing:
+        merged["original_actor"] = existing["original_actor"]
+    merged.update(override)
+    return merged
 
 
 NAV_HINT_AP_TEXT = "You're playing Archipelago! There's already a hint system!"
@@ -345,6 +407,7 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})
     pickup_models = overrides.get("pickup_models", {})
+    pickup_map_icons = overrides.get("pickup_map_icons", {})
 
     unmatched = set(pickup_resources.keys())
     for pickup in out.get("pickups", []):
@@ -361,6 +424,12 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
         # leaving them untouched preserves the template's vanilla shape.
         if key in pickup_models and "model" in pickup:
             pickup["model"] = pickup_models[key]
+        # Same rule for the map-screen icon: only rewrite an existing map_icon
+        # (every actor pickup has one; non-actor drops don't appear on the
+        # item map). Preserve the template's original_actor so the icon still
+        # anchors to the right map spot — see _merge_map_icon.
+        if key in pickup_map_icons and "map_icon" in pickup:
+            pickup["map_icon"] = _merge_map_icon(pickup["map_icon"], pickup_map_icons[key])
 
     if unmatched:
         raise ValueError(
