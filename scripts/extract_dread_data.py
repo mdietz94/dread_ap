@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -125,6 +126,15 @@ ITEM_TABLE: list[tuple[str, str, int, int, str]] = [
     # Each Power Bomb Tank pickup grants +1 PB capacity (vanilla).
     ("Power Bomb Tank",     "ITEM_WEAPON_POWER_BOMB_MAX", 1, 13, "filler"),
     ("Energy Part",         "ITEM_LIFE_SHARDS",         1, 16, "filler"),
+    # Super Missile (green-door key) is grouped with the other missiles
+    # conceptually, but is appended LAST on purpose: ap_id is assigned by
+    # row offset (items_seed + offset), so inserting it next to Ice/Storm
+    # would shift every subsequent item's id and force a seed regen. Appended
+    # here it takes the next free id (21554, in the old-event gap) and leaves
+    # all existing ids untouched. model_name ("powerup_supermissile") is
+    # applied directly in items.json, like the other rows (this table predates
+    # the model_name column — see Items.py).
+    ("Super Missile",       "ITEM_WEAPON_SUPER_MISSILE", 1, 1, "progression"),
 ]
 
 
@@ -136,24 +146,59 @@ def _hash16(s: str) -> int:
     return h
 
 
-def _resource_to_ap_name(resources: list[list[dict]]) -> str:
-    """Best-effort: pick an AP-facing item name for a vanilla resource list.
+# Patcher resource ids that are NOT collectible AP items — they carry no
+# pool entry by design and a pickup that grants one has no meaningful vanilla
+# item label. ITEM_NONE is the patcher's "empty pickup" sentinel.
+_NON_ITEM_RESOURCES = {"ITEM_NONE"}
 
-    Vanilla pickups carry the original item directly; once we add
-    progressive items this needs to be smarter."""
+# Neutral label used for sentinel / empty pickups (see _NON_ITEM_RESOURCES).
+# vanilla_item is metadata only (a hint of what the pickup held), so a stable
+# filler is fine here — but a REAL resource with no pool entry must NOT fall
+# through to this; it raises instead (that silent fall-through is exactly how
+# Super Missile went missing for a whole release — see git history).
+_SENTINEL_VANILLA_LABEL = "Missile Tank"
+
+
+def _resource_to_ap_name(resources: list[list[dict]]) -> str:
+    """Map a pickup's vanilla resource list to an AP-facing item name.
+
+    A resource list is a list of *groups*. A single group is a flat pickup;
+    multiple groups are a Randovania PROGRESSIVE pickup (e.g.
+    ``[[SUPER_MISSILE], [ICE_MISSILE]]`` grants Super on first collect, Ice on
+    second). The vanilla label reflects the FIRST stage — what a fresh pickup
+    grants — so reading ``resources[0][0]`` is correct for both shapes.
+
+    Fails loud on any real resource id with no ITEM_TABLE entry: a granted
+    resource the pool can't represent is a modeling gap, not a thing to paper
+    over with a filler label. Only the explicit ``_NON_ITEM_RESOURCES``
+    sentinels (and genuinely empty pickups) get the neutral label."""
     if not resources or not resources[0]:
-        return "Missile Tank"
+        return _SENTINEL_VANILLA_LABEL
     first = resources[0][0]
     pid = first.get("item_id", "")
     qty = int(first.get("quantity", 1))
-    # Reverse-lookup against ITEM_TABLE
+    if pid in _NON_ITEM_RESOURCES:
+        return _SENTINEL_VANILLA_LABEL
+    # Metroid DNA artifacts live in items.json (appended by
+    # append_dna_items.py), not ITEM_TABLE, so resolve them by name here.
+    artifact = re.fullmatch(r"ITEM_RANDO_ARTIFACT_(\d+)", pid)
+    if artifact:
+        return f"Metroid DNA {artifact.group(1)}"
+    # Reverse-lookup against ITEM_TABLE: prefer an exact (id, quantity) match
+    # so capacity variants that share an id (Missile Tank vs Missile+ Tank,
+    # both ITEM_WEAPON_MISSILE_MAX) resolve to the right name, then fall back
+    # to an id-only match.
     for ap_name, patcher_id, default_qty, _pool, _cls in ITEM_TABLE:
         if patcher_id == pid and default_qty == qty:
             return ap_name
     for ap_name, patcher_id, _default_qty, _pool, _cls in ITEM_TABLE:
         if patcher_id == pid:
             return ap_name
-    return "Missile Tank"  # last-resort filler
+    raise ValueError(
+        f"pickup grants resource {pid!r} (quantity {qty}) with no ITEM_TABLE "
+        f"entry. Add it to ITEM_TABLE (and items.json) or, if it is a "
+        f"non-collectible sentinel, list it in _NON_ITEM_RESOURCES."
+    )
 
 
 def _build_location_name(scenario: str, actor: str, pickup_type: str) -> str:
