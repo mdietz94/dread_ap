@@ -145,6 +145,44 @@ def test_vanilla_items_resolve_to_known_item(locations, items):
             f"vanilla_item {l['vanilla_item']!r} not in items.json"
 
 
+# Resource ids the game grants that are NOT collectible AP items (the patcher's
+# "empty pickup" sentinel). Mirrors extract_dread_data._NON_ITEM_RESOURCES.
+_NON_ITEM_RESOURCES = {"ITEM_NONE"}
+
+
+def test_every_preset_granted_resource_has_a_pool_item(items):
+    """Every resource the canonical layout actually grants must be
+    representable by some item in items.json (matched on patcher_item_id).
+
+    This is the regression net for the missing-Super-Missile bug: Super
+    Missile is granted in the starter preset (as the first stage of a
+    ``[[Super],[Ice]]`` progressive pickup) but had no pool entry, so it could
+    never be collected. ``test_vanilla_items_resolve_to_known_item`` did NOT
+    catch it, because the extractor silently relabeled the orphaned pickup as a
+    (valid) Missile Tank. Checking against the GRANTED resources — not the
+    post-fallback labels — is what makes the gap visible. Spans all resource
+    groups so progressive second/third stages are covered too."""
+    template = json.loads((DATA / "starter_preset_patcher.json").read_text())
+    pool_pids = {it["patcher_item_id"] for it in items}
+    missing: dict[str, str] = {}
+    for pickup in template.get("pickups", []):
+        for group in pickup.get("resources", []) or []:
+            for resource in group:
+                pid = resource.get("item_id")
+                if not pid or pid in _NON_ITEM_RESOURCES:
+                    continue
+                if pid not in pool_pids:
+                    actor = (pickup.get("pickup_actor") or {}).get(
+                        "actor", pickup.get("pickup_type", "?"))
+                    missing.setdefault(pid, actor)
+    assert not missing, (
+        "starter preset grants resources with no items.json entry: "
+        f"{ {pid: f'e.g. {actor}' for pid, actor in sorted(missing.items())} }. "
+        "Add each to ITEM_TABLE + items.json (or _NON_ITEM_RESOURCES if it is "
+        "a non-collectible sentinel)."
+    )
+
+
 # ---- distribution sanity ----
 
 def test_artaria_has_most_pickups(locations):

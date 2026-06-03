@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from seed_to_patcher_overrides import (  # noqa: E402
+    CROSS_SLOT_MAP_BASE_ICON,
     CROSS_SLOT_PLACEHOLDER,
     _layout_uuid_from_seed,
     find_placements_in_zip,
@@ -30,7 +31,8 @@ from seed_to_patcher_overrides import (  # noqa: E402
 
 # ---- pure-function tests --------------------------------------------------
 
-def _own(name, sc, ac, item_name, patcher_id, qty, idx, pickup_type="actor"):
+def _own(name, sc, ac, item_name, patcher_id, qty, idx, pickup_type="actor",
+         patcher_model="powerup_chargebeam"):
     return {
         "location_name": name,
         "scenario": sc,
@@ -39,6 +41,7 @@ def _own(name, sc, ac, item_name, patcher_id, qty, idx, pickup_type="actor"):
         "pickup_index": idx,
         "ap_item_name": item_name,
         "patcher_item_id": patcher_id,
+        "patcher_model": patcher_model,
         "quantity": qty,
         "recipient_slot_name": "Samus",
         "is_own_player": True,
@@ -87,7 +90,7 @@ def test_own_slot_item_becomes_pickup_resource():
         "starting_area": 0,
         "starting_items": {"ITEM_WEAPON_MISSILE_MAX": 0},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                  "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
         ],
     }
@@ -98,6 +101,9 @@ def test_own_slot_item_becomes_pickup_resource():
     assert res == [[{"item_id": "ITEM_WEAPON_CHARGE_BEAM", "quantity": 1}]]
     # Own-item captions are overwritten to name the AP item (was: stale template).
     assert out["pickup_captions"][key] == "Charge Beam acquired."
+    # ...and so is the in-world model, so the sphere matches the item granted
+    # instead of keeping the starter preset's vanilla/progressive model.
+    assert out["pickup_models"][key] == ["powerup_chargebeam"]
 
 
 def test_cross_slot_item_becomes_placeholder_with_caption():
@@ -107,30 +113,135 @@ def test_cross_slot_item_becomes_placeholder_with_caption():
         "starting_area": 0,
         "starting_items": {},
         "placements": [
-            _cross("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _cross("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                    "The Big Button", "ButtonPusher", 0),
         ],
     }
     out = placements_to_overrides(placements)
     key = "s010_cave/ItemSphere_ChargeBeam"
     assert out["pickup_resources"][key] == [[dict(CROSS_SLOT_PLACEHOLDER)]]
+    # The placeholder must grant nothing locally (the real item is sent to the
+    # recipient over the wire); quantity 0 is Randovania's coop convention.
+    assert CROSS_SLOT_PLACEHOLDER["quantity"] == 0
     assert out["pickup_captions"][key] == "Sent The Big Button to ButtonPusher"
     # The in-world sprite is rewritten to the neutral orb so foreign items
     # look generic instead of leaking what they grant via the vanilla model.
     assert out["pickup_models"][key] == ["itemsphere"]
 
 
-def test_own_slot_item_does_not_emit_model_override():
-    """Own-slot pickups must keep their template-baked model so e.g. a Charge
-    Beam pedestal still looks like a beam — only foreign items become orbs."""
+def test_own_slot_item_emits_its_own_model():
+    """Own-slot pickups are re-skinned to the model of the item they grant, so a
+    location the starter preset baked as (say) a Charge Beam now shows the
+    shuffled item's model instead of the stale vanilla one."""
     placements = {
         "slot_name": "Samus",
         "seed_id": "12345678",
         "starting_area": 0,
         "starting_items": {},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
-                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 2, 0,
+                 patcher_model="item_missiletank"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_models"]["s010_cave/ItemSphere_ChargeBeam"] == ["item_missiletank"]
+
+
+def test_own_slot_item_emits_icon_id_map_icon():
+    """An own-slot item with a concrete model also re-skins its MAP icon to
+    that model's icon_id, mirroring the in-world model rewrite — otherwise the
+    minimap legend keeps showing whatever item the starter preset baked here."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 2, 0,
+                 patcher_model="item_missiletank"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
+        "icon_id": "item_missiletank"
+    }
+
+
+def test_own_slot_orb_item_emits_custom_icon_label():
+    """Items rendered as the neutral orb (model ``itemsphere`` — e.g. Metroid
+    DNA) have no dedicated icon_id, so they get a labelled custom_icon instead,
+    matching Randovania's own exporter for itemsphere-model pickups."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Corpius Reward", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Metroid DNA 1", "ITEM_RANDO_ARTIFACT_1", 1, 0,
+                 patcher_model="itemsphere"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
+        "custom_icon": {"label": "METROID DNA 1"}
+    }
+
+
+def test_own_slot_item_without_model_leaves_map_icon_untouched():
+    """No model on the placement ⇒ no map-icon override either, so the
+    template's baked icon is left alone (same backward-compat rule as the
+    in-world model)."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0,
+                 patcher_model=""),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"] == {}
+
+
+def test_cross_slot_item_emits_unknown_custom_icon():
+    """A foreign item's map icon becomes the neutral "?" (base_icon ``unknown``)
+    labelled with the item name — it must not keep advertising the Dread item
+    the starter preset baked at this spot."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _cross("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                   "The Big Button", "ButtonPusher", 0),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
+        "custom_icon": {"label": "THE BIG BUTTON", "base_icon": CROSS_SLOT_MAP_BASE_ICON}
+    }
+
+
+def test_own_slot_item_without_model_leaves_template_model():
+    """When the placement carries no model (older payloads / the offline CLI
+    flow predating the field), the template's baked model is left untouched
+    rather than guessed — backward compatible, no crash."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0,
+                 patcher_model=""),
         ],
     }
     out = placements_to_overrides(placements)
@@ -308,7 +419,7 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
         "starting_area": 0,
         "starting_items": {"ITEM_WEAPON_MISSILE_MAX": 15},
         "placements": [
-            _own("Artaria: ChargeBeam", "s010_cave", "ItemSphere_ChargeBeam",
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
                  "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
             _cross("Artaria: MissileTank011", "s010_cave", "Item_MissileTank011",
                    "Big Button", "ButtonPusher", 1),
@@ -323,16 +434,20 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
     assert merged["starting_location"] == {"scenario": "s010_cave", "actor": "StartPoint0"}
     assert merged["starting_items"] == {"ITEM_WEAPON_MISSILE_MAX": 15}
 
-    # Own-slot pickup overridden with our item — model stays vanilla.
+    # Own-slot pickup overridden with our item AND re-skinned to its model, so
+    # the template's stale vanilla model ("x") no longer leaks through.
     morph = next(p for p in merged["pickups"]
                  if p["pickup_actor"]["actor"] == "ItemSphere_ChargeBeam")
     assert morph["resources"][0][0]["item_id"] == "ITEM_WEAPON_CHARGE_BEAM"
-    assert morph["model"] == ["x"]
+    assert morph["model"] == ["powerup_chargebeam"]
 
     # Cross-slot pickup gets placeholder resource + custom caption + the
     # neutral itemsphere model so it doesn't visually leak the dest item.
     missile = next(p for p in merged["pickups"]
                    if p["pickup_actor"]["actor"] == "Item_MissileTank011")
     assert missile["resources"][0][0]["item_id"] == "ITEM_WEAPON_MISSILE_MAX"
+    # ...but quantity 0, so collecting a foreign item grants the local player
+    # NOTHING (regression guard: it used to bake quantity 2 → +2 missiles).
+    assert missile["resources"][0][0]["quantity"] == 0
     assert missile["caption"] == "Sent Big Button to ButtonPusher"
     assert missile["model"] == ["itemsphere"]

@@ -315,6 +315,37 @@ async def test_cutscene_delivery_is_deferred_not_dropped():
 
 
 @pytest.mark.asyncio
+async def test_delivery_held_until_ingame():
+    """A pickup must not be sent while the player is on a menu (game mode !=
+    INGAME). Delivering there would set a PendingPickup against transient
+    pre-save state that can be orphaned across the menu→save transition,
+    head-of-line-blocking the queue. The client holds delivery entirely on its
+    side until a poll confirms INGAME, then delivers normally. This is the
+    early-delivery guard for AP start_inventory, which streams at connect while
+    the player may still be at the title/load screen."""
+    ctx, dp, fake = await _setup()
+    fake.game_mode = "MENU"
+    try:
+        missile = _ap_id_for(dp, "Missile Tank")
+        await ctx._on_received_items({"index": 0, "items": [_network_item(missile)]})
+        for _ in range(3):
+            await ctx._poll_once()
+            await asyncio.sleep(0.02)
+        # Held client-side: no ReceivePickup reached the game.
+        assert not fake.has_pending
+        assert fake.received_pickups == 0
+        assert fake.inventory_of(MISSILE_ITEM) == 0
+
+        # Player loads their save → INGAME → delivery proceeds.
+        fake.game_mode = "INGAME"
+        await _drive(ctx, fake, target=1)
+        assert fake.received_pickups == 1
+        assert fake.inventory_of(MISSILE_ITEM) == 2
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_game_restart_without_save_redelivers_lost_items():
     ctx, dp, fake = await _setup()
     try:

@@ -70,8 +70,68 @@ def appdata_root() -> Path:
     return root
 
 
+def _space_free_build_root() -> Path:
+    """A space-free directory to host the devkitPro build tree.
+
+    Only consulted when the natural per-user location (`%APPDATA%/dread_ap`)
+    contains a space — i.e. the Windows username has one ("Vod Kanakas").
+    devkitPro's make-based build chain cannot tolerate a space *anywhere* in
+    the build path (see `build_dir`), and every per-user dir (APPDATA,
+    LOCALAPPDATA, USERPROFILE, TEMP) embeds the username, so we relocate to a
+    shared, space-free, user-writable root instead.
+
+    Tries, in order: `%PUBLIC%` (`C:\\Users\\Public`, designed for shared
+    writable data), `%ProgramData%` (`C:\\ProgramData`), then the system-drive
+    root (`C:\\`). Each is skipped if it (improbably) contains a space or
+    can't be created. Falls back to the temp dir as a last resort — that path
+    may itself contain a space, but it's the OS's best writable scratch space
+    and beats failing outright."""
+    candidates: list[Path] = []
+    public = os.environ.get("PUBLIC")
+    if public:
+        candidates.append(Path(public) / "dread_ap")
+    programdata = os.environ.get("ProgramData")
+    if programdata:
+        candidates.append(Path(programdata) / "dread_ap")
+    sysdrive = os.environ.get("SystemDrive") or "C:"
+    # Forward slash so `Path("C:/")` resolves to the drive *root* on Windows
+    # (bare `Path("C:")` means the cwd on C:) and stays valid on POSIX tests.
+    candidates.append(Path(sysdrive + "/") / "dread_ap")
+
+    for cand in candidates:
+        if " " in str(cand):
+            continue
+        try:
+            cand.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        return cand
+
+    import tempfile
+    return Path(tempfile.gettempdir()) / "dread_ap"
+
+
 def build_dir() -> Path:
-    d = appdata_root() / "build"
+    """Directory holding the exlaunch checkout + build outputs.
+
+    Normally `%APPDATA%/dread_ap/build`. But devkitPro's make-based build
+    chain (and make itself) cannot handle a space anywhere in the build path:
+    the Makefile re-derives the cwd via `$(shell pwd)` / `$(CURDIR)` and feeds
+    it *unquoted* into `include $(PWD)/config.mk`, VPATH, and the object-file
+    lists. With a username like "Vod Kanakas", `include /c/Users/Vod
+    Kanakas/.../config.mk` splits on the space and make tries to read
+    `/c/Users/Vod` — a directory — dying with
+    `make: *** /c/Users/Vod: Is a directory. Stop.` Quoting our own
+    `cd '<path>'` shell command (commit 597107c) doesn't help, because the
+    spaces are reconstructed *inside* the Makefile from the working directory.
+
+    So when the natural location contains a space, relocate the whole build
+    tree to a space-free root (see `_space_free_build_root`). Every build
+    helper resolves through this one function, so the clone, compile, harvest,
+    and manifest all follow the relocation in lockstep. When the username has
+    no space (the common case), behaviour is unchanged."""
+    default = appdata_root() / "build"
+    d = default if " " not in str(default) else _space_free_build_root() / "build"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

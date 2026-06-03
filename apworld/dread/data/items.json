@@ -5,7 +5,8 @@
     "patcher_item_id": "ITEM_MORPH_BALL",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_morphball"
   },
   {
     "name": "Bomb",
@@ -13,7 +14,8 @@
     "patcher_item_id": "ITEM_WEAPON_BOMB",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_bomb"
   },
   {
     "name": "Cross Bomb",
@@ -21,7 +23,8 @@
     "patcher_item_id": "ITEM_WEAPON_LINE_BOMB",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_crossbomb"
   },
   {
     "name": "Power Bomb",
@@ -29,7 +32,8 @@
     "patcher_item_id": "ITEM_WEAPON_POWER_BOMB",
     "quantity": 2,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_powerbomb"
   },
   {
     "name": "Charge Beam",
@@ -37,7 +41,8 @@
     "patcher_item_id": "ITEM_WEAPON_CHARGE_BEAM",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_chargebeam"
   },
   {
     "name": "Wide Beam",
@@ -45,7 +50,8 @@
     "patcher_item_id": "ITEM_WEAPON_WIDE_BEAM",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_widebeam"
   },
   {
     "name": "Plasma Beam",
@@ -53,7 +59,8 @@
     "patcher_item_id": "ITEM_WEAPON_PLASMA_BEAM",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_plasmabeam"
   },
   {
     "name": "Wave Beam",
@@ -61,7 +68,8 @@
     "patcher_item_id": "ITEM_WEAPON_WAVE_BEAM",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_wavebeam"
   },
   {
     "name": "Diffusion Beam",
@@ -69,7 +77,8 @@
     "patcher_item_id": "ITEM_WEAPON_DIFFUSION_BEAM",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_diffusionbeam"
   },
   {
     "name": "Grapple Beam",
@@ -77,7 +86,8 @@
     "patcher_item_id": "ITEM_WEAPON_GRAPPLE_BEAM",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_grapplebeam"
   },
   {
     "name": "Ice Missile",
@@ -85,7 +95,8 @@
     "patcher_item_id": "ITEM_WEAPON_ICE_MISSILE",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_icemissile"
   },
   {
     "name": "Storm Missile",
@@ -93,7 +104,17 @@
     "patcher_item_id": "ITEM_MULTILOCKON",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_stormmissile"
+  },
+  {
+    "name": "Super Missile",
+    "ap_id": 21554,
+    "patcher_item_id": "ITEM_WEAPON_SUPER_MISSILE",
+    "quantity": 1,
+    "pool_count": 1,
+    "classification": "progression",
+    "model_name": "powerup_supermissile"
   },
   {
     "name": "Varia Suit",
@@ -101,7 +122,8 @@
     "patcher_item_id": "ITEM_VARIA_SUIT",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_variasuit"
   },
   {
     "name": "Gravity Suit",
@@ -109,7 +131,8 @@
     "patcher_item_id": "ITEM_GRAVITY_SUIT",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_gravitysuit"
   },
   {
     "name": "Phantom Cloak",
@@ -117,7 +140,8 @@
     "patcher_item_id": "ITEM_OPTIC_CAMOUFLAGE",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_opticcamo"
   },
   {
     "name": "Flash Shift",
@@ -125,7 +149,8 @@
     "patcher_item_id": "ITEM_GHOST_AURA",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_ghostaura"
   },
   {
     "name": "Pulse Radar",
@@ -133,7 +158,8 @@
     "patcher_item_id": "ITEM_SONAR",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_sonar"
   },
   {
     "name": "Speed Booster",
@@ -141,7 +167,8 @@
     "patcher_item_id": "ITEM_SPEED_BOOSTER",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_speedbooster"
   },
   {
     "name": "Spider Magnet",
@@ -149,7 +176,8 @@
     "patcher_item_id": "ITEM_MAGNET_GLOVE",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_spidermagnet"
   },
   {
     "name": "Spin Boost",
@@ -157,7 +185,8 @@
     "patcher_item_id": "ITEM_DOUBLE_JUMP",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_doublejump"
   },
   {
     "name": "Space Jump",
@@ -165,7 +194,8 @@
     "patcher_item_id": "ITEM_SPACE_JUMP",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_spacejump"
   },
   {
     "name": "Screw Attack",
@@ -173,7 +203,8 @@
     "patcher_item_id": "ITEM_SCREW_ATTACK",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_screwattack"
   },
   {
     "name": "Slide",
@@ -181,7 +212,8 @@
     "patcher_item_id": "ITEM_FLOOR_SLIDE",
     "quantity": 1,
     "pool_count": 1,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "powerup_slide"
   },
   {
     "name": "Energy Tank",
@@ -189,7 +221,8 @@
     "patcher_item_id": "ITEM_ENERGY_TANKS",
     "quantity": 1,
     "pool_count": 8,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "item_energytank"
   },
   {
     "name": "Missile+ Tank",
@@ -197,7 +230,8 @@
     "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
     "quantity": 10,
     "pool_count": 12,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "item_missiletankplus"
   },
   {
     "name": "Flash Shift Upgrade",
@@ -205,7 +239,8 @@
     "patcher_item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN",
     "quantity": 1,
     "pool_count": 2,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "item_flashshiftupgrade"
   },
   {
     "name": "Speed Booster Upgrade",
@@ -213,7 +248,8 @@
     "patcher_item_id": "ITEM_UPGRADE_SPEED_BOOST_CHARGE",
     "quantity": 1,
     "pool_count": 2,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "item_speedboostupgrade"
   },
   {
     "name": "Missile Tank",
@@ -221,7 +257,8 @@
     "patcher_item_id": "ITEM_WEAPON_MISSILE_MAX",
     "quantity": 2,
     "pool_count": 60,
-    "classification": "progression_skip_balancing"
+    "classification": "progression_skip_balancing",
+    "model_name": "item_missiletank"
   },
   {
     "name": "Power Bomb Tank",
@@ -229,7 +266,8 @@
     "patcher_item_id": "ITEM_WEAPON_POWER_BOMB_MAX",
     "quantity": 1,
     "pool_count": 13,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "item_powerbombtank"
   },
   {
     "name": "Energy Part",
@@ -237,7 +275,8 @@
     "patcher_item_id": "ITEM_LIFE_SHARDS",
     "quantity": 1,
     "pool_count": 16,
-    "classification": "filler"
+    "classification": "filler",
+    "model_name": "item_energyfragment"
   },
   {
     "name": "Metroid DNA 1",
@@ -245,7 +284,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_1",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 2",
@@ -253,7 +293,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_2",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 3",
@@ -261,7 +302,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_3",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 4",
@@ -269,7 +311,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_4",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 5",
@@ -277,7 +320,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_5",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 6",
@@ -285,7 +329,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_6",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 7",
@@ -293,7 +338,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_7",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 8",
@@ -301,7 +347,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_8",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 9",
@@ -309,7 +356,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_9",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 10",
@@ -317,7 +365,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_10",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 11",
@@ -325,7 +374,8 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_11",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   },
   {
     "name": "Metroid DNA 12",
@@ -333,6 +383,7 @@
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_12",
     "quantity": 1,
     "pool_count": 0,
-    "classification": "progression"
+    "classification": "progression",
+    "model_name": "itemsphere"
   }
 ]

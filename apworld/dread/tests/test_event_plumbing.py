@@ -130,12 +130,12 @@ def test_victory_condition_predicate_requires_event_ship_item():
 # ---- item-only inlined rules ----
 
 def test_burenia_pickup_is_item_only_and_gated():
-    """Events are inlined, so Burenia: missiletankplus_001 is an item-only rule
-    (no event atoms), gated (not trivially reachable), and satisfied by a full
-    loadout. (Pre-inlining this pickup had an event-gated disjunct; that cost is
-    now folded into its item requirements.)"""
+    """Events are inlined, so Burenia: Main Hub Tower Middle - Missile+ Tank is
+    an item-only rule (no event atoms), gated (not trivially reachable), and
+    satisfied by a full loadout. (Pre-inlining this pickup had an event-gated
+    disjunct; that cost is now folded into its item requirements.)"""
     raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
-    ast = raw["rules"]["Burenia: missiletankplus_001"]
+    ast = raw["rules"]["Burenia: Main Hub Tower Middle - Missile+ Tank"]
 
     def has_event(a):
         if a.get("type") == "event":
