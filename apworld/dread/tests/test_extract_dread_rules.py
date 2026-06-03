@@ -55,11 +55,14 @@ def test_translate_damage_lava_emits_threshold():
 
 
 def test_translate_damage_cold_emits_threshold():
+    # In Dread only Gravity Suit negates cold; Varia does NOT. Randovania's
+    # logic DB never offers Varia as a cold-damage suit pass (only Gravity, or
+    # a Suitless-trick + HP route), so Varia must not appear here.
     ast = edr.translate_damage("Cold", 80)
     assert ast["type"] == "damage_threshold"
     assert ast["hp_needed"] == 80
-    assert "Gravity Suit" in ast["suit_options"]
-    assert "Varia Suit" in ast["suit_options"]
+    assert ast["suit_options"] == ["Gravity Suit"]
+    assert "Varia Suit" not in ast["suit_options"]
 
 
 def test_translate_damage_generic_emits_no_suit_threshold():

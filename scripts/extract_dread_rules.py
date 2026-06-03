@@ -470,9 +470,15 @@ def translate_damage(kind: str, amount: int) -> dict:
                 "suit_options": ["Varia Suit", "Gravity Suit"],
                 "hp_needed": int(amount)}
     if kind == "Cold":
-        # Cold rooms in Ferenia — gravity / varia both fine in vanilla.
+        # In Dread, ONLY Gravity Suit negates cold — Varia does not. Verified
+        # against Randovania's logic DB (commit 3559136d): of the 47 OR-groups
+        # containing a Cold-damage branch across all 9 regions, every suit pass
+        # is Gravity (the rest are a no-suit "Suitless" trick + HP-budget route);
+        # Varia never appears. Listing Varia here previously put Varia-only seeds
+        # in logic for cold rooms that genuinely require Gravity. (Heat keeps
+        # Varia per its own mapping above.)
         return {"type": "damage_threshold",
-                "suit_options": ["Gravity Suit", "Varia Suit"],
+                "suit_options": ["Gravity Suit"],
                 "hp_needed": int(amount)}
     if kind == "OOB":
         # Out-of-bounds damage — implies unintended route; treat as
