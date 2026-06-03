@@ -21,8 +21,12 @@ Dread Client commands (type with leading /):
   /bridge_status                           show TCP/UDP bridge + connected Switches
   /switches                                alias of /bridge_status
   /promote_switch <device_id>              make this Switch the active one
+  /warp                                    warp to the starting room (softlock recovery)
   /setup                                   open the setup wizard (prereqs, build, deploy)
   /poke <lua>                              run arbitrary Lua via lua_exec (debug)
+
+Tip: at any save station, hold ZL+ZR while selecting Cancel to warp
+to the starting location (built into the patched seed).
 
 To inject items, use the AP server console:
   /send <slot> <item name>                 e.g. /send Samus Missile Tank
