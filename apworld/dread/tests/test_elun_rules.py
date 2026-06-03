@@ -61,6 +61,7 @@ VANILLA_LATE_GAME = {
     "Morph Ball": 1, "Bomb": 1, "Cross Bomb": 1, "Power Bomb": 1,
     "Charge Beam": 1, "Wide Beam": 1, "Plasma Beam": 1, "Wave Beam": 1,
     "Grapple Beam": 1, "Diffusion Beam": 1, "Ice Missile": 1, "Storm Missile": 1,
+    "Super Missile": 1,
     "Missile Tank": 5, "Power Bomb Tank": 2, "Energy Tank": 5,
     "Varia Suit": 1, "Gravity Suit": 1, "Phantom Cloak": 1,
     "Flash Shift": 1, "Pulse Radar": 1, "Speed Booster": 1,

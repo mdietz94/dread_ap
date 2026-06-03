@@ -205,7 +205,7 @@ def test_compiled_elun_energy_tank_rule_is_item_gated():
         "Spider Magnet", "Speed Booster", "Space Jump", "Spin Boost",
         "Screw Attack", "Varia Suit", "Gravity Suit", "Flash Shift",
         "Phantom Cloak", "Power Bomb", "Missile Tank", "Missile+ Tank",
-        "Storm Missile", "Ice Missile", "Slide", "Pulse Radar",
+        "Storm Missile", "Ice Missile", "Super Missile", "Slide", "Pulse Radar",
         "Flash Shift Upgrade", "Speed Booster Upgrade")}
     assert pred(StubState(full)) is True
 
