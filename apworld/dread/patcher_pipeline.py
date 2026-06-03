@@ -258,7 +258,7 @@ def placements_to_overrides(
     if layout_uuid is None:
         layout_uuid = layout_uuid_from_seed(str(seed_id), slot_name)
 
-    cfg_id = f"AP-{str(seed_id)[:8]}-{slot_name}"
+    cfg_id = f"AP-{str(seed_id)[:8]}"
 
     return {
         "layout_uuid": layout_uuid,

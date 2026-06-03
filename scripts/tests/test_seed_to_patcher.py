@@ -298,7 +298,7 @@ def test_non_actor_pickups_are_overridden():
     }
 
 
-def test_configuration_identifier_includes_slot_and_seed_prefix():
+def test_configuration_identifier_includes_seed_prefix_only():
     placements = {
         "slot_name": "Samus",
         "seed_id": "1234567890abcdef",
@@ -307,7 +307,7 @@ def test_configuration_identifier_includes_slot_and_seed_prefix():
         "placements": [],
     }
     out = placements_to_overrides(placements)
-    assert out["configuration_identifier"] == "AP-12345678-Samus"
+    assert out["configuration_identifier"] == "AP-12345678"
 
 
 def test_starting_location_for_artaria():
@@ -430,7 +430,7 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
 
     # Top-level fields applied
     assert merged["layout_uuid"] != template["layout_uuid"]
-    assert merged["configuration_identifier"] == "AP-deadbeef-Samus"
+    assert merged["configuration_identifier"] == "AP-deadbeef"
     assert merged["starting_location"] == {"scenario": "s010_cave", "actor": "StartPoint0"}
     assert merged["starting_items"] == {"ITEM_WEAPON_MISSILE_MAX": 15}
 
