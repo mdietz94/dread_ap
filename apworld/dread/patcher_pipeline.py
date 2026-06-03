@@ -841,11 +841,15 @@ def patch(
 
     if not vanilla_romfs_dir.is_dir():
         return PatchResult(ok=False, message=f"vanilla romfs not found: {vanilla_romfs_dir}")
-    if not dreadvania_install_dir.is_dir():
-        return PatchResult(ok=False, message=(
-            f"dreadvania install dir not found: {dreadvania_install_dir}\n"
-            "Run the Randovania GUI installer at least once first — we overlay onto its output."
-        ))
+    # First-ever deploy: the per-title install dir (SD .../contents/<tid> or
+    # Ryujinx .../DreadRandovania) may not exist yet — _maybe_auto_patch's
+    # SD-mount guard deliberately admits a freshly-mounted card that has only
+    # the `atmosphere` dir, on the documented premise that "the patcher itself
+    # creates the per-title dir". The install dir is the patcher's OUTPUT target
+    # (we overlay patched romfs onto vanilla_romfs_dir, never onto this dir's
+    # prior contents), so create it here instead of failing — a first deploy
+    # then behaves identically to every subsequent one.
+    dreadvania_install_dir.mkdir(parents=True, exist_ok=True)
 
     # 1+2: build patcher input. mod_compatibility (when given) overrides the
     # template default so an Atmosphere/SD deploy writes flat into

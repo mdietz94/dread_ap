@@ -46,6 +46,11 @@ def locations():
 
 @pytest.fixture(scope="module")
 def template():
+    if not TEMPLATE.exists():
+        pytest.skip(
+            "vendored open-dread-rando not checked out — run "
+            "`git submodule update --init vendor/open-dread-rando`"
+        )
     return json.loads(TEMPLATE.read_text())
 
 

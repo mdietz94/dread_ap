@@ -29,6 +29,10 @@ def test_autodetect_returns_first_with_deps(monkeypatch):
 def test_autodetect_all_missing_returns_pip_command(monkeypatch):
     monkeypatch.setattr(pp, "_candidate_pythons", lambda: ["firstpy", "secondpy"])
     monkeypatch.setattr(pp, "check_dependencies", lambda p: "missing")
+    # The pip-install branch is only reached when the vendored submodule IS
+    # present; otherwise autodetect short-circuits with a submodule-missing
+    # diagnostic. Pretend it's checked out so we exercise the deps path here.
+    monkeypatch.setattr(pp, "vendored_open_dread_rando_src", lambda: Path("vendored"))
     path, msg = pp.autodetect_patcher_python()
     assert path is None
     # Names the best (first) candidate in the actionable command. The

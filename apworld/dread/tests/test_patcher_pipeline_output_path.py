@@ -97,6 +97,24 @@ def test_atmosphere_output_path_strips_to_atmosphere_dir(monkeypatch, tmp_path):
     assert out.name == "atmosphere"
 
 
+def test_first_deploy_creates_missing_install_dir(monkeypatch, tmp_path):
+    """First-ever deploy: the per-title install dir doesn't exist yet (the
+    SD-mount guard in _maybe_auto_patch admits a freshly-mounted card that has
+    only atmosphere/). patch() must CREATE the install dir and proceed, not fail
+    with 'install dir not found', so a first deploy works identically to later
+    ones."""
+    mod_dir = tmp_path / "sd" / "atmosphere" / "contents" / "010093801237c000"
+    assert not mod_dir.exists()  # the case this guards: title-id dir missing
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    result, _ = _patch_with_fakes(
+        monkeypatch, mod_dir, romfs, mod_compatibility="atmosphere")
+
+    assert result.ok, result.message
+    assert mod_dir.is_dir(), "patch() must create the install dir on first deploy"
+
+
 def test_atmosphere_ips_land_in_global_exefs_patches(monkeypatch, tmp_path):
     """Atmosphere reads exefs IPS from the GLOBAL exefs_patches tree (sibling
     of contents/), not from inside the title folder. The version-sentinel .ips
