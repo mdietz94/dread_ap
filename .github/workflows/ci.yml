@@ -1,0 +1,48 @@
+name: CI
+
+# Runs the apworld + scripts test suites on every push to main and every PR,
+# so apworld breakages are caught before merge. (The release workflow only runs
+# scripts/tests/, which is how the Super Missile item-mapping break once slipped
+# through.)
+#
+# Runs on Windows — the project's dev/target platform. The _setup prereq/build
+# tests exercise devkitPro/msys2 paths that aren't meaningful on Linux, so the
+# suite is only verified green on Windows. Tests that need the full Archipelago
+# runtime (BaseClasses/Options/worlds.AutoWorld) skip automatically; vendor
+# fixture tests run because the open-dread-rando submodule is checked out here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      DREAD_NOGUI: "1"           # force the headless client (no Kivy at import)
+      PYTHONIOENCODING: "utf-8"  # the rule extractor prints non-ASCII (em dashes)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # vendor/open-dread-rando supplies the patcher-template test fixtures.
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-asyncio jsonschema
+
+      - name: Fetch Randovania logic cache
+        # conftest.py regenerates the gitignored compiled_rules*.json from this
+        # cache at session start; without it the rule-dependent tests can't load.
+        run: python scripts/cache_randovania_logic.py
+
+      - name: Run tests (apworld + scripts)
+        run: python -m pytest apworld/dread/tests scripts/tests -q
