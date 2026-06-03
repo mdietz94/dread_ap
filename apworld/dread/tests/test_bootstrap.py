@@ -45,6 +45,17 @@ def test_last_block_flips_bootstrap_flag(real_rows):
     assert blocks[-1] == "RL.Bootstrap=true"
 
 
+def test_killplayer_defined_before_bootstrap_flag(real_rows):
+    """Our non-vendored DeathLink kill primitive ships in the bootstrap, after
+    the vendored parts and before the done flag (so RL exists when it loads)."""
+    items, locations = real_rows
+    blocks = bs.build_bootstrap_code(items, locations)
+    joined = "\n".join(blocks)
+    assert "function RL.KillPlayer" in joined
+    kill_idx = next(i for i, b in enumerate(blocks) if "function RL.KillPlayer" in b)
+    assert kill_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
+
+
 def test_num_pickup_nodes_matches_data(real_rows):
     items, locations = real_rows
     pickups = [loc for loc in locations if loc.get("pickup_index") is not None]

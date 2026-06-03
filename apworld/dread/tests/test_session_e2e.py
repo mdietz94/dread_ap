@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 import unittest.mock
 from pathlib import Path
 
@@ -366,5 +367,94 @@ async def test_game_restart_without_save_redelivers_lost_items():
         assert fake.received_pickups == 3
         assert fake.inventory_of(MISSILE_ITEM) == 6
         assert len(fake.onpickedup_calls) == 5
+    finally:
+        await _teardown(ctx, fake)
+
+
+def _bounces(ctx: DreadContext) -> list[dict]:
+    return [m for m in _all_sent(ctx) if m.get("cmd") == "Bounce"]
+
+
+@pytest.mark.asyncio
+async def test_deathlink_outbound_on_player_death():
+    """With DeathLink on, the first poll baselines the death count and a
+    subsequent in-world death broadcasts a single Bounce to AP."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        assert "DeathLink" in ctx.tags
+
+        await ctx._poll_once()  # baseline (death_count == 0)
+        assert _bounces(ctx) == [], "baseline poll should not broadcast"
+
+        fake.die()
+        await ctx._poll_once()
+        bounces = _bounces(ctx)
+        assert len(bounces) == 1
+        assert "DeathLink" in bounces[0]["tags"]
+
+        # No new death ⇒ no further broadcast (edge-triggered, not level).
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_inbound_kills_player_and_does_not_echo():
+    """An incoming DeathLink force-kills Samus; the resulting in-game death is
+    swallowed once so the chain terminates instead of echoing. A later natural
+    death still broadcasts."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        await ctx._poll_once()  # baseline
+
+        # Another player's death arrives (distinct time ⇒ not our own).
+        ctx.on_deathlink({"time": 123.0, "source": "Player2", "cause": "boom"})
+        assert await _await_until(lambda: fake.death_count == 1), (
+            "kill Lua never reached the Switch")
+
+        # The self-induced death must NOT be re-broadcast.
+        await ctx._poll_once()
+        assert _bounces(ctx) == [], "self-induced death echoed back to AP"
+
+        # A genuine subsequent death IS broadcast.
+        fake.die()
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_suppress_window_expires():
+    """An armed-but-unconsumed suppression window (e.g. the kill no-opped at the
+    main menu) must self-expire so a later real death is still broadcast."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        await ctx._poll_once()  # baseline
+
+        # Simulate a stale window from a kill that never produced a death.
+        ctx._suppress_death_until = time.monotonic() - 1.0
+
+        fake.die()
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1, "expired window wrongly muted a real death"
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_off_does_not_poll_or_broadcast():
+    """With the tag off, a death is neither detected nor broadcast."""
+    ctx, dp, fake = await _setup()
+    try:
+        assert "DeathLink" not in ctx.tags
+        await ctx._poll_once()
+        fake.die()
+        await ctx._poll_once()
+        assert _bounces(ctx) == []
     finally:
         await _teardown(ctx, fake)
