@@ -22,8 +22,6 @@ Dread Client commands (type with leading /):
   /switches                                alias of /bridge_status
   /promote_switch <device_id>              make this Switch the active one
   /setup                                   open the setup wizard (prereqs, build, deploy)
-  /send_deathlink [text]                   broadcast a DeathLink to AP (test outbound)
-  /kill_switch                             run the kill Lua on the Switch (test inbound)
   /poke <lua>                              run arbitrary Lua via lua_exec (debug)
 
 To inject items, use the AP server console:

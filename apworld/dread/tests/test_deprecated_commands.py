@@ -1,9 +1,11 @@
-"""Tests for PR-A3: ``/patch`` is a deprecation shim pointing at ``/setup``.
+"""Tests for removed client commands.
 
-``/patch_python`` was removed entirely (no shim) once the wizard's
-auto-detect Python flow became the only configuration path — users
-typing it now get the standard "Unknown command" response, which is
-the expected behavior."""
+``/patch`` and ``/patch_python`` were removed entirely (no shim) once the
+wizard's auto-detect flow + auto-patch-on-connect became the only
+configuration path. The DeathLink test commands ``/send_deathlink`` and
+``/kill_switch`` were likewise removed after DeathLink was validated. Typing
+any of these now yields the standard "Unknown command" response, which is the
+expected behavior."""
 from __future__ import annotations
 
 import sys
@@ -38,22 +40,9 @@ def proc():
     return p
 
 
-def test_cmd_patch_emits_deprecation_message(proc):
-    """``/patch`` (no args) prints the deprecation message pointing at
-    ``/setup`` and returns True (handled)."""
-    assert proc._cmd_patch() is True
-    msg = " ".join(proc.outputs)
-    assert "/patch is deprecated" in msg
-    assert "/setup" in msg
-
-
-def test_cmd_patch_with_args_still_emits_deprecation(proc):
-    """Old-style ``/patch <dv-dir> <romfs-dir>`` invocations also hit the
-    shim — the args are accepted and ignored so a muscle-memory typer
-    doesn't see an unknown-command error."""
-    assert proc._cmd_patch("/dv/dir", "/romfs/dir") is True
-    msg = " ".join(proc.outputs)
-    assert "/patch is deprecated" in msg
+def test_patch_command_is_gone(proc):
+    """``/patch`` was removed entirely; the command handler must not exist."""
+    assert not hasattr(proc, "_cmd_patch")
 
 
 def test_patch_python_command_is_gone(proc):
@@ -61,11 +50,17 @@ def test_patch_python_command_is_gone(proc):
     assert not hasattr(proc, "_cmd_patch_python")
 
 
-def test_help_text_advertises_setup_not_patch():
-    """``commands.HELP_TEXT`` references ``/setup``, not the deprecated
-    ``/patch`` command."""
+def test_deathlink_test_commands_are_gone(proc):
+    """The DeathLink test commands were removed after validation."""
+    assert not hasattr(proc, "_cmd_send_deathlink")
+    assert not hasattr(proc, "_cmd_kill_switch")
+
+
+def test_help_text_omits_removed_commands():
+    """``commands.HELP_TEXT`` references ``/setup`` and lists only live
+    commands — none of the removed ones appear."""
     from dread.client.commands import HELP_TEXT  # noqa: E402
     assert "/setup" in HELP_TEXT
-    # The deprecated commands should not appear in the help list — typing
-    # ``help`` should only surface live commands.
-    assert "/patch <" not in HELP_TEXT
+    assert "/patch" not in HELP_TEXT
+    assert "/send_deathlink" not in HELP_TEXT
+    assert "/kill_switch" not in HELP_TEXT

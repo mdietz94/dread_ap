@@ -173,35 +173,6 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         asyncio.ensure_future(_go())
         return True
 
-    def _cmd_send_deathlink(self, *words: str) -> bool:
-        """``/send_deathlink [text]`` — broadcast a DeathLink to the AP server
-        (kills every other DeathLink player). For testing the outbound path
-        without actually dying in-game."""
-        ctx = self.ctx
-        if "DeathLink" not in ctx.tags:
-            self.output(
-                "DeathLink is not enabled for this slot — sending anyway, but "
-                "enable it in your YAML (death_link: true) for the inbound path."
-            )
-        text = " ".join(words) or "Samus sent a test DeathLink."
-        asyncio.ensure_future(ctx.send_death(text))
-        self.output(f"sent DeathLink: {text!r}")
-        return True
-
-    def _cmd_kill_switch(self, *_args: str) -> bool:
-        """``/kill_switch`` — directly run the kill Lua on the active Switch.
-        Tests the inbound kill primitive (RL.KillPlayer / LIFE:ForceDead) in
-        isolation, without needing a second player to send a DeathLink."""
-        ctx = self.ctx
-        if ctx._bridge is None or not ctx._bridge.is_connected():
-            self.output("err: no active Switch")
-            return True
-        # This is a manual local test, so DON'T set _suppress_next_death — we
-        # want to see whether the resulting death is detected + broadcast.
-        asyncio.ensure_future(ctx._kill_switch_player())
-        self.output("sent RL.KillPlayer() to the Switch")
-        return True
-
     def _cmd_poke(self, *lua_words: str) -> bool:
         """``/poke <lua-source>`` — run arbitrary Lua on the active Switch."""
         if not lua_words:
@@ -209,19 +180,6 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
             return True
         source = " ".join(lua_words)
         asyncio.ensure_future(self.ctx._poke_lua(source))
-        return True
-
-    def _cmd_patch(self, *args) -> bool:
-        """``/patch`` is deprecated — the romfs patcher now runs
-        automatically on AP-connect.
-        """
-        del args
-        self.output(
-            "/patch is deprecated. The romfs patcher now runs "
-            "automatically on AP-connect once /setup has recorded your "
-            "paths. Run /setup once per machine to open the wizard; "
-            "subsequent seeds patch on connect."
-        )
         return True
 
     def _cmd_setup(self, *_args: str) -> bool:
@@ -667,9 +625,9 @@ class DreadContext(CommonContext):
             return
         if not self.slot_data or "placements" not in self.slot_data:
             _ap_log.info(
-                "Auto-patch skipped: slot_data has no placements. Older "
-                "seeds (generated before fill_slot_data bundled placements) "
-                "need the /patch command run manually with the seed zip.",
+                "Auto-patch skipped: slot_data has no placements. Regenerate "
+                "the seed with a current apworld (older seeds, generated before "
+                "fill_slot_data bundled placements, can't be auto-patched).",
             )
             return
 
@@ -703,22 +661,22 @@ class DreadContext(CommonContext):
             _ap_log.info(message)
         else:
             self.state.set_patcher_python("not installed — see Archipelago tab")
-            _ap_log.warning("Patcher setup needed for /patch:")
+            _ap_log.warning("Patcher setup needed for auto-patch:")
             for line in message.splitlines():
                 _ap_log.warning("  %s", line)
 
-    # ---- /patch implementation ---------------------------------------
+    # ---- auto-patch implementation (runs on AP-connect) --------------
 
     async def _run_patch(self, dreadvania_dir: str, vanilla_romfs_dir: str) -> None:
         from ..patcher_pipeline import patch
         from .._setup.build import collect_build_outputs
 
-        log.info("/patch: starting…")
+        log.info("auto-patch: starting…")
 
         exefs_overlay = collect_build_outputs() or None
         if not exefs_overlay:
             log.warning(
-                "/patch: no built sysmodule found to re-assert — the patcher's "
+                "auto-patch: no built sysmodule found to re-assert — the patcher's "
                 "upstream subsdk9 (server-mode) will be used and the Switch won't "
                 "dial the client. Run /setup's Build + Deploy steps."
             )
@@ -735,17 +693,17 @@ class DreadContext(CommonContext):
         try:
             result = await asyncio.to_thread(_do)
         except Exception as exc:
-            log.exception("/patch: unhandled exception: %s", exc)
+            log.exception("auto-patch: unhandled exception: %s", exc)
             return
 
         if result.ok:
-            log.info("/patch: %s", result.message)
+            log.info("auto-patch: %s", result.message)
             if result.patcher_input_path:
                 log.info("  patcher input: %s", result.patcher_input_path)
             for note in result.notes:
                 log.info("  %s", note)
         else:
-            log.error("/patch: %s", result.message)
+            log.error("auto-patch: %s", result.message)
             if result.cli_stderr_tail:
                 for line in result.cli_stderr_tail.splitlines():
                     log.error("  | %s", line)
