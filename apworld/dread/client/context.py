@@ -171,6 +171,23 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         asyncio.ensure_future(self.ctx._poke_lua(source))
         return True
 
+    def _cmd_warp(self) -> bool:
+        """``/warp`` — softlock recovery: warp to the starting room.
+
+        Wraps the same ``Game.LoadScenario`` call Randovania exposes via
+        ZL+ZR at any save station (``Scenario.CheckWarpToStart``), but
+        invokable when no save station is reachable. Inventory and
+        per-pickup collected bits persist (same primitive every door
+        transition uses); the player should save at the starting save
+        station to commit them to disk.
+        """
+        ctx = self.ctx
+        async def _go():
+            msg = await ctx._warp_to_start()
+            self.output(f"warp: {msg}")
+        asyncio.ensure_future(_go())
+        return True
+
     def _cmd_patch(self, *args) -> bool:
         """``/patch`` is deprecated — the romfs patcher now runs
         automatically on AP-connect.
@@ -804,3 +821,46 @@ class DreadContext(CommonContext):
             log.warning("/poke failed: %s", exc)
             return
         log.info("poke reply: success=%s payload=%r", resp.success, resp.payload[:200])
+
+    async def _warp_to_start(self) -> str:
+        """Softlock recovery: warp Samus back to the starting actor.
+
+        Same ``Game.LoadScenario`` primitive Randovania already exposes via
+        ZL+ZR at any save station (custom_scenario.lua:CheckWarpToStart) — the
+        warp does NOT save first, but in-memory inventory/Blackboard state
+        survives the load (it's the same call every door transition uses), so
+        items collected since the last save are kept. The player should save
+        at the starting save station to commit them to disk.
+
+        Gated client-side on (a) bridge connected + bootstrap done, and
+        in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"`` and
+        (c) ``Scenario.IsUserInteractionEnabled(true)``, so a /warp issued
+        from the title screen or mid-cutscene returns a human-readable
+        "blocked" reason instead of firing into invalid state. Returns the
+        status string the caller surfaces to the user."""
+        if self._bridge is None or not self._bridge.is_connected():
+            return "no active Switch connected"
+        if not self._bootstrapped:
+            return "bootstrap not complete (wait for the connect handshake)"
+        src = (
+            'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
+            'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
+            'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
+            'return "ok"'
+        )
+        try:
+            resp = await self._bridge.run_lua(src)
+        except (RuntimeError, ConnectionError, asyncio.TimeoutError) as exc:
+            log.warning("/warp failed: %s", exc)
+            return f"failed: {exc}"
+        body = resp.payload.decode("utf-8", "replace").strip()
+        if not resp.success:
+            return f"lua error: {body[:200]!r}"
+        if body == "ok":
+            return ("warped — save at the starting save station to commit "
+                    "any items collected since your last save")
+        if body == "not_ingame":
+            return "blocked: not in-game (title or load menu)"
+        if body == "no_interaction":
+            return "blocked: cutscene/cinematic in progress — try again in a moment"
+        return f"unexpected reply: {body!r}"
