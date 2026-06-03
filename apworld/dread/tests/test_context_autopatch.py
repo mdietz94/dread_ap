@@ -69,9 +69,10 @@ async def test_auto_patch_schedules_run_patch_with_ryujinx_paths(
 
     captured: dict = {}
 
-    async def fake_run_patch(deploy_dir, romfs):
+    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None):
         captured["deploy_dir"] = deploy_dir
         captured["romfs"] = romfs
+        captured["mod_compatibility"] = mod_compatibility
 
     ctx._run_patch = fake_run_patch  # type: ignore[assignment]
 
@@ -84,6 +85,8 @@ async def test_auto_patch_schedules_run_patch_with_ryujinx_paths(
     )
     assert Path(captured["deploy_dir"]) == expected_dir
     assert Path(captured["romfs"]) == romfs_dir
+    # Ryujinx deploy → ryujinx compatibility (nested DreadRandovania layout).
+    assert captured["mod_compatibility"] == "ryujinx"
 
 
 @pytest.mark.asyncio
@@ -94,6 +97,9 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
     romfs_dir = tmp_path / "romfs"
     romfs_dir.mkdir()
     sd_root = tmp_path / "sd"
+    # A freshly-mounted SD card has only the Atmosphere CFW `atmosphere` dir;
+    # the per-title contents dir doesn't exist until the patcher creates it.
+    # The mount gate must accept this (first-ever-deploy) case.
     (sd_root / "atmosphere").mkdir(parents=True)
     _write_state(state_file, {
         "deploy_target": "sd",
@@ -108,9 +114,10 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
 
     captured: dict = {}
 
-    async def fake_run_patch(deploy_dir, romfs):
+    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None):
         captured["deploy_dir"] = deploy_dir
         captured["romfs"] = romfs
+        captured["mod_compatibility"] = mod_compatibility
 
     ctx._run_patch = fake_run_patch  # type: ignore[assignment]
 
@@ -119,6 +126,46 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
 
     expected_dir = sd_root / "atmosphere" / "contents" / "010093801237c000"
     assert Path(captured["deploy_dir"]) == expected_dir
+    # SD deploy → atmosphere compatibility (flat contents/<tid> layout).
+    assert captured["mod_compatibility"] == "atmosphere"
+
+
+@pytest.mark.asyncio
+async def test_auto_patch_sd_not_mounted_skips_and_logs(
+    ctx, tmp_path, monkeypatch, caplog
+):
+    """SD deploy whose card isn't mounted (no `atmosphere` dir at sd_root) →
+    skip + 'SD card not mounted' log, never crash. Guards the gate contract:
+    mount is signalled by the Atmosphere CFW `atmosphere` dir, not by the
+    per-title contents dir (which the patcher creates on first deploy)."""
+    state_file = tmp_path / "setup_state.json"
+    romfs_dir = tmp_path / "romfs"
+    romfs_dir.mkdir()
+    sd_root = tmp_path / "sd"
+    sd_root.mkdir()  # drive present, but no `atmosphere` dir → not a Switch card
+    _write_state(state_file, {
+        "deploy_target": "sd",
+        "sd_root": str(sd_root),
+        "romfs_path": str(romfs_dir),
+    })
+    monkeypatch.setattr(
+        "dread.client.context.setup_state_path", lambda: state_file
+    )
+
+    ran = {"called": False}
+
+    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None):
+        ran["called"] = True
+
+    ctx._run_patch = fake_run_patch  # type: ignore[assignment]
+    ctx.slot_data = {"placements": {}}
+
+    caplog.set_level(logging.INFO, logger="Client")
+    await ctx._maybe_auto_patch()
+    await asyncio.sleep(0)
+
+    assert ran["called"] is False
+    assert any("SD card not mounted" in r.message for r in caplog.records)
 
 
 # ---- skip paths (state missing / stale / incomplete) --------------------

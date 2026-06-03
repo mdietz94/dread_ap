@@ -633,13 +633,20 @@ class DreadContext(CommonContext):
                 state_path,
             )
             return
-        if state.get("deploy_target") == "sd" and not deploy_dir.is_dir():
-            _ap_log.info(
-                "Auto-patch skipped: SD card not mounted at %s. "
-                "The Switch will use its existing romfs from the last session.",
-                state.get("sd_root"),
-            )
-            return
+        if state.get("deploy_target") == "sd":
+            # Gate on the SD's `atmosphere` dir (created by the Atmosphere CFW
+            # install), NOT the per-title contents dir — the patcher itself
+            # creates the latter, so a first-ever deploy to a freshly-mounted
+            # card has the atmosphere dir but not yet the per-title dir.
+            sd_root = state.get("sd_root") or ""
+            atmosphere_dir = Path(sd_root) / "atmosphere" if sd_root else None
+            if atmosphere_dir is None or not atmosphere_dir.is_dir():
+                _ap_log.info(
+                    "Auto-patch skipped: SD card not mounted at %s. The Switch "
+                    "will use its existing romfs from the last session.",
+                    sd_root,
+                )
+                return
         if not self.slot_data or "placements" not in self.slot_data:
             _ap_log.info(
                 "Auto-patch skipped: slot_data has no placements. Regenerate "
@@ -648,13 +655,19 @@ class DreadContext(CommonContext):
             )
             return
 
+        # The deploy target dictates the patcher's on-disk layout: Ryujinx
+        # nests the mod under DreadRandovania, Atmosphere (real Switch / SD,
+        # and our "custom" flat layout) writes into contents/<tid>/ with IPS
+        # in the global exefs_patches tree. Pick the matching compatibility so
+        # the seed doesn't land where the console can't read it.
+        mod_compat = "ryujinx" if state.get("deploy_target") == "ryujinx" else "atmosphere"
         _ap_log.info(
             "Auto-patch: writing per-seed romfs overlay to %s (vanilla "
-            "romfs: %s)",
-            deploy_dir, romfs_path,
+            "romfs: %s, compatibility: %s)",
+            deploy_dir, romfs_path, mod_compat,
         )
         asyncio.ensure_future(
-            self._run_patch(str(deploy_dir), str(romfs_path))
+            self._run_patch(str(deploy_dir), str(romfs_path), mod_compatibility=mod_compat)
         )
 
     async def _ensure_patcher_python(self) -> None:
@@ -684,7 +697,13 @@ class DreadContext(CommonContext):
 
     # ---- auto-patch implementation (runs on AP-connect) --------------
 
-    async def _run_patch(self, dreadvania_dir: str, vanilla_romfs_dir: str) -> None:
+    async def _run_patch(
+        self,
+        dreadvania_dir: str,
+        vanilla_romfs_dir: str,
+        *,
+        mod_compatibility: Optional[str] = None,
+    ) -> None:
         from ..patcher_pipeline import patch
         from .._setup.build import collect_build_outputs
 
@@ -705,6 +724,7 @@ class DreadContext(CommonContext):
                 vanilla_romfs_dir=Path(_expand(vanilla_romfs_dir)),
                 python_executable=self.dreadvania_python,
                 exefs_overlay=exefs_overlay,
+                mod_compatibility=mod_compatibility,
             )
 
         try:
