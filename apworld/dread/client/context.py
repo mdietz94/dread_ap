@@ -552,13 +552,20 @@ class DreadContext(CommonContext):
                 state_path,
             )
             return
-        if state.get("deploy_target") == "sd" and not deploy_dir.is_dir():
-            _ap_log.info(
-                "Auto-patch skipped: SD card not mounted at %s. "
-                "The Switch will use its existing romfs from the last session.",
-                state.get("sd_root"),
-            )
-            return
+        if state.get("deploy_target") == "sd":
+            # Gate on the SD's `atmosphere` dir (created by the Atmosphere CFW
+            # install), NOT the per-title contents dir — the patcher itself
+            # creates the latter, so a first-ever deploy to a freshly-mounted
+            # card has the atmosphere dir but not yet the per-title dir.
+            sd_root = state.get("sd_root") or ""
+            atmosphere_dir = Path(sd_root) / "atmosphere" if sd_root else None
+            if atmosphere_dir is None or not atmosphere_dir.is_dir():
+                _ap_log.info(
+                    "Auto-patch skipped: SD card not mounted at %s. The Switch "
+                    "will use its existing romfs from the last session.",
+                    sd_root,
+                )
+                return
         if not self.slot_data or "placements" not in self.slot_data:
             _ap_log.info(
                 "Auto-patch skipped: slot_data has no placements. Older "
