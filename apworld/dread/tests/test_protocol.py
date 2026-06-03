@@ -11,8 +11,24 @@ sys.path.insert(0, str(ROOT.parent))
 
 from dread.client.protocol import (  # noqa: E402
     _to_lua_table, build_receive_pickup_lua, DreadPickupLocation,
-    pickup_class_for,
+    pickup_class_for, build_kill_player_lua, build_read_death_count_lua,
+    DEATH_COUNT_PROP,
 )
+
+
+def test_build_kill_player_lua_calls_rl_killplayer():
+    lua = build_kill_player_lua()
+    assert "RL.KillPlayer()" in lua
+    assert lua.strip().endswith("return ''")
+
+
+def test_build_read_death_count_lua_reads_progress_stat():
+    lua = build_read_death_count_lua()
+    assert DEATH_COUNT_PROP == "ProgressStat_PlayerDeaths"
+    assert DEATH_COUNT_PROP in lua
+    assert lua.startswith("return tostring(")
+    # `or 0` makes it safe at the main menu where the prop is absent.
+    assert "or 0" in lua
 
 
 def test_to_lua_table_scalars():

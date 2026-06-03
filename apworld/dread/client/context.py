@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -35,6 +36,8 @@ from .protocol import (
     ReceivedItemEvent,
     CollectedLocationEvent,
     build_receive_pickup_lua,
+    build_kill_player_lua,
+    build_read_death_count_lua,
     pickup_class_for,
 )
 from .scout_cache import ScoutCache, request_scout
@@ -103,6 +106,14 @@ def _field(obj: Any, name: str, idx: int) -> Any:
 # Randovania's RL.UpdateRDVClient self-scheduling interval.
 POLL_INTERVAL_SECONDS = 2.0
 
+# After an incoming DeathLink, the death WE cause must not be re-broadcast. We
+# arm a suppression window rather than a sticky flag: the first detected death
+# within the window is swallowed (and the window cleared); if no death lands —
+# e.g. the kill no-ops because the player was at the main menu — the window
+# expires and normal detection resumes, so a later real death isn't lost. The
+# window must comfortably exceed the worst-case cutscene-deferral of the kill.
+DEATH_SUPPRESS_WINDOW_SECONDS = 15.0
+
 
 class DreadClientCommandProcessor(ClientCommandProcessor):
     """`/`-prefixed commands typed into the Kivy command bar."""
@@ -160,6 +171,35 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
             ok = await bridge.manual_promote(device_id)
             self.output(f"promote {device_id}: {'OK' if ok else 'unknown device_id'}")
         asyncio.ensure_future(_go())
+        return True
+
+    def _cmd_send_deathlink(self, *words: str) -> bool:
+        """``/send_deathlink [text]`` — broadcast a DeathLink to the AP server
+        (kills every other DeathLink player). For testing the outbound path
+        without actually dying in-game."""
+        ctx = self.ctx
+        if "DeathLink" not in ctx.tags:
+            self.output(
+                "DeathLink is not enabled for this slot — sending anyway, but "
+                "enable it in your YAML (death_link: true) for the inbound path."
+            )
+        text = " ".join(words) or "Samus sent a test DeathLink."
+        asyncio.ensure_future(ctx.send_death(text))
+        self.output(f"sent DeathLink: {text!r}")
+        return True
+
+    def _cmd_kill_switch(self, *_args: str) -> bool:
+        """``/kill_switch`` — directly run the kill Lua on the active Switch.
+        Tests the inbound kill primitive (RL.KillPlayer / LIFE:ForceDead) in
+        isolation, without needing a second player to send a DeathLink."""
+        ctx = self.ctx
+        if ctx._bridge is None or not ctx._bridge.is_connected():
+            self.output("err: no active Switch")
+            return True
+        # This is a manual local test, so DON'T set _suppress_next_death — we
+        # want to see whether the resulting death is detected + broadcast.
+        asyncio.ensure_future(ctx._kill_switch_player())
+        self.output("sent RL.KillPlayer() to the Switch")
         return True
 
     def _cmd_poke(self, *lua_words: str) -> bool:
@@ -238,6 +278,17 @@ class DreadContext(CommonContext):
         self._goal_reported = False
         self._ap_items: list[Any] = []
         self.slot_data: dict = {}
+
+        # DeathLink. ``_last_death_count`` is the last value we read from the
+        # game's ProgressStat_PlayerDeaths prop; None means "no baseline yet"
+        # (don't report on the first read after connect). ``_suppress_death_until``
+        # is a monotonic deadline: a death detected before it is one WE caused in
+        # response to an incoming DeathLink, so it is not re-broadcast — that
+        # terminates the chain instead of echoing it around the room. The window
+        # self-expires so a stuck guard can't permanently mute real deaths.
+        # See [[dread-deathlink-apis]].
+        self._last_death_count: Optional[int] = None
+        self._suppress_death_until: float = 0.0
         self.dreadvania_python: Optional[str] = _load_user_config().get(
             "dreadvania_python"
         )
@@ -387,9 +438,17 @@ class DreadContext(CommonContext):
         self.state.seed = args.get("seed_name", self.state.seed)
         self._goal_reported = False
         self._ap_items = []
+        # New connection ⇒ re-baseline death detection on the next poll so a
+        # historical death count from a prior session isn't reported now.
+        self._last_death_count = None
+        self._suppress_death_until = 0.0
         sd = args.get("slot_data")
         if isinstance(sd, dict):
             self.slot_data = sd
+        # Mirror the seed's DeathLink choice into the AP connection tag. Sends a
+        # ConnectUpdate (we're already Connected here), which is the supported
+        # way to toggle the tag post-connect.
+        await self.update_death_link(bool(self.slot_data.get("death_link")))
         asyncio.ensure_future(self._maybe_auto_patch())
         loc_ids = self.datapackage.all_location_ids()
         if loc_ids:
@@ -449,6 +508,53 @@ class DreadContext(CommonContext):
         if slot_idx == self.slot:
             return "yourself"
         return f"Player {slot_idx}"
+
+    # ---- DeathLink ----------------------------------------------------
+
+    def on_deathlink(self, data: dict) -> None:
+        """An external player died (CommonContext dispatches this from the AP
+        message task; our own deaths are filtered upstream by the last_death_link
+        timestamp guard). Force-kill Samus on the Switch and mark the resulting
+        in-game death as self-induced so we don't re-broadcast it."""
+        super().on_deathlink(data)  # updates last_death_link + logs the cause
+        self._suppress_death_until = time.monotonic() + DEATH_SUPPRESS_WINDOW_SECONDS
+        asyncio.ensure_future(self._kill_switch_player())
+
+    async def _kill_switch_player(self) -> None:
+        """Send the kill Lua to the active Switch. Safe to call any time —
+        ``RL.KillPlayer`` no-ops outside INGAME and defers through cutscenes."""
+        if self._bridge is None or not self._bridge.is_connected() or not self._bootstrapped:
+            log.info("DeathLink received but no Switch ready; ignoring kill")
+            self._suppress_death_until = 0.0
+            return
+        try:
+            await self._bridge.run_lua(build_kill_player_lua())
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+            log.warning("DeathLink kill send failed: %s", exc)
+            # Couldn't kill ⇒ no self-death will follow, so clear the guard.
+            self._suppress_death_until = 0.0
+
+    async def _maybe_report_death(self, count: int) -> None:
+        """Edge-detect the game's death counter and broadcast to AP.
+
+        ``count`` is the freshly-read ProgressStat_PlayerDeaths value. The first
+        read after connect only sets the baseline. A death that we caused via an
+        incoming DeathLink is swallowed once (``_suppress_next_death``) so the
+        chain terminates instead of echoing."""
+        prev = self._last_death_count
+        self._last_death_count = count
+        if prev is None or count <= prev:
+            return  # baseline, or no new death
+        if time.monotonic() < self._suppress_death_until:
+            self._suppress_death_until = 0.0  # consume the window
+            log.info("suppressing self-induced death (incoming DeathLink)")
+            return
+        if "DeathLink" not in self.tags:
+            return
+        log.info("player died (death count %d -> %d); broadcasting DeathLink",
+                 prev, count)
+        who = self._sender_name(self.slot) if self.slot else (self.username or "Samus")
+        await self.send_death(f"{who} was killed by the planet ZDR.")
 
     # ---- /setup auto-run hookup --------------------------------------
 
@@ -631,6 +737,13 @@ class DreadContext(CommonContext):
         if state_resp.success and state_resp.payload == b"true":
             self.state.update_game_state(beaten_since_reboot=True)
             await self._maybe_report_goal()
+        if "DeathLink" in self.tags:
+            death_resp = await self._bridge.run_lua(build_read_death_count_lua())
+            if death_resp.success:
+                try:
+                    await self._maybe_report_death(int(death_resp.payload))
+                except ValueError:
+                    log.debug("unparseable death count: %r", death_resp.payload[:32])
         await self._attempt_delivery()
 
     # ---- Push handlers (JSON dataclass dispatch) ---------------------

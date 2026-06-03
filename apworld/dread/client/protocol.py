@@ -141,6 +141,29 @@ def build_receive_pickup_lua(
     )
 
 
+# DeathLink ------------------------------------------------------------------
+#
+# Blackboard "GAME" property holding the running death count. Official stat on
+# game 2.0.0+ (we target 2.1.0); open-dread-rando's death_counter.lua reads the
+# same prop. We poll it and edge-detect increments to know the player died.
+DEATH_COUNT_PROP = "ProgressStat_PlayerDeaths"
+
+
+def build_read_death_count_lua() -> str:
+    """Lua that returns the current death count as a string (``"0"`` if the
+    prop is absent, e.g. at the main menu). Safe to call any time."""
+    return (
+        f'return tostring(Blackboard.GetProp("GAME", "{DEATH_COUNT_PROP}") or 0)'
+    )
+
+
+def build_kill_player_lua() -> str:
+    """Lua that force-kills Samus via the bootstrap's ``RL.KillPlayer`` (defined
+    in our non-vendored ``lua/deathlink.lua``). The function self-defers through
+    cutscenes and is a no-op outside INGAME, so this is safe to fire any time."""
+    return "RL.KillPlayer(); return ''"
+
+
 def _lua_string(value: str) -> str:
     """Render a Python string as a double-quoted Lua string literal (escaping
     backslashes and quotes — same convention as ``_to_lua_table``)."""

@@ -135,6 +135,11 @@ def _install_common_client_stub() -> None:
             self.slot_info: dict = {}
             # Real CommonContext exposes this; the backoff supervisor checks it.
             self.exit_event = asyncio.Event()
+            # DeathLink surface (mirrors CommonContext). Instance-level tags so
+            # tests don't bleed into each other via a shared class set.
+            self.tags = {"AP"}
+            self.last_death_link = 0.0
+            self.player_names = {0: "Samus"}
 
         async def server_auth(self, password_requested: bool = False) -> None:
             pass
@@ -147,6 +152,26 @@ def _install_common_client_stub() -> None:
 
         async def shutdown(self) -> None:
             pass
+
+        # ---- DeathLink (faithful to CommonContext semantics) ----
+
+        async def update_death_link(self, death_link: bool) -> None:
+            if death_link:
+                self.tags.add("DeathLink")
+            else:
+                self.tags.discard("DeathLink")
+
+        async def send_death(self, death_text: str = "") -> None:
+            self.last_death_link = 1.0
+            await self.send_msgs([{
+                "cmd": "Bounce", "tags": ["DeathLink"],
+                "data": {"time": self.last_death_link,
+                         "source": self.player_names.get(self.slot, "Samus"),
+                         "cause": death_text},
+            }])
+
+        def on_deathlink(self, data: dict) -> None:
+            self.last_death_link = max(data.get("time", 0.0), self.last_death_link)
 
     module = types.ModuleType("CommonClient")
     module.CommonContext = CommonContext  # type: ignore[attr-defined]

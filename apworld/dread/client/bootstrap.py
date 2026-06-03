@@ -36,6 +36,9 @@ _BOOTSTRAP_PARTS = (
     "bootstrap_part_3",
 )
 _LOCATIONS_TEMPLATE = "bootstrap_locations"
+# dread_ap original (not vendored) — defines RL.KillPlayer for DeathLink. Sent
+# after the vendored parts so it's always available; inert unless called.
+_EXTRAS = ("deathlink",)
 _BOOTSTRAP_DONE = "RL.Bootstrap=true"
 
 _TEMPLATE_LEFTOVER = re.compile(r'TEMPLATE\("([^"]+)"\)|T__(\w+)__T')
@@ -112,6 +115,11 @@ def build_bootstrap_code(items_rows: list[dict], locations_rows: list[dict]) -> 
         pairs = ",".join(f"{loc['actor']}={int(loc['pickup_index']) + 1}" for loc in locs)
         blocks.append(_substitute(loc_template, {**base, "pairs": pairs,
                                                  "location": repr(scenario + "_")}))
+
+    # Our own (non-vendored) extra functions. No templates to fill, but run
+    # _substitute anyway to catch an accidental TEMPLATE() in a hand-edited file.
+    for extra in _EXTRAS:
+        blocks.append(_substitute(_read_lua(extra), base))
 
     blocks.append(_BOOTSTRAP_DONE)
     return blocks

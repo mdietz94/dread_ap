@@ -424,6 +424,9 @@ class DreadWorld(World):
             "seed_id": seed_id,
             "starting_area": int(o.starting_area.value),
             "include_boss_pickups": bool(o.include_boss_pickups.value),
+            # Client-only: drives whether DreadContext enables the DeathLink tag
+            # and the death-detection poll. Not consumed by the patcher.
+            "death_link": bool(o.death_link.value),
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,

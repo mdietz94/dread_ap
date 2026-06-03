@@ -1,7 +1,8 @@
 """AP options for Metroid Dread.
 
 Minimal for v0.1 — just enough to make generation work. Per-area opt-out
-toggles, accessibility presets, deathlink, etc. land later.
+toggles and accessibility presets land later; DeathLink is wired (see
+``DeathLink`` below + the client's death detect/kill path).
 """
 from __future__ import annotations
 
@@ -38,6 +39,14 @@ class TrickLevel(Choice):
     option_intermediate = 2
     option_advanced = 3
     default = 1
+
+
+class DeathLink(Toggle):
+    """When you die, everyone with Death Link enabled dies — and vice versa.
+    On an incoming death the client force-kills Samus (deferred safely through
+    cutscenes); a self-induced death from an incoming link is not re-broadcast,
+    so the chain terminates rather than echoing. Off by default."""
+    display_name = "Death Link"
 
 
 class StartWithPulseRadar(DefaultOnToggle):
@@ -223,6 +232,7 @@ class DreadOptions(PerGameCommonOptions):
     starting_area: StartingArea
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
+    death_link: DeathLink
     start_with_pulse_radar: StartWithPulseRadar
     show_boss_lifebar: ShowBossLifebar
     show_enemy_life: ShowEnemyLife

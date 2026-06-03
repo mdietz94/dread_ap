@@ -75,6 +75,9 @@ class FakeDreadGame:
         self.inventory_index: int = 0
         self.beaten: bool = False
         self.in_cutscene: bool = False
+        # ProgressStat_PlayerDeaths — the Blackboard prop the client polls for
+        # DeathLink. Bumped by die() (natural death) or by RL.KillPlayer().
+        self.death_count: int = 0
 
         # ---- delivery internals (RL.PendingPickup) ----
         self._pending: Optional[list[tuple[str, int]]] = None
@@ -144,6 +147,11 @@ class FakeDreadGame:
         """Leave the cinematic; grant any pending received pickup."""
         self.in_cutscene = False
         self._try_grant_pending()
+
+    def die(self) -> None:
+        """Simulate the player dying in-world (the game bumps the death stat).
+        Models both a natural death and the result of RL.KillPlayer()."""
+        self.death_count += 1
 
     def inventory_of(self, item_id: str) -> int:
         return self.inventory.get(item_id, 0)
@@ -251,6 +259,17 @@ class FakeDreadGame:
                 seq=seq, ok=True,
                 result="true" if self.beaten else "false",
             ))
+            return
+
+        if "RL.KillPlayer(" in src:
+            # Models the death pipeline: ForceDead → OnPlayerDead → stat bump.
+            self.die()
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            return
+
+        if "ProgressStat_PlayerDeaths" in src:
+            await self._send(W.LuaExecReply(
+                seq=seq, ok=True, result=str(self.death_count)))
             return
 
         # Anything else (Game.AddSF arming, pokes, etc.) → ack.
