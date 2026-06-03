@@ -1228,122 +1228,6 @@ def _strip_no_suit_damage_thresholds(ast: dict) -> dict:
     return ast
 
 
-def _strip_fill_fragile_items(ast: dict, fragile_names: set[str]) -> dict:
-    """Replace `{type: item, name: N}` atoms with TRIVIAL when N is "fill-
-    fragile" — i.e. it has a single copy in the AP pool AND isn't precollected,
-    so AP fill can't route around the circular dependency this atom would
-    create when AND-ed into per-location escape rules.
-
-    Why this is needed: AP's accessibility model is entry-only. The escape
-    pass folds "items needed to leave the pickup" into the entry rule, but
-    if the escape rule requires Morph Ball (say) and AP places Morph Ball
-    AT this pickup, the rule becomes circular — reach(P) needs Morph Ball,
-    Morph Ball is at P → P is never reachable. Multi-copy items
-    (Missile Tank, Energy Tank, ...) and precollected items (Slide,
-    Pulse Radar) don't trigger the cycle because state.has can resolve
-    them from another instance / from start state.
-
-    A stripped escape rule may admit a *gameplay* softlock (player enters a
-    one-way room, picks up not-the-needed-item, gets stuck) — same caveat
-    as the original commit's non-actor-pickup skip. The alternative is no
-    fill at all, which is strictly worse.
-    """
-    t = ast.get("type")
-    if t == "item" and ast.get("name") in fragile_names:
-        return TRIVIAL
-    if t == "and":
-        return mk_and([_strip_fill_fragile_items(c, fragile_names) for c in ast["items"]])
-    if t == "or":
-        return mk_or([_strip_fill_fragile_items(c, fragile_names) for c in ast["items"]])
-    return ast
-
-
-# ---------------------------------------------------------------------------
-# Softlock prevention via reverse-reachability ("escape" rules)
-# ---------------------------------------------------------------------------
-#
-# Randovania's solver runs a "safety" post-pass that rejects placements
-# where a reachable state can't still reach victory. AP's accessibility
-# model only has entry rules, not "can you leave this node" — so a room
-# with `enter free, exit needs X` softlocks AP players when fill puts
-# something other than X there. To bridge the gap we compute, for each
-# actor pickup, the items needed to reach a "safe" node (Save Station or
-# cross-region Teleport) from the pickup in the REVERSE graph, then AND
-# that into the entry rule. The reverse-graph Bellman-Ford reuses
-# ``enumerate_paths``; safe terminals are identified by sub-area name.
-#
-# Non-actor pickups (boss/EMMI/cutscene/corex) are skipped — their escape
-# rules transitively depend on the in-room event whose own cost references
-# the pickup's item, producing a circular IMPOSSIBLE that isn't a real
-# softlock. Vanilla logic handles those via the event being on the pickup
-# itself.
-
-_SAFE_SUBAREA_PREFIXES: tuple[str, ...] = ("Save Station", "Teleport to")
-
-
-def _safe_terminal_keys(nodes: dict) -> list:
-    return [k for k in nodes if k[1].startswith(_SAFE_SUBAREA_PREFIXES)]
-
-
-def _reverse_edges(edges: dict) -> dict:
-    rev: dict = {}
-    for u, adj in edges.items():
-        for v, req in adj:
-            rev.setdefault(v, []).append((u, req))
-    return rev
-
-
-def compute_escape_rules(
-    areas: dict[str, dict],
-    header: Header,
-    event_cost: dict,
-    ap_loc_by_actor: dict,
-    *,
-    cap: int = 32,
-) -> dict[str, dict]:
-    """Per-actor-pickup escape AST: items needed to traverse FROM the
-    pickup node TO a safe terminal (Save Station or Teleport sub-area) in
-    the original forward graph.
-
-    Reuses the event-inlined edges built the same way as ``compile_forward``,
-    then reverses them and runs ``enumerate_paths`` from the safe terminals.
-    No-suit damage_thresholds are stripped from results so AND-ing escape
-    into pickup rules doesn't disturb the per-region E-Tank floor pass
-    (region floors are still derived from forward damage requirements
-    alone, then per-location no-suit nodes get stripped as before).
-    """
-    edges, nodes = build_global_graph(areas, header)
-    inlined_edges = {
-        u: [(v, _substitute_events(req, event_cost)) for v, req in adj]
-        for u, adj in edges.items()
-    }
-    rev = _reverse_edges(inlined_edges)
-    safe = _safe_terminal_keys(nodes)
-    start = header.starting_location
-    entry = (start["region"], start["area"], start["node"])
-    if entry not in safe:
-        safe.append(entry)
-    escape = enumerate_paths(
-        safe, rev, set(nodes.keys()),
-        max_disjuncts_per_node=cap, max_disjuncts_per_edge=cap,
-    )
-
-    out: dict[str, dict] = {}
-    for key, n in nodes.items():
-        if n.get("node_type") != "pickup":
-            continue
-        actor_name = (n.get("extra") or {}).get("actor_name")
-        if not actor_name:
-            continue  # boss/EMMI/cutscene/corex — handled in vanilla via event
-        loc_name = ap_loc_by_actor.get((key[0], actor_name))
-        if loc_name is None:
-            continue
-        esc = escape.get(key, IMPOSSIBLE)
-        esc = _strip_no_suit_damage_thresholds(esc)
-        out[loc_name] = esc
-    return out
-
-
 def compile_forward(
     areas: dict[str, dict],
     header: Header,
@@ -1545,52 +1429,12 @@ def main(argv: list[str] | None = None) -> int:
     for ev in events_out:
         ev["rule"] = _strip_no_suit_damage_thresholds(ev["rule"])
 
-    # ---- Escape (softlock prevention) ---------------------------------------
-    # AND each actor-pickup rule with the items needed to LEAVE the pickup's
-    # node back to a safe terminal. AP's accessibility model is entry-only;
-    # this fold turns "items to safely enter this pickup" into the actual
-    # constraint. Boss/EMMI/cutscene/corex pickups are skipped — their escape
-    # depends transitively on the pickup's own item (circular).
-    #
-    # Before AND-ing, strip fill-fragile items (single-pool-copy,
-    # non-precollected) from escape ASTs — see _strip_fill_fragile_items for
-    # the why. Without this strip, escape rules cascade Morph Ball / Charge
-    # Beam / etc. into ~80% of locations, and AP fill can't find a home for
-    # those very items (every viable spot still requires them). Multi-copy
-    # items and Slide/Pulse Radar stay because state.has can satisfy them.
-    print("computing escape (softlock) rules ...")
-    escape_rules = compute_escape_rules(
-        all_area_data, header, event_rule_by_name, ap_loc_by_actor)
-    # Build the fragile-item set from items.json: single-pool-copy items that
-    # aren't in our precollected starter set. Tank/upgrade items with
-    # pool_count >= 2 stay because fill can route around them.
-    _PRECOLLECTED = {"Slide", "Pulse Radar"}
-    fragile_items: set[str] = {
-        it["name"] for it in ap_items
-        if int(it.get("pool_count", 0)) == 1
-        and not it["name"].startswith("Event:")
-        and not it["name"].startswith("Metroid DNA")
-        and it["name"] not in _PRECOLLECTED
-    }
-    escape_rules = {
-        loc: _strip_fill_fragile_items(esc, fragile_items)
-        for loc, esc in escape_rules.items()
-    }
-    tightened = 0
-    tightening_report: list[dict] = []
-    for loc, esc in escape_rules.items():
-        if loc not in out_rules:
-            continue
-        if esc == TRIVIAL:
-            continue
-        before = out_rules[loc]
-        after = mk_and([before, esc])
-        if after != before:
-            out_rules[loc] = after
-            tightened += 1
-            tightening_report.append({"loc": loc, "escape": esc})
-    print(f"  escape AND-ed into {tightened}/{len(escape_rules)} actor pickups")
-    print(f"  (stripped {len(fragile_items)} fill-fragile item names from escape)")
+    # NOTE: softlock prevention is intentionally NOT modeled. AP logic gates
+    # only entry to a pickup, not the ability to leave it; a one-way room can
+    # therefore be assigned any item by fill. Runtime recovery is the client's
+    # ``/warp`` command (warp to the starting save station). The old escape /
+    # reverse-reachability pass (and its fill-fragile strip + softlock_locks
+    # pins) was removed — see CLAUDE.md.
 
     region_access: dict[str, dict] = {}
     for r in ap_region_names:
@@ -1615,18 +1459,6 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(output, indent=2))
     print(f"wrote {args.out} — {len(out_rules)} rules, {len(events_out)} events")
-
-    # Companion tightening report — which actor pickups got new escape
-    # requirements folded in, and what those requirements are. Diagnostic
-    # only; the apworld never reads it.
-    report_path = args.out.with_name(args.out.stem + "_escape_report.json")
-    report_path.write_text(json.dumps({
-        "pinned_commit": pinned,
-        "trick_level": args.trick_level,
-        "tightened_count": len(tightening_report),
-        "tightenings": tightening_report,
-    }, indent=2))
-    print(f"wrote {report_path} — {len(tightening_report)} tightenings")
 
     # events.json kept as a back-compat view: bare name list only.
     events_path = DATA_DIR / "events.json"

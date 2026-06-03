@@ -219,32 +219,34 @@ became advancement the early reachable set opened up and Charge Beam places as a
 normal findable item (verified 146 generations: solo+multiworld × all trick
 levels × minimal/items/full, 0 fill failures).
 
-UPDATE (escape-rule fill cascade — fixed): the reverse-reachability escape pass
-(commit `7c5a451`) AND-ed "items needed to leave each pickup node" into per-
-location entry rules to plug AP's missing exit-side accessibility. The first cut
-folded raw item atoms in, so e.g. ~80/137 actor pickups picked up a hard
-`Morph Ball` requirement. Morph Ball is a single-copy progression item — the
-moment AP places it at any of those 80 spots, `reach(P)` needs Morph Ball and
-Morph Ball is *at* P, so `sweep_from_pool` can never collect it. `fill_restrictive`'s
-swap dance can't unwind the cascade because every viable spot still wants the
-same item. Result: generation failed across all accessibility levels and trick
-tiers; the original "100/100 verified" claim did not reproduce.
+UPDATE (softlock prevention removed — recovery moves to runtime `/warp`):
+softlocks are NO LONGER prevented in logic. Three mechanisms were removed
+wholesale because the client's `/warp` command (warp to the starting save
+station — see [[dread-delivery-protocol]] / `client/context.py::_warp_to_start`)
+now recovers from any stuck placement at runtime:
 
-Fix: `scripts/extract_dread_rules.py` now strips fill-fragile atoms (single-pool-
-copy, non-precollected items — Morph Ball, Charge Beam, every unique beam/suit,
-etc.) from each escape AST before AND-ing it into the entry rule, via the new
-`_strip_fill_fragile_items` pass. Multi-copy items (Missile Tank, Energy Tank,
-Power Bomb Tank, Missile+ Tank, Flash Shift Upgrade, Speed Booster Upgrade) and
-precollected starters (Slide, Pulse Radar) stay — `state.has` resolves them from
-other instances / from start state, so they don't cascade. Tightening count drops
-from 106 → 24 at L1 (also smaller at L2/L3). Generation now passes 0 fill
-failures across 99+ seeds spanning trick `beginner/intermediate/advanced` ×
-accessibility `minimal/items/full`, plus 50 seeds of the user-reported config
-and a 16-seed Dread+Clique multiworld smoke. Residual gameplay-softlock risk:
-a one-way-entry room whose escape needs `Morph Ball` no longer protects against
-AP placing a different item there. Same trade-off the original commit already
-accepted for boss/EMMI/cutscene/corex pickups (skipped for the same circular
-reason). See `_strip_fill_fragile_items` docstring for the full rationale.
+  1. The **reverse-reachability "escape" pass** in
+     `scripts/extract_dread_rules.py` (`compute_escape_rules` +
+     `_reverse_edges` + `_safe_terminal_keys`), which AND-ed "items needed to
+     LEAVE each pickup node" into per-location entry rules. GONE.
+  2. Its **`_strip_fill_fragile_items` mitigation** (which stripped single-pool-
+     copy items from escape ASTs to stop the Morph-Ball fill cascade). GONE —
+     it only existed to make (1) fill-solvable.
+  3. The **`softlock_locks.json` table** (8 vanilla-item pins + 4 filler-only
+     sibling rooms) and its consumer in `Rules.py::set_rules` (old section 2c).
+     GONE. `scripts/diagnose_reverse_reachability.py` (the tool that derived
+     that table) is also deleted.
+
+Consequence by design: AP logic now gates only **entry** to a pickup, never
+the ability to leave it. Fill may place any item in a one-way room; if the
+player gets stuck, they `/warp`. Generation is *strictly easier* than before
+(escape rules and vanilla pins only ever added constraints), so the prior
+"0 fill failures" coverage still holds. `compiled_rules{,_l2,_l3}.json` are
+regenerated escape-free by `conftest._ensure_compiled_rules` (they're
+gitignored, never committed). The historical escape-cascade saga (commit
+`7c5a451`, the Morph-Ball single-copy circular-dependency, the 106→24
+tightening count) is kept here only as the rationale for *why* the runtime
+approach replaced it — none of that code remains.
 
 Also: `objective.hints` in the
 patcher output is now regenerated to a neutral count line — the starter
