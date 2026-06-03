@@ -584,13 +584,19 @@ class DreadContext(CommonContext):
             )
             return
 
+        # The deploy target dictates the patcher's on-disk layout: Ryujinx
+        # nests the mod under DreadRandovania, Atmosphere (real Switch / SD,
+        # and our "custom" flat layout) writes into contents/<tid>/ with IPS
+        # in the global exefs_patches tree. Pick the matching compatibility so
+        # the seed doesn't land where the console can't read it.
+        mod_compat = "ryujinx" if state.get("deploy_target") == "ryujinx" else "atmosphere"
         _ap_log.info(
             "Auto-patch: writing per-seed romfs overlay to %s (vanilla "
-            "romfs: %s)",
-            deploy_dir, romfs_path,
+            "romfs: %s, compatibility: %s)",
+            deploy_dir, romfs_path, mod_compat,
         )
         asyncio.ensure_future(
-            self._run_patch(str(deploy_dir), str(romfs_path))
+            self._run_patch(str(deploy_dir), str(romfs_path), mod_compatibility=mod_compat)
         )
 
     async def _ensure_patcher_python(self) -> None:
@@ -620,7 +626,13 @@ class DreadContext(CommonContext):
 
     # ---- /patch implementation ---------------------------------------
 
-    async def _run_patch(self, dreadvania_dir: str, vanilla_romfs_dir: str) -> None:
+    async def _run_patch(
+        self,
+        dreadvania_dir: str,
+        vanilla_romfs_dir: str,
+        *,
+        mod_compatibility: Optional[str] = None,
+    ) -> None:
         from ..patcher_pipeline import patch
         from .._setup.build import collect_build_outputs
 
@@ -641,6 +653,7 @@ class DreadContext(CommonContext):
                 vanilla_romfs_dir=Path(_expand(vanilla_romfs_dir)),
                 python_executable=self.dreadvania_python,
                 exefs_overlay=exefs_overlay,
+                mod_compatibility=mod_compatibility,
             )
 
         try:

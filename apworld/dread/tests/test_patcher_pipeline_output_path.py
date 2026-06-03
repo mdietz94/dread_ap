@@ -32,7 +32,7 @@ def _minimal_placements() -> dict:
 
 
 def _patch_with_fakes(monkeypatch, dreadvania_dir: Path, romfs_dir: Path,
-                      exefs_overlay=None):
+                      exefs_overlay=None, mod_compatibility=None):
     """Run patch() with deps + subprocess mocked; return (result, captured_cmd)."""
     captured: dict = {}
 
@@ -49,6 +49,7 @@ def _patch_with_fakes(monkeypatch, dreadvania_dir: Path, romfs_dir: Path,
         vanilla_romfs_dir=romfs_dir,
         python_executable="py",
         exefs_overlay=exefs_overlay,
+        mod_compatibility=mod_compatibility,
     )
     return result, captured.get("cmd", [])
 
@@ -73,6 +74,69 @@ def test_ryujinx_output_path_is_parent_not_the_mod_dir(monkeypatch, tmp_path):
     # Parent — so patcher append yields exactly mod_dir, never mod_dir/DreadRandovania.
     assert out == mod_dir.parent.resolve()
     assert out.name == "010093801237c000"
+
+
+def test_atmosphere_output_path_strips_to_atmosphere_dir(monkeypatch, tmp_path):
+    """An SD/Atmosphere install dir (.../atmosphere/contents/<tid>) → the CLI
+    gets the atmosphere/ dir, so the patcher's contents/<tid> append lands the
+    mod flat at the install dir (NOT nested under DreadRandovania, which a real
+    Switch would ignore)."""
+    mod_dir = tmp_path / "sd" / "atmosphere" / "contents" / "010093801237c000"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    result, cmd = _patch_with_fakes(
+        monkeypatch, mod_dir, romfs, mod_compatibility="atmosphere")
+
+    assert result.ok, result.message
+    out = _output_path_from(cmd)
+    # The patcher appends contents/<tid>; we hand it the atmosphere/ dir so the
+    # mod re-creates exactly mod_dir.
+    assert out == (tmp_path / "sd" / "atmosphere").resolve()
+    assert out.name == "atmosphere"
+
+
+def test_atmosphere_ips_land_in_global_exefs_patches(monkeypatch, tmp_path):
+    """Atmosphere reads exefs IPS from the GLOBAL exefs_patches tree (sibling
+    of contents/), not from inside the title folder. The version-sentinel .ips
+    must land there, and NOT under contents/<tid>/exefs."""
+    mod_dir = tmp_path / "sd" / "atmosphere" / "contents" / "010093801237c000"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    result, _ = _patch_with_fakes(
+        monkeypatch, mod_dir, romfs, mod_compatibility="atmosphere")
+
+    assert result.ok, result.message
+    global_patches = tmp_path / "sd" / "atmosphere" / "exefs_patches" / "DreadRandovania"
+    ips = sorted(p.name for p in global_patches.glob("*.ips"))
+    assert "646761F643AFEBB379EDD5E6A5151AF2CEF93DC1.ips" in ips
+    # The title-folder exefs must NOT have collected the IPS.
+    assert not list((mod_dir / "exefs").glob("*.ips"))
+
+
+def test_atmosphere_overlay_lands_in_contents_exefs(monkeypatch, tmp_path):
+    """The patched sysmodule (LayeredFS exefs replacement) lands in
+    contents/<tid>/exefs even in Atmosphere mode, while IPS go elsewhere."""
+    mod_dir = tmp_path / "sd" / "atmosphere" / "contents" / "010093801237c000"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "subsdk9").write_bytes(b"PATCHED-CLIENT-MODE")
+    (build / "main.npdm").write_bytes(b"NPDM")
+    overlay = {"subsdk9": build / "subsdk9", "main.npdm": build / "main.npdm"}
+
+    result, _ = _patch_with_fakes(
+        monkeypatch, mod_dir, romfs, exefs_overlay=overlay,
+        mod_compatibility="atmosphere")
+
+    assert result.ok, result.message
+    assert (mod_dir / "exefs" / "subsdk9").read_bytes() == b"PATCHED-CLIENT-MODE"
+    assert (mod_dir / "exefs" / "main.npdm").read_bytes() == b"NPDM"
 
 
 def test_exefs_overlay_overwrites_upstream_subsdk9(monkeypatch, tmp_path):

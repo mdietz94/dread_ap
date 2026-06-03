@@ -451,11 +451,25 @@ def build_patcher_input_from_placements(
     placements: dict[str, Any],
     *,
     layout_uuid: Optional[str] = None,
+    mod_compatibility: Optional[str] = None,
 ) -> dict[str, Any]:
     """End-to-end placements → patcher_input.json conversion using the
-    bundled starter template."""
+    bundled starter template.
+
+    The bundled template hard-codes ``mod_compatibility: "ryujinx"`` (its
+    origin was a Ryujinx dev export). That value decides the patcher's
+    on-disk layout — Ryujinx nests the mod under a ``DreadRandovania``
+    folder, Atmosphere writes flat into ``contents/<tid>/``. A real Switch
+    (Atmosphere) does NOT read the nested folder, so an SD/custom deploy
+    must override this to ``"atmosphere"`` or the seed lands one level too
+    deep and the console ignores it. Pass ``mod_compatibility`` to override
+    the template; leave it ``None`` to keep the template's value.
+    """
     overrides = placements_to_overrides(placements, layout_uuid=layout_uuid)
-    return merge_overrides(load_starter_template(), overrides)
+    result = merge_overrides(load_starter_template(), overrides)
+    if mod_compatibility is not None:
+        result["mod_compatibility"] = mod_compatibility
+    return result
 
 
 # ---------------------------------------------------------------------
@@ -704,6 +718,59 @@ def _install_exefs_ips(exefs_dir: Path) -> list[str]:
     return copied
 
 
+# Dread's Atmosphere title id (lowercase, as the patcher emits it). Kept in
+# sync with _setup.deploy.DREAD_TITLE_ID; duplicated here to avoid importing
+# the GUI/deploy module into the patcher pipeline.
+_DREAD_TITLE_ID = "010093801237c000"
+
+
+def _resolve_output_layout(
+    install_dir: Path, compatibility: str
+) -> tuple[Path, Path, Path]:
+    """Map the desired FINAL mod dir + compatibility mode to the three paths
+    we need: (cli_output_path, exefs_dir, exefs_patches_dir).
+
+    This inverts ``open_dread_rando.output_config.OutputCompatibility.paths()``
+    so the patcher's own append lands the mod exactly at ``install_dir`` (no
+    double-nesting) and so our re-asserted version-sentinel IPS land where the
+    target platform actually reads exefs patches:
+
+      RYUJINX:    mod = out/DreadRandovania
+                  exefs == exefs_patches == mod/exefs   (Ryujinx reads IPS
+                  from the mod's own exefs folder)
+      ATMOSPHERE: mod = out/contents/<tid>
+                  exefs       = mod/exefs               (LayeredFS replacement)
+                  exefs_patches = out/exefs_patches/DreadRandovania
+                  (Atmosphere reads IPS from the GLOBAL exefs_patches tree,
+                  a sibling of contents/ — NOT from inside the title folder)
+    """
+    if compatibility == "ryujinx":
+        if install_dir.name == "DreadRandovania":
+            out_path = install_dir.parent
+            mod_dir = install_dir
+        else:
+            out_path = install_dir
+            mod_dir = install_dir / "DreadRandovania"
+        exefs = mod_dir / "exefs"
+        return out_path, exefs, exefs  # Ryujinx: IPS live alongside exefs.
+    if compatibility == "atmosphere":
+        # The SD/custom install dir is the LayeredFS mod dir:
+        #   <root>/atmosphere/contents/<tid>
+        # so out_path is the atmosphere/ dir (two segments up). If the caller
+        # passed something shallower, let the patcher re-create contents/<tid>.
+        if (install_dir.parent.name == "contents"
+                and install_dir.name.lower() == _DREAD_TITLE_ID):
+            out_path = install_dir.parent.parent
+            mod_dir = install_dir
+        else:
+            out_path = install_dir
+            mod_dir = install_dir / "contents" / _DREAD_TITLE_ID
+        exefs = mod_dir / "exefs"
+        exefs_patches = out_path / "exefs_patches" / "DreadRandovania"
+        return out_path, exefs, exefs_patches
+    raise ValueError(f"unknown mod_compatibility: {compatibility!r}")
+
+
 def patch(
     placements: dict[str, Any],
     dreadvania_install_dir: Path,
@@ -713,6 +780,7 @@ def patch(
     patcher_input_path: Optional[Path] = None,
     python_executable: Optional[str] = None,
     exefs_overlay: Optional[dict[str, Path]] = None,
+    mod_compatibility: Optional[str] = None,
 ) -> PatchResult:
     """End-to-end /patch implementation. Pure-ish (writes to disk, runs
     a subprocess) — returns a PatchResult that the caller surfaces as
@@ -727,18 +795,26 @@ def patch(
          exefs the patcher just wrote — see below.
 
     ``dreadvania_install_dir`` is the FINAL mod folder (the dir whose
-    ``romfs``/``exefs`` the game loads). The upstream patcher's RYUJINX
-    output mode appends a ``DreadRandovania`` segment to whatever
-    ``--output-path`` it's handed (``open_dread_rando/output_config.py``).
-    Since our callers already include that segment in
-    ``dreadvania_install_dir`` (deploy + ``_dreadvania_install_dir_from_state``
-    both end in ``DreadRandovania`` for Ryujinx), we hand the patcher the
-    PARENT and let it re-create the same leaf — landing the mod AT
-    ``dreadvania_install_dir`` instead of one level deeper. Passing the dir
-    directly produced ``.../DreadRandovania/DreadRandovania`` and, worse, the
-    nested ``exefs`` got the patcher's bundled UPSTREAM (server-mode, port
-    6969) ``subsdk9``, which Ryujinx then loaded in place of our patched
-    TCP-client build ("Multiple replacements to subsdk9").
+    ``romfs``/``exefs`` the game loads). ``mod_compatibility`` selects the
+    patcher's on-disk layout (``open_dread_rando/output_config.py``):
+
+      - ``"ryujinx"`` appends a ``DreadRandovania`` segment to
+        ``--output-path``; the install dir already ends in that segment, so
+        we hand the patcher the PARENT and let it re-create the leaf. (Passing
+        the dir directly produced ``.../DreadRandovania/DreadRandovania`` and,
+        worse, the nested ``exefs`` got the patcher's bundled UPSTREAM
+        (server-mode, port 6969) ``subsdk9`` — "Multiple replacements to
+        subsdk9".)
+      - ``"atmosphere"`` appends ``contents/<tid>`` instead, and a real Switch
+        only reads ``exefs``/``romfs`` directly under that title folder — NOT
+        a ``DreadRandovania`` subfolder. So an SD/custom deploy MUST run in
+        this mode; running it in ``"ryujinx"`` mode strands the seed in
+        ``contents/<tid>/DreadRandovania/`` where the console ignores it (the
+        bug this parameter fixes). The caller derives the mode from the deploy
+        target (Ryujinx → ``"ryujinx"``; SD/custom → ``"atmosphere"``).
+
+    :func:`_resolve_output_layout` inverts the upstream path math for the
+    chosen mode so the mod lands AT ``dreadvania_install_dir`` either way.
 
     ``exefs_overlay`` (name→source-path, e.g. our built ``subsdk9`` +
     ``main.npdm``) is copied into the final mod's ``exefs`` AFTER the patcher
@@ -750,7 +826,11 @@ def patch(
     patches (``Game.HasRandomizerPatches``) via :func:`_install_exefs_ips` —
     the vendored open-dread-rando submodule omits them and ``rmtree``s the
     exefs dir each run, so without this the game rejects every save as an
-    "Unsupported Metroid Dread version". See that helper for the full why.
+    "Unsupported Metroid Dread version". These land in the per-mode
+    exefs-patches dir (alongside ``exefs`` for Ryujinx; the GLOBAL
+    ``exefs_patches/DreadRandovania`` tree for Atmosphere, since a real Switch
+    reads IPS from there, not from inside the title folder). See that helper
+    for the full why.
 
     The Switch→PC collected-checks wiring lives in the client-sent
     Randovania bootstrap, so no post-patch init.lc edit is needed.
@@ -767,8 +847,12 @@ def patch(
             "Run the Randovania GUI installer at least once first — we overlay onto its output."
         ))
 
-    # 1+2: build patcher input
-    patcher_input = build_patcher_input_from_placements(placements, layout_uuid=layout_uuid)
+    # 1+2: build patcher input. mod_compatibility (when given) overrides the
+    # template default so an Atmosphere/SD deploy writes flat into
+    # contents/<tid>/ instead of nesting under DreadRandovania (which the
+    # console ignores).
+    patcher_input = build_patcher_input_from_placements(
+        placements, layout_uuid=layout_uuid, mod_compatibility=mod_compatibility)
     if patcher_input_path is None:
         patcher_input_path = dreadvania_install_dir.parent / "ap_patcher_input.json"
     patcher_input_path.parent.mkdir(parents=True, exist_ok=True)
@@ -776,22 +860,14 @@ def patch(
 
     # Account for the patcher's compatibility-mode path suffix so the mod
     # lands AT dreadvania_install_dir, not nested under a doubled segment.
-    # RYUJINX mode appends "DreadRandovania" to --output-path; our callers
-    # already include that leaf, so pass the parent and let the patcher
-    # re-create it. (See the docstring for the 6969-shadowing bug this fixes.)
+    # RYUJINX appends "DreadRandovania"; ATMOSPHERE appends "contents/<tid>".
+    # Our callers pass the FINAL mod dir, so we hand the patcher the matching
+    # parent and let it re-create the leaf. exefs_patches_dir is where the
+    # version-sentinel IPS belong on THIS platform (see _resolve_output_layout
+    # and the docstring for the 6969-shadowing bug this all guards).
     compatibility = patcher_input.get("mod_compatibility")
-    appended_leaf = "DreadRandovania" if compatibility == "ryujinx" else None
-    if appended_leaf and dreadvania_install_dir.name == appended_leaf:
-        output_path = dreadvania_install_dir.parent
-        final_mod_dir = dreadvania_install_dir
-    elif appended_leaf:
-        # Caller didn't pre-include the leaf (e.g. SD/atmosphere root) — the
-        # patcher will create it under the given dir.
-        output_path = dreadvania_install_dir
-        final_mod_dir = dreadvania_install_dir / appended_leaf
-    else:
-        output_path = dreadvania_install_dir
-        final_mod_dir = dreadvania_install_dir
+    output_path, exefs_dir, exefs_patches_dir = _resolve_output_layout(
+        dreadvania_install_dir, compatibility)
 
     # 3: run the upstream patcher CLI. Use absolute paths — relative
     # --output-path triggers a recursive romfs/build/ artifact upstream.
@@ -823,20 +899,24 @@ def patch(
             cli_stderr_tail="\n".join((proc.stderr or "").splitlines()[-20:]),
         )
 
-    # 4: re-assert files the patcher just (re)wrote into the mod's exefs:
+    # 4: re-assert files the patcher just (re)wrote:
     #   (a) the version-sentinel IPS patches — the vendored patcher omits them
-    #       and the game rejects the save without them (see _install_exefs_ips);
+    #       and the game rejects the save without them (see _install_exefs_ips).
+    #       These go to exefs_patches_dir, which differs by platform: alongside
+    #       the mod's exefs for Ryujinx, but in the GLOBAL exefs_patches tree
+    #       for Atmosphere (a real Switch reads IPS from there, not from inside
+    #       the title folder).
     #   (b) our patched sysmodule over the upstream subsdk9 — without it the
     #       Switch falls back to server mode (listens on 6969, never dials).
+    #       This always goes into the LayeredFS exefs dir.
     notes: list[str] = []
-    exefs_dir = final_mod_dir / "exefs"
     try:
-        exefs_dir.mkdir(parents=True, exist_ok=True)
-        ips_copied = _install_exefs_ips(exefs_dir)
+        exefs_patches_dir.mkdir(parents=True, exist_ok=True)
+        ips_copied = _install_exefs_ips(exefs_patches_dir)
         if ips_copied:
             notes.append(
                 "installed exefs version-sentinel patches ("
-                + ", ".join(sorted(ips_copied)) + f") into {exefs_dir}"
+                + ", ".join(sorted(ips_copied)) + f") into {exefs_patches_dir}"
             )
         else:
             # No bundled .ips and the vendored patcher writes none either — the
@@ -849,6 +929,7 @@ def patch(
                 "game may reject the save as an unsupported version"
             )
         if exefs_overlay:
+            exefs_dir.mkdir(parents=True, exist_ok=True)
             for name, src in exefs_overlay.items():
                 shutil.copy2(src, exefs_dir / name)
             notes.append(
