@@ -160,8 +160,10 @@ Auto-patch: writing per-seed romfs overlay to
   (vanilla romfs: C:\Users\you\Downloads\dread-romfs)
 ```
 
-The per-seed patcher runs in a worker thread (~3 seconds). When it's
-done, you can launch Dread.
+The per-seed patcher runs in a worker thread (~3 seconds). It also logs
+an `installed exefs version-sentinel patches (...)` note — those are the
+two `.ips` files (see "What lives where" below for where they land on
+each platform). When it's done, you can launch Dread.
 
 ### 8. Play
 
@@ -196,8 +198,24 @@ You DO NOT need to re-run /setup for:
 | `%APPDATA%/dread_ap/setup_state.json` | The wizard's persistent state |
 | `%APPDATA%/dread_ap/wizard.log` | Wizard breadcrumb log (page transitions, populate() crashes) |
 | `%APPDATA%/dread_ap/launch-crash.log` | Tk-surfaced launch crashes (when launching from a .pythonw-style ArchipelagoLauncher.exe) |
-| `%APPDATA%/Ryujinx/mods/contents/010093801237c000/DreadRandovania/exefs/` | Ryujinx deploy target |
-| `<SD>:\atmosphere\contents\010093801237c000\exefs\` | Real-Switch deploy target |
+| `%APPDATA%/Ryujinx/mods/contents/010093801237c000/DreadRandovania/exefs/` | Ryujinx deploy target (subsdk9 + main.npdm; the `.ips` land here too) |
+| `<SD>:\atmosphere\contents\010093801237c000\exefs\` | Real-Switch deploy target (subsdk9 + main.npdm) |
+| `<SD>:\atmosphere\exefs_patches\DreadRandovania\` | Real-Switch **version-sentinel `.ips`** (a *global* tree, NOT under the title folder — see note below) |
+
+> **Why you won't see `.ips` files in the title folder on a real Switch.**
+> A complete install has three parts: the sysmodule (`subsdk9` +
+> `main.npdm`), the patched `romfs/`, and two version-sentinel `.ips`
+> patches. On Ryujinx all three sit in the mod's `exefs/`/`romfs/`. On a
+> real Switch, Atmosphere reads exefs IPS from a **global**
+> `atmosphere/exefs_patches/` tree — a sibling of `contents/`, not a child
+> of the title folder — so the `.ips` land in
+> `atmosphere/exefs_patches/DreadRandovania/`, named by NSO build id (no
+> title id in the path; the build-id filename does the targeting). They're
+> written by the per-seed auto-patch on `/connect` (step 7), not by the
+> `/setup` deploy step. Without them the game rejects a new save as
+> "Unsupported Metroid Dread version" even on a correct 2.1.0 ROM. The
+> backgrounder in [install-switch.md](install-switch.md#what-lands-on-disk-and-why-there-are-no-ips-in-the-title-folder)
+> has the full table.
 
 If you ever need to start fresh, delete `%APPDATA%/dread_ap/` and re-run
 DreadClient. The wizard pops automatically (the first-run gate detects

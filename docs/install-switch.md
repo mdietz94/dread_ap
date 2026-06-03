@@ -132,6 +132,43 @@ start, so the patched `subsdk9` only loads on a fresh game launch.
 into the Switch, boot Dread. Atmosphere picks up the sysmodule
 automatically.
 
+## What lands on disk (and why there are no `.ips` in the title folder)
+
+A complete install is made of **three** kinds of files, and they do
+*not* all live under the game's title folder. This trips people up: a
+common report is "I installed to the SD card but I don't see any `.ips`
+files." That's expected — on a real Switch the `.ips` files are
+deliberately *not* inside `atmosphere/contents/<title-id>/`.
+
+| File(s) | Ryujinx | Real Switch (Atmosphere / SD) |
+|---|---|---|
+| `subsdk9` + `main.npdm` (the sysmodule) | `mods/contents/<tid>/DreadRandovania/exefs/` | `atmosphere/contents/<tid>/exefs/` |
+| Patched `romfs/` (the per-seed overlay) | same `DreadRandovania/romfs/` | `atmosphere/contents/<tid>/romfs/` |
+| **Version-sentinel `.ips` patches** | **same `exefs/` folder** | **`atmosphere/exefs_patches/DreadRandovania/`** |
+
+(`<tid>` is Dread's title id, `010093801237c000`.)
+
+Why the split on real hardware: Atmosphere reads exefs IPS patches from
+a **global** `atmosphere/exefs_patches/` tree — a *sibling* of
+`contents/`, not a child of any title folder. Inside it, the patchset
+subfolder name (`DreadRandovania`) is arbitrary; Atmosphere scans every
+subfolder and applies any `.ips` whose **filename matches the running
+NSO's build id**. There is no title id anywhere in that path — the
+build-id filename is the entire targeting mechanism. (Ryujinx is simpler:
+it reads IPS from the mod's own `exefs/`, so there they sit alongside
+`subsdk9`.)
+
+What the patches do: they inject `Game.HasRandomizerPatches` (a "version
+sentinel") into the `main` NSO. open-dread-rando's `custom_scenario.lua`
+**rejects a new save with "Unsupported Metroid Dread version" if that
+function is missing** — even on a correct 2.1.0 ROM. So these `.ips` are
+load-bearing, not optional. They're written by the per-seed auto-patch on
+`/connect` (not by `/setup`'s deploy step), into the per-platform
+location above. We ship two build-id-named `.ips` under
+`apworld/dread/data/exefs_patches/` and re-assert them on every patch
+(`patcher_pipeline._install_exefs_ips`), because the vendored
+open-dread-rando checkout omits them and wipes the exefs dir each run.
+
 ## Troubleshooting
 
 **Wizard says "/setup is deprecated"**: typo - that's the **/patch**
@@ -147,6 +184,25 @@ a hint at which page to fix:
 - `deploy_target` not recorded -> wizard didn't finish the Deploy page
 - `slot_data` has no placements -> re-generate the seed with a recent
   apworld version
+
+**"I don't see any `.ips` files on the SD card"**: that's expected if
+you looked inside `atmosphere/contents/<tid>/`. On real hardware the
+version-sentinel patches live in the **global**
+`atmosphere/exefs_patches/DreadRandovania/` tree instead (see "What
+lands on disk" above). Check there: you should find two build-id-named
+`.ips`. If that folder is empty or missing, the auto-patch didn't run —
+when it did, the DreadClient log shows an `installed exefs
+version-sentinel patches (...)` note after the `Auto-patch:` line (and a
+loud `WARNING: no bundled exefs version-sentinel .ips found` if the
+patches were missing). Its absence, or an "SD card not mounted" skip, is
+the tell.
+
+**Game boots but rejects a new save as "Unsupported Metroid Dread
+version"** (even on a correct 2.1.0 ROM): the version-sentinel `.ips`
+didn't land. On real hardware, confirm
+`atmosphere/exefs_patches/DreadRandovania/*.ips` exists; on Ryujinx,
+confirm the two `.ips` sit in the mod's `exefs/` alongside `subsdk9`.
+Re-run the auto-patch by reconnecting with the SD card mounted.
 
 **Patcher fails with `ModuleNotFoundError: open_dread_rando`**: the
 Python that the patcher subprocess invokes doesn't have the package.
