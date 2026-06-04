@@ -371,6 +371,96 @@ async def test_game_restart_without_save_redelivers_lost_items():
         await _teardown(ctx, fake)
 
 
+@pytest.mark.asyncio
+async def test_warp_restores_locally_collected_pickup():
+    """Reproduces the missing-Energy-Tank bug. A local own-item pickup taken
+    since the last save is granted by the game's seed-baked OnPickedUp and AP
+    never re-delivers it. The /warp's Game.LoadScenario reloads from save, which
+    reverts it — so the restore must re-grant it or it is lost for good."""
+    ctx, dp, fake = await _setup()
+    try:
+        etank = "ITEM_ENERGY_TANKS"
+        fake.save()                          # baseline save: no E-tank
+        fake.collect(7, grants={etank: 1})   # local pickup, NOT saved
+        assert fake.inventory_of(etank) == 1
+
+        msg = await ctx._warp_to_start()
+        assert "warped" in msg
+        # Survived the warp (restored), not reverted to the save's 0.
+        assert fake.inventory_of(etank) == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_warp_then_recollect_does_not_duplicate():
+    """After the warp restores the reverted item, returning to the pickup must
+    NOT yield a second copy. The warp reverts the Location_Collected_* bit (so
+    the actor would respawn); the restore re-asserts it, so the pickup stays
+    'taken' and can't be re-collected."""
+    ctx, dp, fake = await _setup()
+    try:
+        etank = "ITEM_ENERGY_TANKS"
+        fake.save()
+        fake.collect(7, grants={etank: 1})
+        assert fake.inventory_of(etank) == 1
+
+        msg = await ctx._warp_to_start()
+        assert "warped" in msg
+        assert fake.inventory_of(etank) == 1
+        assert 7 in fake.collected_pickup_indices  # re-asserted, not reverted
+
+        # Player walks back and touches the spot — the actor isn't there.
+        fake.collect(7, grants={etank: 1})
+        assert fake.inventory_of(etank) == 1        # still 1, not 2
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_warp_does_not_double_grant_remote_items():
+    """A remote AP item delivered (but not yet saved) is reverted by the warp
+    just like a local one. The restore re-grants exactly the lost amount and
+    rewinds the ReceivedPickups cursor so a later poll does NOT also re-deliver
+    it (which would double the item)."""
+    ctx, dp, fake = await _setup()
+    try:
+        missile = _ap_id_for(dp, "Missile Tank")
+        await ctx._on_received_items({"index": 0, "items": [_network_item(missile)]})
+        await _drive(ctx, fake, target=1)
+        assert fake.inventory_of(MISSILE_ITEM) == 2
+        assert fake.received_pickups == 1
+
+        # No save since delivery → warp reverts inventory + the cursor.
+        msg = await ctx._warp_to_start()
+        assert "warped" in msg
+        assert fake.inventory_of(MISSILE_ITEM) == 2    # restored, not 4
+        assert fake.received_pickups == 1              # cursor rewound
+
+        # A subsequent poll must not re-deliver (cursor still matches).
+        await ctx._poll_once()
+        await asyncio.sleep(0.05)
+        assert fake.inventory_of(MISSILE_ITEM) == 2
+        assert fake.received_pickups == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_warp_blocked_outside_ingame_does_not_touch_inventory():
+    """A /warp from a menu is refused in-Lua (not_ingame) before LoadScenario,
+    so no revert and no restore happen."""
+    ctx, dp, fake = await _setup()
+    try:
+        fake.game_mode = "MENU"
+        fake.collect(3, grants={"ITEM_ENERGY_TANKS": 1})
+        msg = await ctx._warp_to_start()
+        assert "blocked" in msg
+        assert fake.inventory_of("ITEM_ENERGY_TANKS") == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
 def _bounces(ctx: DreadContext) -> list[dict]:
     return [m for m in _all_sent(ctx) if m.get("cmd") == "Bounce"]
 

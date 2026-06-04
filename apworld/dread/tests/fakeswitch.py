@@ -75,6 +75,12 @@ class FakeDreadGame:
         self.inventory_index: int = 0
         self.beaten: bool = False
         self.in_cutscene: bool = False
+        # Last committed save. Game.LoadScenario (the /warp primitive) reloads
+        # Samus from this, reverting anything collected/delivered since save().
+        self.saved_inventory: dict[str, int] = {}
+        self.saved_received_pickups: int = 0
+        self.saved_inventory_index: int = 0
+        self.saved_collected: set[int] = set()
         # ProgressStat_PlayerDeaths — the Blackboard prop the client polls for
         # DeathLink. Bumped by die() (natural death) or by RL.KillPlayer().
         self.death_count: int = 0
@@ -140,12 +146,41 @@ class FakeDreadGame:
 
     # ---- test-control helpers ----------------------------------------
 
-    def collect(self, *pickup_indices: int) -> None:
-        """Simulate the player collecting pickups in-world."""
-        for idx in pickup_indices:
-            if idx not in self.collected_pickup_indices:
-                self.collected_pickup_indices.add(idx)
-                self.inventory_index += 1
+    def collect(self, *pickup_indices: int,
+                grants: Optional[dict[str, int]] = None) -> None:
+        """Simulate the player collecting pickups in-world.
+
+        ``grants`` models the SEED-BAKED local item grant (the game's own
+        OnPickedUp running for the player's own item at that node). It bumps the
+        live inventory but NOT ``received_pickups`` — and it is NOT saved until
+        :meth:`save`, so a warp-reload reverts it. This is exactly the path the
+        missing-Energy-Tank bug rides."""
+        newly = [idx for idx in pickup_indices
+                 if idx not in self.collected_pickup_indices]
+        if not newly:
+            # Already collected → the actor doesn't respawn, so no re-grant. This
+            # is exactly what re-asserting Location_Collected_* buys us post-warp.
+            return
+        for idx in newly:
+            self.collected_pickup_indices.add(idx)
+            self.inventory_index += 1
+        for item_id, qty in (grants or {}).items():
+            self.inventory[item_id] = self.inventory.get(item_id, 0) + qty
+
+    def save(self) -> None:
+        """Commit current state to the save file (what a save station does)."""
+        self.saved_inventory = dict(self.inventory)
+        self.saved_received_pickups = self.received_pickups
+        self.saved_inventory_index = self.inventory_index
+        self.saved_collected = set(self.collected_pickup_indices)
+
+    def _load_scenario_revert(self) -> None:
+        """Model Game.LoadScenario: reload Samus from the last save."""
+        self.inventory = dict(self.saved_inventory)
+        self.received_pickups = self.saved_received_pickups
+        self.inventory_index = self.saved_inventory_index
+        self.collected_pickup_indices = set(self.saved_collected)
+        self._pending = None
 
     def end_cutscene(self) -> None:
         """Leave the cinematic; grant any pending received pickup."""
@@ -237,6 +272,63 @@ class FakeDreadGame:
 
         if "RL.ReceivePickup(" in src:
             self._receive_pickup(src)
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            return
+
+        if "Game.LoadScenario(" in src:
+            # The /warp primitive. Model the in-Lua gates, then reload from save.
+            if self.game_mode != "INGAME":
+                result = "not_ingame"
+            elif self.in_cutscene:
+                result = "no_interaction"
+            else:
+                self._load_scenario_revert()
+                result = "ok"
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=result))
+            return
+
+        if "RL_READ_COLLECTED" in src:
+            body = ",".join(str(i) for i in sorted(self.collected_pickup_indices))
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=body))
+            return
+
+        if "RL_MARK_COLLECTED" in src:
+            m = re.search(r"ipairs\(\{([\d,\s]*)\}\)", src)
+            if m and m.group(1).strip():
+                for tok in m.group(1).split(","):
+                    tok = tok.strip()
+                    if tok:
+                        self.collected_pickup_indices.add(int(tok))
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            return
+
+        if "RandomizerPowerup.GetItemAmount" in src:
+            # build_read_inventory_amounts_lua: self-describing ITEM=amt;... .
+            body = ";".join(f"{k}={v}" for k, v in self.inventory.items())
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=body))
+            return
+
+        if "return tostring(RL.ReceivedPickups())" in src:
+            await self._send(W.LuaExecReply(
+                seq=seq, ok=True, result=str(self.received_pickups)))
+            return
+
+        if 'WriteToPlayerBlackboard("ReceivedPickups"' in src:
+            # build_set_received_pickups_lua: rewind the delivery cursor.
+            m = re.search(r'"ReceivedPickups"\s*,\s*"f"\s*,\s*(-?\d+)', src)
+            if m is not None:
+                self.received_pickups = int(m.group(1))
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            return
+
+        if ".OnPickedUp(" in src:
+            # build_restore_grant_lua: a direct additive grant (warp rewind).
+            resources = [(item_id, int(qty))
+                         for item_id, qty in _RESOURCE_RE.findall(src)]
+            self.onpickedup_calls.append(resources)
+            for item_id, qty in resources:
+                self.inventory[item_id] = self.inventory.get(item_id, 0) + qty
+            self.inventory_index += 1
             await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
             return
 
