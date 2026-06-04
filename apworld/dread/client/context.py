@@ -38,6 +38,12 @@ from .protocol import (
     build_receive_pickup_lua,
     build_kill_player_lua,
     build_read_death_count_lua,
+    build_read_inventory_amounts_lua,
+    build_read_received_pickups_lua,
+    build_read_collected_indices_lua,
+    build_mark_collected_lua,
+    build_restore_grant_lua,
+    build_set_received_pickups_lua,
     pickup_class_for,
 )
 from .scout_cache import ScoutCache, request_scout
@@ -105,6 +111,13 @@ def _field(obj: Any, name: str, idx: int) -> Any:
 # Polling cadence for the periodic Switch-state pull. 2.0s matches
 # Randovania's RL.UpdateRDVClient self-scheduling interval.
 POLL_INTERVAL_SECONDS = 2.0
+
+# /warp inventory-rewind timings. Game.LoadScenario drops out of INGAME during
+# the reload; we wait for it to come back, let the loaded save settle, then diff
+# inventory to re-grant whatever the reload reverted. See _restore_after_warp.
+WARP_RESTORE_TIMEOUT_SECONDS = 20.0
+WARP_RESTORE_POLL_SECONDS = 0.5
+WARP_RESTORE_SETTLE_SECONDS = 0.5
 
 # After an incoming DeathLink, the death WE cause must not be re-broadcast. We
 # arm a suppression window rather than a sticky flag: the first detected death
@@ -258,6 +271,11 @@ class DreadContext(CommonContext):
         # no-ops on an index mismatch or a stuck PendingPickup).
         self._delivery_index: int = -1
         self._delivery_attempts: int = 0
+        # Set for the duration of a /warp's inventory-rewind window. While true,
+        # _attempt_delivery is suppressed so a remote item isn't granted in the
+        # gap between the LoadScenario revert and the restore diff (which would
+        # double-count it). See _warp_to_start / _restore_after_warp.
+        self._warp_in_progress: bool = False
         self.slot_data: dict = {}
 
         # DeathLink. ``_last_death_count`` is the last value we read from the
@@ -454,6 +472,11 @@ class DreadContext(CommonContext):
         Semantics unchanged — only the transport call differs (``self._bridge.run_lua``
         in place of ``self.executor.run_lua``)."""
         if self._bridge is None or not self._bridge.is_connected() or not self._bootstrapped:
+            return
+        if self._warp_in_progress:
+            # A /warp is rewinding the post-LoadScenario inventory revert.
+            # Suppress delivery until it finishes so we don't grant a remote
+            # item the restore diff would then double-count.
             return
         # Only deliver while the player is in the game world. We require a
         # confirmed 'INGAME' (the same gate the bootstrap's RL.UpdateRDVClient
@@ -923,12 +946,20 @@ class DreadContext(CommonContext):
     async def _warp_to_start(self) -> str:
         """Softlock recovery: warp Samus back to the starting actor.
 
-        Same ``Game.LoadScenario`` primitive Randovania already exposes via
-        ZL+ZR at any save station (custom_scenario.lua:CheckWarpToStart) — the
-        warp does NOT save first, but in-memory inventory/Blackboard state
-        survives the load (it's the same call every door transition uses), so
-        items collected since the last save are kept. The player should save
-        at the starting save station to commit them to disk.
+        Same ``Game.LoadScenario`` primitive Randovania exposes via ZL+ZR at a
+        save station (custom_scenario.lua:CheckWarpToStart). The crucial
+        difference: upstream only fires it AT a save station, where state was
+        just committed, so nothing is lost. Our ``/warp`` fires from anywhere —
+        and ``Game.LoadScenario`` reloads Samus from the last SAVE (it is NOT
+        checkpoint-continuous like a door transition), so every pickup collected
+        since the last save reverts. Remote AP items self-heal (their
+        ``ReceivedPickups`` cursor reverts too, so ``_attempt_delivery`` re-sends
+        them), but the player's OWN seed-baked pickups are granted locally and
+        AP never re-delivers them — so without a rewind they're lost for good
+        (the reported missing-Energy-Tank bug). So we snapshot inventory + the
+        delivery cursor before the warp and re-grant whatever reverted once the
+        reload settles (see :meth:`_restore_after_warp`). The diff makes this a
+        no-op for anything that did NOT revert.
 
         Gated client-side on (a) bridge connected + bootstrap done, and
         in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"`` and
@@ -940,25 +971,180 @@ class DreadContext(CommonContext):
             return "no active Switch connected"
         if not self._bootstrapped:
             return "bootstrap not complete (wait for the connect handshake)"
-        src = (
-            'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
-            'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
-            'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
-            'return "ok"'
-        )
+
+        # Snapshot BEFORE the warp so we can rewind whatever the reload reverts:
+        # inventory (re-granted), the delivery cursor (rewound), and the set of
+        # collected locations (re-asserted so reverted pickups don't respawn and
+        # become re-collectable for a duplicate).
         try:
-            resp = await self._bridge.run_lua(src)
-        except (RuntimeError, ConnectionError, asyncio.TimeoutError) as exc:
-            log.warning("/warp failed: %s", exc)
-            return f"failed: {exc}"
-        body = resp.payload.decode("utf-8", "replace").strip()
-        if not resp.success:
-            return f"lua error: {body[:200]!r}"
-        if body == "ok":
-            return ("warped — save at the starting save station to commit "
-                    "any items collected since your last save")
-        if body == "not_ingame":
-            return "blocked: not in-game (title or load menu)"
-        if body == "no_interaction":
-            return "blocked: cutscene/cinematic in progress — try again in a moment"
-        return f"unexpected reply: {body!r}"
+            inv_before = await self._read_inventory_amounts()
+            recv_before = await self._read_received_pickups()
+            collected_before = await self._read_collected_indices()
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+            log.warning("/warp pre-snapshot failed: %s", exc)
+            return f"failed reading state before warp: {exc}"
+
+        # Suppress remote delivery across the whole warp+restore window (see
+        # _attempt_delivery) so a delivery tick can't grant an item the restore
+        # diff would double-count.
+        self._warp_in_progress = True
+        try:
+            src = (
+                'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
+                'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
+                'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
+                'return "ok"'
+            )
+            try:
+                resp = await self._bridge.run_lua(src)
+            except (RuntimeError, ConnectionError, asyncio.TimeoutError) as exc:
+                log.warning("/warp failed: %s", exc)
+                return f"failed: {exc}"
+            body = resp.payload.decode("utf-8", "replace").strip()
+            if not resp.success:
+                return f"lua error: {body[:200]!r}"
+            if body == "not_ingame":
+                return "blocked: not in-game (title or load menu)"
+            if body == "no_interaction":
+                return "blocked: cutscene/cinematic in progress — try again in a moment"
+            if body != "ok":
+                return f"unexpected reply: {body!r}"
+            return await self._restore_after_warp(
+                inv_before, recv_before, collected_before)
+        finally:
+            self._warp_in_progress = False
+
+    async def _restore_after_warp(
+        self, inv_before: dict[str, float], recv_before: int,
+        collected_before: list[int],
+    ) -> str:
+        """Rewind everything the ``Game.LoadScenario`` warp reverted.
+
+        Waits for the reload to return to INGAME, then:
+          * re-grants every item whose amount dropped, via its ``OnPickedUp``
+            (the same per-item class delivery uses);
+          * re-asserts the ``Location_Collected_*`` prop for every location that
+            was collected pre-warp, so reverted pickups don't respawn and become
+            re-collectable for a duplicate (``OnPickedUp`` does NOT gate on the
+            prop — re-asserting it stops the actor respawning at the next
+            scenario load, which is what prevents the dupe);
+          * rewinds the ``ReceivedPickups`` cursor to its pre-warp value so the
+            remote items in the restored delta aren't ALSO re-delivered by
+            ``_attempt_delivery`` (the game's index-match guards against
+            double-grant anyway, but this keeps the cursor honest)."""
+        assert self._bridge is not None
+        if not await self._await_ingame(WARP_RESTORE_TIMEOUT_SECONDS):
+            log.warning("/warp: game did not return to INGAME within %ss; "
+                        "skipping inventory restore",
+                        WARP_RESTORE_TIMEOUT_SECONDS)
+            return ("warped, but could not confirm the reload finished — if any "
+                    "items are missing, reconnect to re-sync")
+        # Let the loaded save settle so GetItemAmount reflects the post-load state.
+        await asyncio.sleep(WARP_RESTORE_SETTLE_SECONDS)
+        try:
+            inv_after = await self._read_inventory_amounts()
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+            log.warning("/warp post-snapshot failed: %s", exc)
+            return f"warped, but failed reading inventory after warp: {exc}"
+
+        deficits: list[tuple[str, int]] = []
+        for item_id, before in inv_before.items():
+            qty = int(round(before - inv_after.get(item_id, 0.0)))
+            if qty > 0:
+                deficits.append((item_id, qty))
+
+        restored: list[str] = []
+        for item_id, qty in deficits:
+            cls = pickup_class_for(item_id)
+            try:
+                await self._bridge.run_lua(
+                    build_restore_grant_lua(item_id, qty, cls))
+            except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+                log.warning("/warp restore of %s x%d failed: %s",
+                            item_id, qty, exc)
+                continue
+            restored.append(f"{item_id} x{qty}")
+            log.info("/warp restored %s x%d (cls=%s)", item_id, qty, cls)
+
+        # Re-assert collected locations so reverted pickups can't be re-collected.
+        if collected_before:
+            try:
+                await self._bridge.run_lua(
+                    build_mark_collected_lua(collected_before))
+                log.info("/warp re-asserted %d collected location(s)",
+                         len(collected_before))
+            except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+                log.warning("/warp could not re-assert collected locations: %s",
+                            exc)
+
+        # Rewind the delivery cursor so restored remote items aren't re-sent.
+        try:
+            await self._bridge.run_lua(build_set_received_pickups_lua(recv_before))
+            self.state.set_game_received_pickups(recv_before)
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+            log.warning("/warp could not reset ReceivedPickups to %d: %s",
+                        recv_before, exc)
+
+        if not restored:
+            return "warped — no pickups needed restoring"
+        return ("warped — restored {n} reverted pickup(s): {names}. Save at the "
+                "starting save station to commit them.").format(
+                    n=len(restored), names=", ".join(restored))
+
+    async def _read_inventory_amounts(self) -> dict[str, float]:
+        """Read live per-item amounts (``ITEM_id -> amount``) straight from the
+        game, parsed from the self-describing string in the run_lua reply."""
+        assert self._bridge is not None
+        resp = await self._bridge.run_lua(build_read_inventory_amounts_lua())
+        body = resp.payload.decode("utf-8", "replace").strip() if resp.payload else ""
+        amounts: dict[str, float] = {}
+        for pair in body.split(";"):
+            key, sep, val = pair.partition("=")
+            if not sep:
+                continue
+            try:
+                amounts[key.strip()] = float(val)
+            except ValueError:
+                continue
+        return amounts
+
+    async def _read_received_pickups(self) -> int:
+        assert self._bridge is not None
+        resp = await self._bridge.run_lua(build_read_received_pickups_lua())
+        body = resp.payload.decode("utf-8", "replace").strip() if resp.payload else "0"
+        try:
+            return int(float(body))
+        except ValueError:
+            return 0
+
+    async def _read_collected_indices(self) -> list[int]:
+        """Read the pickup indices currently marked collected in-game."""
+        assert self._bridge is not None
+        resp = await self._bridge.run_lua(build_read_collected_indices_lua())
+        body = resp.payload.decode("utf-8", "replace").strip() if resp.payload else ""
+        indices: list[int] = []
+        for tok in body.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                indices.append(int(tok))
+            except ValueError:
+                continue
+        return indices
+
+    async def _await_ingame(self, timeout: float) -> bool:
+        """Poll the game mode until INGAME or ``timeout`` seconds elapse."""
+        assert self._bridge is not None
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            resp = await self._bridge.run_lua(
+                "return tostring(Game.GetCurrentGameModeID())")
+            mode = (resp.payload.decode("utf-8", "replace").strip()
+                    if resp.payload else "")
+            if mode:
+                self.state.update_game_state(game_mode_id=mode)
+            if mode == "INGAME":
+                return True
+            await asyncio.sleep(WARP_RESTORE_POLL_SECONDS)
+        return False

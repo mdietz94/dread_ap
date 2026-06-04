@@ -78,24 +78,68 @@ async def test_warp_bootstrap_pending(ctx):
     assert "bootstrap not complete" in msg
 
 
+def _smart_bridge(ctx, *, inventory_before="", inventory_after="",
+                  received="0", mode="INGAME"):
+    """A bridge whose run_lua dispatches by Lua content, modelling the full
+    warp+restore round-trip (snapshot → LoadScenario → re-read → restore).
+    The first inventory read returns ``inventory_before``; later ones return
+    ``inventory_after``."""
+    reads: list[str] = []
+
+    async def dispatch(src):
+        if "RandomizerPowerup.GetItemAmount" in src:
+            reads.append(src)
+            body = inventory_before if len(reads) == 1 else inventory_after
+            return Response(success=True, payload=body.encode())
+        if "return tostring(RL.ReceivedPickups())" in src:
+            return Response(success=True, payload=received.encode())
+        if "Game.LoadScenario(" in src:
+            return Response(success=True, payload=b"ok")
+        if "Game.GetCurrentGameModeID" in src:
+            return Response(success=True, payload=mode.encode())
+        return Response(success=True, payload=b"")
+
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(side_effect=dispatch)
+    ctx._bridge = bridge
+    ctx._bootstrapped = True
+    return bridge
+
+
 @pytest.mark.asyncio
-async def test_warp_ok_payload(ctx):
-    bridge = _stub_bridge(
-        ctx, connected=True, response=Response(success=True, payload=b"ok")
+async def test_warp_ok_restores_reverted_pickup(ctx):
+    # A Speed Booster Upgrade (resource item) is in inventory before the warp
+    # but gone after the LoadScenario reload → the restore must re-grant it.
+    bridge = _smart_bridge(
+        ctx, inventory_before="ITEM_ENERGY_TANKS=1", inventory_after="",
+        received="0", mode="INGAME",
     )
     msg = await ctx._warp_to_start()
     assert "warped" in msg
-    assert "save" in msg
-    # The Lua we send: matches Randovania's CheckWarpToStart primitive,
-    # gated on game-mode and user-interaction. Any of these missing would
-    # be a real regression — a wrong scenario name (e.g. dropping the
-    # "c10_samus" character package) would silently no-op.
-    lua = bridge.run_lua.await_args.args[0]
-    assert "Game.LoadScenario" in lua
-    assert "Init.sStartingScenario" in lua
-    assert "Init.sStartingActor" in lua
-    assert 'Game.GetCurrentGameModeID() ~= "INGAME"' in lua
-    assert "Scenario.IsUserInteractionEnabled(true)" in lua
+    assert "restored" in msg
+    srcs = [c.args[0] for c in bridge.run_lua.await_args_list]
+    joined = "\n".join(srcs)
+    # The warp primitive: matches Randovania's CheckWarpToStart, gated on
+    # game-mode and user-interaction. A wrong scenario name (e.g. dropping
+    # "c10_samus") would silently no-op.
+    assert "Game.LoadScenario" in joined
+    assert "Init.sStartingScenario" in joined
+    assert "Init.sStartingActor" in joined
+    assert 'Game.GetCurrentGameModeID() ~= "INGAME"' in joined
+    assert "Scenario.IsUserInteractionEnabled(true)" in joined
+    # The reverted item was re-granted via a direct OnPickedUp.
+    assert any("ITEM_ENERGY_TANKS" in s and ".OnPickedUp(" in s for s in srcs)
+
+
+@pytest.mark.asyncio
+async def test_warp_ok_no_revert_is_a_noop(ctx):
+    # Inventory identical before/after → nothing to restore.
+    _smart_bridge(ctx, inventory_before="ITEM_ENERGY_TANKS=1",
+                  inventory_after="ITEM_ENERGY_TANKS=1", mode="INGAME")
+    msg = await ctx._warp_to_start()
+    assert "warped" in msg
+    assert "no pickups needed restoring" in msg
 
 
 @pytest.mark.asyncio

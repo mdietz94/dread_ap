@@ -141,6 +141,93 @@ def build_receive_pickup_lua(
     )
 
 
+# Warp inventory rewind ------------------------------------------------------
+#
+# ``/warp`` issues ``Game.LoadScenario`` from anywhere in the world, which
+# reloads Samus from the last SAVE (not checkpoint-continuously like a door
+# transition). That reverts every pickup collected since the last save. The
+# client snapshots inventory across the warp and re-grants the delta; these
+# three helpers are the Lua primitives for that. See
+# ``DreadContext._warp_to_start`` / ``_restore_after_warp``.
+
+
+def build_read_inventory_amounts_lua() -> str:
+    """Read live per-item amounts straight from the game as a self-describing
+    ``ITEM_A=amount;ITEM_B=amount;...`` string (returned via the run_lua reply,
+    not the async NEW_INVENTORY push). Keyed by ``ITEM_*`` id so the caller can
+    diff before/after a warp without depending on ``RL.InventoryItems`` order."""
+    return (
+        "local r={} "
+        "for i,n in ipairs(RL.InventoryItems) do "
+        'r[#r+1]=n.."="..tostring(RandomizerPowerup.GetItemAmount(n)) '
+        "end "
+        'return table.concat(r,";")'
+    )
+
+
+def build_read_received_pickups_lua() -> str:
+    """Read the game's ``ReceivedPickups`` delivery cursor as a string."""
+    return "return tostring(RL.ReceivedPickups())"
+
+
+def build_restore_grant_lua(item_id: str, quantity: int,
+                            cls: str = "RandomizerPowerup") -> str:
+    """Directly re-grant ``quantity`` of ``item_id`` by calling the item's
+    ``OnPickedUp`` (the same call ``RL.ConfirmPickup`` makes). This is the
+    *non*-idempotent additive grant — used only to rewind a warp revert, where
+    we've already diffed exactly how much was lost, so no index gating is
+    wanted. It does NOT bump ``ReceivedPickups`` (these aren't AP deliveries)."""
+    progression = [[{"item_id": item_id, "quantity": int(quantity)}]]
+    return "{cls}.OnPickedUp(nil, {prog}); return ''".format(
+        cls=cls, prog=_to_lua_table(progression))
+
+
+def build_read_collected_indices_lua() -> str:
+    """Read the set of pickup indices currently marked collected, as a
+    comma-separated string (``"0,5,7"``). Mirrors ``GetCollectedIndicesAndSend``
+    but returns the indices directly so the caller can snapshot them before a
+    warp. ``RL.Pickups[i]`` holds the ``Location_Collected_*`` prop name (set by
+    the bootstrap; it lives in the Lua VM and is NOT reverted by LoadScenario)."""
+    return (
+        "-- RL_READ_COLLECTED\n"
+        "local p=Game.GetPlayerBlackboardSectionName() "
+        "local r={} "
+        "for i,t in ipairs(RL.Pickups) do "
+        "if t~='' and Blackboard.GetProp(p,t) then r[#r+1]=i-1 end "
+        "end "
+        'return table.concat(r,",")'
+    )
+
+
+def build_mark_collected_lua(pickup_indices: list[int]) -> str:
+    """Re-assert the ``Location_Collected_*`` prop for each pickup index — the
+    same ``Blackboard.SetProp(playerSection, prop, "b", true)`` the game's
+    ``MarkLocationCollected`` does. After a warp reverts the collected bits, this
+    restores them so the pickup actors don't respawn (and can't be re-collected
+    for a duplicate) when the player returns to that scenario. ``OnPickedUp``
+    itself does NOT gate on the prop, so re-asserting is what prevents the dupe —
+    by stopping the respawn at the next scenario load."""
+    idx_list = "{" + ",".join(str(int(i)) for i in pickup_indices) + "}"
+    return (
+        "-- RL_MARK_COLLECTED\n"
+        "local p=Game.GetPlayerBlackboardSectionName() "
+        "for _,idx in ipairs(" + idx_list + ") do "
+        "local t=RL.Pickups[idx+1] "
+        'if t and t~="" then Blackboard.SetProp(p,t,"b",true) end '
+        "end "
+        "return ''"
+    )
+
+
+def build_set_received_pickups_lua(count: int) -> str:
+    """Rewrite the game's ``ReceivedPickups`` Blackboard prop to ``count`` —
+    the same write ``RL.ConfirmPickup`` does, used to rewind the delivery cursor
+    to its pre-warp value so remote items restored by ``build_restore_grant_lua``
+    are not also re-delivered by ``_attempt_delivery``."""
+    return ('Scenario.WriteToPlayerBlackboard("ReceivedPickups","f",{}); '
+            "return ''").format(int(count))
+
+
 # DeathLink ------------------------------------------------------------------
 #
 # Blackboard "GAME" property holding the running death count. Official stat on
