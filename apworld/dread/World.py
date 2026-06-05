@@ -584,6 +584,10 @@ class DreadWorld(World):
             "enable_room_name_display": o.room_name_display.current_key.upper(),
             "raven_beak_damage_table_handling": o.raven_beak_damage_table.current_key,
             "nerf_power_bombs": bool(o.nerf_power_bombs.value),
+            # Release the X from Elun at game start. Logic-safe to toggle (the
+            # compiled rules assume the release must be triggered, so ON only
+            # relaxes X-gated encounters). Routed to game_patches.default_x_released.
+            "default_x_released": bool(o.x_starts_released.value),
             # Top-level patcher field — controls Samus's base max HP and each
             # Energy Tank's grant. Routed via COSMETIC_COMBAT_PATHS in
             # patcher_pipeline.py.

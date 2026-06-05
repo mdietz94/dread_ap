@@ -118,6 +118,17 @@ class NerfPowerBombs(DefaultOnToggle):
     display_name = "Nerf Power Bombs"
 
 
+class XStartsReleased(Toggle):
+    """Release the X Parasites from Elun at the very start of the game,
+    matching Randovania's `default_x_released`. With this ON, the X are loose
+    from the first frame, so X-gated encounters (e.g. Golzuna and Experiment
+    Z-57 only appear once the X are released) are reachable without first
+    triggering the Elun release event. Logic stays solvable either way — the
+    compiled rules conservatively assume the release must be triggered, so
+    turning this ON only relaxes requirements. Template default: OFF."""
+    display_name = "X Starts Released"
+
+
 # ---------------------------------------------------------------------------
 # Progressive items — mirror Randovania's Dread progressive groups. Each toggle
 # replaces a group's individual tier items with a single "Progressive X" item
@@ -345,6 +356,7 @@ class DreadOptions(PerGameCommonOptions):
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
+    x_starts_released: XStartsReleased
     progressive_suit: ProgressiveSuit
     progressive_spin: ProgressiveSpin
     progressive_charge_beam: ProgressiveChargeBeam
