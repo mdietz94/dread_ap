@@ -63,6 +63,101 @@ def _cross(name, sc, ac, item_name, recipient, idx, pickup_type="actor"):
     }
 
 
+def _own_progressive(name, sc, ac, item_name, stages, models, map_icon_id, idx):
+    return {
+        "location_name": name,
+        "scenario": sc,
+        "actor": ac,
+        "pickup_type": "actor",
+        "pickup_index": idx,
+        "ap_item_name": item_name,
+        "patcher_item_id": "",
+        "patcher_model": "",
+        "quantity": 1,
+        "recipient_slot_name": "Samus",
+        "is_own_player": True,
+        "progression_stages": stages,
+        "models": models,
+        "map_icon_id": map_icon_id,
+    }
+
+
+_PROG_BEAM_STAGES = [
+    [{"item_id": "ITEM_WEAPON_WIDE_BEAM", "quantity": 1}],
+    [{"item_id": "ITEM_WEAPON_PLASMA_BEAM", "quantity": 1}],
+    [{"item_id": "ITEM_WEAPON_WAVE_BEAM", "quantity": 1}],
+]
+_PROG_BEAM_MODELS = ["powerup_widebeam", "powerup_plasmabeam", "powerup_wavebeam"]
+
+
+def test_progressive_item_emits_multistage_resources_models_icon():
+    """An own-slot progressive placement threads its full multi-stage resources,
+    per-tier model list, and progressive map-icon id into the overrides."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own_progressive("Artaria: Beam", "s010_cave", "ItemSphere_ChargeBeam",
+                             "Progressive Beam", _PROG_BEAM_STAGES,
+                             _PROG_BEAM_MODELS, "PROGRESSIVE_BEAM", 0),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    key = "s010_cave/ItemSphere_ChargeBeam"
+    assert out["pickup_resources"][key] == _PROG_BEAM_STAGES
+    assert out["pickup_models"][key] == _PROG_BEAM_MODELS
+    assert out["pickup_captions"][key] == "Progressive Beam acquired."
+    assert out["pickup_map_icons"][key] == {"icon_id": "PROGRESSIVE_BEAM"}
+
+
+def test_progressive_merge_round_trips_and_preserves_original_actor():
+    """Through merge_overrides the multi-stage resources + model list land on the
+    template pickup, and the map_icon swaps to the progressive icon while keeping
+    the template's original_actor anchor."""
+    from build_patcher_json import merge_overrides  # noqa: E402
+
+    template = {
+        "configuration_identifier": "VANILLA",
+        "layout_uuid": "00000000-0000-0000-0000-000000000000",
+        "starting_location": {"scenario": "s010_cave", "actor": "OldStart"},
+        "starting_items": {},
+        "pickups": [
+            {
+                "pickup_type": "actor",
+                "caption": "Charge Beam acquired.",
+                "resources": [[{"item_id": "ITEM_WEAPON_CHARGE_BEAM", "quantity": 1}]],
+                "pickup_actor": {"scenario": "s010_cave", "actor": "ItemSphere_ChargeBeam"},
+                "model": ["powerup_chargebeam"],
+                "map_icon": {"icon_id": "STALE",
+                             "original_actor": {"scenario": "s010_cave",
+                                                "actor": "MapProp"}},
+            },
+        ],
+    }
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "deadbeef",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own_progressive("Artaria: Beam", "s010_cave", "ItemSphere_ChargeBeam",
+                             "Progressive Beam", _PROG_BEAM_STAGES,
+                             _PROG_BEAM_MODELS, "PROGRESSIVE_BEAM", 0),
+        ],
+    }
+    merged = merge_overrides(template, placements_to_overrides(placements))
+    p = merged["pickups"][0]
+    assert p["resources"] == _PROG_BEAM_STAGES
+    assert p["model"] == _PROG_BEAM_MODELS
+    assert p["caption"] == "Progressive Beam acquired."
+    assert p["map_icon"]["icon_id"] == "PROGRESSIVE_BEAM"
+    # original_actor anchor preserved; the stale icon branch dropped.
+    assert p["map_icon"]["original_actor"] == {"scenario": "s010_cave",
+                                               "actor": "MapProp"}
+
+
 def test_layout_uuid_matches_schema_regex():
     pattern = re.compile(
         r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"

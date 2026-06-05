@@ -224,6 +224,61 @@ async def test_multiple_items_delivered_in_order_exactly_once():
 
 
 @pytest.mark.asyncio
+async def test_progressive_beam_advances_next_missing_tier_then_saturates():
+    """Delivering Progressive Beam repeatedly grants Wide → Plasma → Wave in
+    order (the game picks the next missing tier from the full progression the
+    client sends every time), and a delivery past the last tier grants nothing
+    new while still advancing the cursor exactly-once."""
+    ctx, dp, fake = await _setup()
+    try:
+        beam = _ap_id_for(dp, "Progressive Beam")
+        await ctx._on_received_items({"index": 0, "items": [
+            _network_item(beam) for _ in range(4)]})
+        await _drive(ctx, fake, target=4)
+        assert fake.received_pickups == 4
+        assert fake.inventory_of("ITEM_WEAPON_WIDE_BEAM") == 1
+        assert fake.inventory_of("ITEM_WEAPON_PLASMA_BEAM") == 1
+        assert fake.inventory_of("ITEM_WEAPON_WAVE_BEAM") == 1
+        # The grants landed one tier per delivery, in order...
+        assert [g[0][0] for g in fake.onpickedup_calls[:3]] == [
+            "ITEM_WEAPON_WIDE_BEAM",
+            "ITEM_WEAPON_PLASMA_BEAM",
+            "ITEM_WEAPON_WAVE_BEAM",
+        ]
+        # ...and the 4th delivery granted nothing (all tiers owned) but still
+        # bumped the cursor — idempotent/saturating by construction.
+        assert fake.onpickedup_calls[3] == []
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_progressive_beam_restart_does_not_re_advance():
+    """A client restart against a game that already owns Wide+Plasma reads
+    ReceivedPickups=2 and re-sends nothing — the cursor gate prevents a spurious
+    Wave grant even though the same full progression would be re-sent."""
+    ctx, dp, fake = await _setup()
+    try:
+        beam = _ap_id_for(dp, "Progressive Beam")
+        await ctx._on_received_items({"index": 0, "items": [
+            _network_item(beam), _network_item(beam)]})
+        await _drive(ctx, fake, target=2)
+        assert fake.inventory_of("ITEM_WEAPON_PLASMA_BEAM") == 1
+        assert fake.inventory_of("ITEM_WEAPON_WAVE_BEAM") == 0
+
+        # Re-deliver the same two items (as a fresh client would on reconnect).
+        await ctx._on_received_items({"index": 0, "items": [
+            _network_item(beam), _network_item(beam)]})
+        for _ in range(3):
+            await ctx._poll_once()
+            await asyncio.sleep(0.02)
+        assert fake.received_pickups == 2
+        assert fake.inventory_of("ITEM_WEAPON_WAVE_BEAM") == 0  # no over-advance
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_client_restart_does_not_double_grant():
     """A fresh client against a game that already applied N pickups reads
     ReceivedPickups=N and delivers nothing extra."""

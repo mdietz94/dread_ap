@@ -22,10 +22,21 @@ class DreadItem:
 
     ``ap_item_name`` is the human display name the apworld uses (e.g.
     ``"Missile Tank"``).
+
+    For Randovania-style PROGRESSIVE items, ``progression_stages`` carries the
+    full multi-stage progression (a list of stages, each a list of
+    ``{"item_id", "quantity"}`` dicts) and ``pickup_cls`` the Lua class to run
+    (the first tier's specific class). They are ``None`` for ordinary items,
+    which derive both from ``patcher_item_id`` at delivery time. The game grants
+    the next *missing* tier from the full progression, so the same progression
+    is sent on every delivery (no client-side tier counting) — see
+    ``DreadContext._attempt_delivery``.
     """
     patcher_item_id: str
     quantity: int
     ap_item_name: str = ""
+    progression_stages: Optional[list] = None
+    pickup_cls: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -151,8 +162,12 @@ def build_receive_pickup_lua(
     ``progression`` is a list of stages; each stage a list of resource dicts
     ``{"item_id": "ITEM_X", "quantity": N}``. ``cls`` is the Lua pickup class
     (bareword); ``RandomizerPowerup`` is the generic path that grants additive
-    resources — per-item classes (input-toggle for Speed Booster / Phantom
-    Cloak, progressive beam/missile models) are a follow-up.
+    resources, while per-item classes do the input-toggle / weapon setup
+    (Speed Booster, Phantom Cloak, the beam/missile classes). For PROGRESSIVE
+    items the caller sends the FULL multi-stage progression with the first
+    tier's class — the game's ``HandlePickupResources`` grants the next missing
+    stage, so the same progression is re-sent on every delivery (see
+    ``DreadContext._attempt_delivery``).
     """
     progression_src = _to_lua_table(progression)
     return "RL.ReceivePickup({msg}, {cls}, {prog}, {ri}, {ii})".format(

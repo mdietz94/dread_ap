@@ -52,6 +52,43 @@ def _unescape_lua_string(literal: str) -> str:
     return inner.replace('\\"', '"').replace("\\\\", "\\")
 
 
+def _split_top_level_braces(s: str) -> list[str]:
+    """Return each top-level ``{...}`` group inside a Lua table body."""
+    groups: list[str] = []
+    depth = 0
+    start: Optional[int] = None
+    for i, ch in enumerate(s):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                groups.append(s[start:i + 1])
+                start = None
+    return groups
+
+
+def _parse_progression_stages(prog: str) -> list[list[tuple[str, int]]]:
+    """Parse a rendered Lua progression table into stages.
+
+    ``prog`` looks like ``{{{item_id="ITEM_A", quantity=1}}, {{item_id="ITEM_B",
+    quantity=1}}}`` — an outer list of stages, each a list of resource dicts.
+    Returns ``[[(item_id, qty), ...], ...]`` so the fake can model the game's
+    ``HandlePickupResources`` (grant only the first stage the player lacks)."""
+    prog = prog.strip()
+    inner = prog[1:-1] if prog.startswith("{") and prog.endswith("}") else prog
+    stages = [
+        [(item_id, int(qty)) for item_id, qty in _RESOURCE_RE.findall(stage_src)]
+        for stage_src in _split_top_level_braces(inner)
+    ]
+    if not stages:  # no nested braces — treat as one flat stage
+        stages = [[(item_id, int(qty))
+                   for item_id, qty in _RESOURCE_RE.findall(prog)]]
+    return stages
+
+
 class FakeDreadGame:
     """In-process Dread game model + line-delimited JSON TCP client."""
 
@@ -94,7 +131,9 @@ class FakeDreadGame:
         self.game_mode: str = "INGAME"
 
         # ---- delivery internals (RL.PendingPickup) ----
-        self._pending: Optional[list[tuple[str, int]]] = None
+        # A list of progression stages, each a list of (item_id, qty) — the
+        # game grants the first stage whose first item the player lacks.
+        self._pending: Optional[list[list[tuple[str, int]]]] = None
 
         # ---- observability ----
         self.onpickedup_calls: list[list[tuple[str, int]]] = []
@@ -210,14 +249,33 @@ class FakeDreadGame:
 
     # ---- delivery model ----------------------------------------------
 
+    def _grant_progression(
+        self, stages: list[list[tuple[str, int]]]
+    ) -> list[tuple[str, int]]:
+        """Model ``RandomizerPowerup.HandlePickupResources``: grant the FIRST
+        stage whose first item the player lacks; a single-stage progression is
+        always granted (additive). Returns the granted stage (``[]`` if every
+        tier is already owned)."""
+        always = len(stages) == 1
+        for stage in stages:
+            if not stage:
+                continue
+            first_id, first_qty = stage[0]
+            if always or self.inventory.get(first_id, 0) < first_qty:
+                for item_id, qty in stage:
+                    self.inventory[item_id] = self.inventory.get(item_id, 0) + qty
+                return stage
+        return []
+
     def _try_grant_pending(self) -> None:
         if self._pending is None or self.in_cutscene:
             return
-        resources = self._pending
+        stages = self._pending
         self._pending = None
-        self.onpickedup_calls.append(resources)
-        for item_id, qty in resources:
-            self.inventory[item_id] = self.inventory.get(item_id, 0) + qty
+        granted = self._grant_progression(stages)
+        self.onpickedup_calls.append(granted)
+        # The game bumps both counters unconditionally on confirm, even when no
+        # tier is granted (all already owned) — mirror that.
         self.inventory_index += 1
         self.received_pickups += 1
 
@@ -234,7 +292,7 @@ class FakeDreadGame:
             return
         if recv_index != self.received_pickups or inv_index != self.inventory_index:
             return
-        self._pending = [(item_id, int(qty)) for item_id, qty in _RESOURCE_RE.findall(prog)]
+        self._pending = _parse_progression_stages(prog)
         self._try_grant_pending()
 
     # ---- wire / dispatch ----------------------------------------------

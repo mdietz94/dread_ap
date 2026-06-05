@@ -99,6 +99,10 @@ def test_unique_progression_items_have_pool_count_one(items):
             continue
         if it["name"] in multi_copy:
             continue
+        # Progressive items ship one copy per tier (validated in test_data_tables).
+        if it.get("progression_tiers"):
+            assert it["pool_count"] == len(it["progression_tiers"])
+            continue
         assert it["pool_count"] == 1, (
             f"{it['name']}: expected pool_count=1, got {it['pool_count']}"
         )
@@ -481,3 +485,119 @@ def test_overflow_raises_option_error_when_unrecoverable():
     )
     with pytest.raises(OptionError):
         world.create_items()
+
+
+# ---- progressive items ----------------------------------------------------
+
+@pytestmark_runtime
+def test_progressive_off_default_keeps_individual_tiers():
+    """Defaults (all progressive toggles off): the individual tier items are in
+    the pool and no Progressive X item is."""
+    world, mw = _build_world()
+    world.create_items()
+    names = {it.name for it in mw.itempool}
+    for tier in ("Wide Beam", "Plasma Beam", "Wave Beam",
+                 "Varia Suit", "Gravity Suit", "Bomb", "Cross Bomb"):
+        assert tier in names, f"{tier} should be a findable item by default"
+    for prog in ("Progressive Beam", "Progressive Suit", "Progressive Bomb"):
+        assert prog not in names, f"{prog} should be absent by default"
+
+
+@pytestmark_runtime
+def test_progressive_beam_on_swaps_pool_size_neutral():
+    """progressive_beam on: the 3 beam tiers leave the pool, 3 Progressive Beam
+    copies enter; total pool size unchanged."""
+    base, base_mw = _build_world()
+    base.create_items()
+    base_len = len(base_mw.itempool)
+
+    world, mw = _build_world(progressive_beam=True)
+    world.create_items()
+    names = [it.name for it in mw.itempool]
+    for tier in ("Wide Beam", "Plasma Beam", "Wave Beam"):
+        assert tier not in names, f"{tier} should be folded into Progressive Beam"
+    assert names.count("Progressive Beam") == 3
+    assert all(it.advancement for it in mw.itempool
+               if it.name == "Progressive Beam")
+    assert len(mw.itempool) == base_len  # 3 out, 3 in
+
+
+@pytestmark_runtime
+def test_all_progressives_on_pool_length_invariant():
+    """Enabling every group is pool-size neutral and removes every tier item."""
+    base, base_mw = _build_world()
+    base.create_items()
+    base_len = len(base_mw.itempool)
+
+    world, mw = _build_world(
+        progressive_suit=True, progressive_spin=True,
+        progressive_charge_beam=True, progressive_beam=True,
+        progressive_missile=True, progressive_bomb=True,
+    )
+    world.create_items()
+    assert len(mw.itempool) == base_len
+    names = {it.name for it in mw.itempool}
+    for tier in ("Varia Suit", "Gravity Suit", "Spin Boost", "Space Jump",
+                 "Charge Beam", "Diffusion Beam", "Wide Beam", "Plasma Beam",
+                 "Wave Beam", "Super Missile", "Ice Missile", "Bomb",
+                 "Cross Bomb"):
+        assert tier not in names
+    for prog in ("Progressive Suit", "Progressive Spin",
+                 "Progressive Charge Beam", "Progressive Beam",
+                 "Progressive Missile", "Progressive Bomb"):
+        assert prog in names
+
+
+class _MiniState:
+    """Faithful slice of AP's CollectionState: just the prog_items Counter and
+    the add_item/remove_item/has/count methods World.collect/remove and our
+    progressive override touch (copied from BaseClasses.CollectionState)."""
+
+    def __init__(self):
+        import collections
+        self.prog_items = collections.defaultdict(collections.Counter)
+
+    def add_item(self, item, player, count=1):
+        self.prog_items[player][item] += count
+
+    def remove_item(self, item, player, count=1):
+        self.prog_items[player][item] -= count
+        if self.prog_items[player][item] < 1:
+            del self.prog_items[player][item]
+
+    def has(self, item, player, count=1):
+        return self.prog_items[player][item] >= count
+
+    def count(self, item, player):
+        return self.prog_items[player][item]
+
+
+@pytestmark_runtime
+def test_progressive_collect_remove_round_trips():
+    """The k-th Progressive Beam credits the k-th tier (Wide, then Plasma, then
+    Wave) so the compiled rules — which reference the tier names — see the right
+    atoms; remove is the exact inverse so collect/remove round-trip during fill."""
+    world, _ = _build_world(progressive_beam=True)
+    beam = world.create_item("Progressive Beam")
+    assert beam.advancement
+    p = world.player
+    state = _MiniState()
+
+    order = ["Wide Beam", "Plasma Beam", "Wave Beam"]
+    for k, tier in enumerate(order, start=1):
+        assert world.collect(state, beam) is True
+        assert state.count("Progressive Beam", p) == k
+        for owned in order[:k]:
+            assert state.has(owned, p)
+        for missing in order[k:]:
+            assert not state.has(missing, p)
+
+    # A 4th copy (e.g. from start_inventory) must not over-grant past the top.
+    world.collect(state, beam)
+    assert state.count("Wave Beam", p) == 1
+
+    # Remove the overflow, then each tier drops in reverse order.
+    world.remove(state, beam)
+    for tier in reversed(order):
+        world.remove(state, beam)
+        assert not state.has(tier, p)

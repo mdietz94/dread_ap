@@ -522,8 +522,17 @@ class DreadContext(CommonContext):
                       "delivery stalled", _field(network_item, "item", 0), received)
             return
         message = f"Received {dread_item.ap_item_name} from {sender}"
-        progression = [pickup_resource_stage(dread_item.patcher_item_id,
-                                             dread_item.quantity)]
+        if dread_item.progression_stages is not None:
+            # Progressive item: send the FULL multi-stage progression with the
+            # first tier's class. The game's OnPickedUp grants the next missing
+            # tier, so the same progression is sent every time (no client-side
+            # tier counting; identical to the seed-baked local pickup).
+            progression = [list(stage) for stage in dread_item.progression_stages]
+            cls = dread_item.pickup_cls or "RandomizerPowerup"
+        else:
+            progression = [pickup_resource_stage(dread_item.patcher_item_id,
+                                                 dread_item.quantity)]
+            cls = pickup_class_for(dread_item.patcher_item_id)
         inv_idx = self.state.game_inventory_index()
         # Surface each delivery attempt. The game grants only when the sent
         # received/inventory indices match its live counters, then silently
@@ -533,8 +542,7 @@ class DreadContext(CommonContext):
             self._delivery_index = received
             self._delivery_attempts = 1
             log.info("delivering #%d %s (cls=%s, inv_idx=%d)", received,
-                     dread_item.ap_item_name,
-                     pickup_class_for(dread_item.patcher_item_id), inv_idx)
+                     dread_item.ap_item_name, cls, inv_idx)
         else:
             self._delivery_attempts += 1
             if self._delivery_attempts in (3, 10, 30):
@@ -549,7 +557,7 @@ class DreadContext(CommonContext):
             progression=progression,
             received_pickup_index=received,
             inventory_index=inv_idx,
-            cls=pickup_class_for(dread_item.patcher_item_id),
+            cls=cls,
         )
         try:
             await self._bridge.run_lua(lua)

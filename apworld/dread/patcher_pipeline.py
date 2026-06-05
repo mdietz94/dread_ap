@@ -221,6 +221,25 @@ def placements_to_overrides(
         is_own = bool(p.get("is_own_player", recipient == slot_name))
 
         if is_own:
+            # Progressive item: the placement carries the FULL multi-stage
+            # resources + per-tier model list + progressive map-icon id. Upstream
+            # open_dread_rando builds the RandomizerProgressive class + animated
+            # models from these arrays (resources is already list-of-stages,
+            # model is already a list), so they flow through merge_overrides
+            # verbatim. See DreadWorld._build_placements_payload.
+            prog_stages = p.get("progression_stages")
+            if prog_stages:
+                pickup_resources[key] = prog_stages
+                ap_item_name = p.get("ap_item_name", "")
+                if ap_item_name:
+                    pickup_captions[key] = f"{ap_item_name} acquired."
+                models = p.get("models") or []
+                if models:
+                    pickup_models[key] = models
+                map_icon_id = p.get("map_icon_id")
+                if map_icon_id:
+                    pickup_map_icons[key] = {"icon_id": map_icon_id}
+                continue
             patcher_item_id = p.get("patcher_item_id") or ""
             quantity = int(p.get("quantity", 1))
             if not patcher_item_id:

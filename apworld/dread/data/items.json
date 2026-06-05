@@ -279,6 +279,66 @@
     "model_name": "item_energyfragment"
   },
   {
+    "name": "Progressive Suit",
+    "ap_id": 21555,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "pool_count": 2,
+    "classification": "progression",
+    "model_name": "",
+    "progression_tiers": ["Varia Suit", "Gravity Suit"]
+  },
+  {
+    "name": "Progressive Spin",
+    "ap_id": 21556,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "pool_count": 2,
+    "classification": "progression",
+    "model_name": "",
+    "progression_tiers": ["Spin Boost", "Space Jump"]
+  },
+  {
+    "name": "Progressive Charge Beam",
+    "ap_id": 21557,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "pool_count": 2,
+    "classification": "progression",
+    "model_name": "",
+    "progression_tiers": ["Charge Beam", "Diffusion Beam"]
+  },
+  {
+    "name": "Progressive Beam",
+    "ap_id": 21558,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "pool_count": 3,
+    "classification": "progression",
+    "model_name": "",
+    "progression_tiers": ["Wide Beam", "Plasma Beam", "Wave Beam"]
+  },
+  {
+    "name": "Progressive Missile",
+    "ap_id": 21559,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "pool_count": 2,
+    "classification": "progression",
+    "model_name": "",
+    "progression_tiers": ["Super Missile", "Ice Missile"]
+  },
+  {
+    "name": "Progressive Bomb",
+    "ap_id": 21560,
+    "patcher_item_id": "",
+    "quantity": 1,
+    "pool_count": 2,
+    "classification": "progression",
+    "model_name": "",
+    "progression_tiers": ["Bomb", "Cross Bomb"]
+  },
+  {
     "name": "Metroid DNA 1",
     "ap_id": 21738,
     "patcher_item_id": "ITEM_RANDO_ARTIFACT_1",
