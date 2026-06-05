@@ -56,6 +56,22 @@ def test_killplayer_defined_before_bootstrap_flag(real_rows):
     assert kill_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
 
 
+def test_warp_guard_defined_before_bootstrap_flag(real_rows):
+    """Our non-vendored boss-arena warp guard ships in the bootstrap (after the
+    vendored parts, before the done flag), with its boss table filled."""
+    items, locations = real_rows
+    blocks = bs.build_bootstrap_code(items, locations)
+    joined = "\n".join(blocks)
+    assert "function RL.IsInBossArena" in joined
+    assert "Scenario.OnSubAreaChange" in joined
+    # TEMPLATE("boss_arenas") was substituted with the real nested table.
+    assert "RL.BossArenas = {" in joined
+    assert "collision_camera_063=true" in joined  # Kraid arena
+    guard_idx = next(i for i, b in enumerate(blocks)
+                     if "function RL.IsInBossArena" in b)
+    assert guard_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
+
+
 def test_num_pickup_nodes_matches_data(real_rows):
     items, locations = real_rows
     pickups = [loc for loc in locations if loc.get("pickup_index") is not None]

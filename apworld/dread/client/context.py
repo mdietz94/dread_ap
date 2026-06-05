@@ -263,6 +263,13 @@ class DreadContext(CommonContext):
 
         # Per-active-Switch session state. Reset on each promote/demote.
         self._poll_task: Optional[asyncio.Task[None]] = None
+        # A push handler runs on the bridge read loop and so must never await a
+        # run_lua reply (only the read loop can deliver it — that deadlocks).
+        # When a ReceivedPickups push reports a cursor REVERT (e.g. a save-reload
+        # / warp dropped it), re-delivery is scheduled here and runs OFF the read
+        # loop. Tracked + non-overlapping so a burst of reverts can't spawn
+        # unbounded tasks; cancelled with the session. See _handle_received_pickups.
+        self._revert_delivery_task: Optional[asyncio.Task[None]] = None
         self._bootstrapped: bool = False
         self._active_info: Optional[ActiveConnInfo] = None
 
@@ -405,6 +412,13 @@ class DreadContext(CommonContext):
             except (asyncio.CancelledError, Exception):
                 pass
             self._poll_task = None
+        if self._revert_delivery_task is not None:
+            self._revert_delivery_task.cancel()
+            try:
+                await self._revert_delivery_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._revert_delivery_task = None
         self._bootstrapped = False
 
     async def _send_bootstrap(self) -> None:
@@ -909,8 +923,13 @@ class DreadContext(CommonContext):
         cursor) and log newly-confirmed items into the diagnostics mirror.
 
         Like the old binary-wire handler, this runs on the bridge's read loop;
-        it must NOT call ``run_lua`` directly. Delivery is driven from the poll
-        task and the AP-message task via ``_attempt_delivery``.
+        it must NOT call ``run_lua`` directly (and so must not ``await
+        _attempt_delivery``, which does). Delivery is normally driven from the
+        poll task and the AP-message task. The one exception is a cursor REVERT
+        (``count < previous``: a save-reload / warp rewound the game's delivery
+        cursor, so the remote items past the new lower cursor must be re-sent):
+        that re-delivery is *scheduled* onto a tracked task that runs OFF the
+        read loop, never awaited here. See ``_schedule_revert_delivery``.
         """
         count = msg.count
         previous = self.state.game_received_pickups()
@@ -926,7 +945,38 @@ class DreadContext(CommonContext):
             log.debug("game ReceivedPickups advanced %d -> %d", previous, count)
         self.state.set_game_received_pickups(count)
         if count < previous:
-            await self._attempt_delivery()
+            # Cursor reverted (save-reload / warp). Re-deliver the dropped remote
+            # items promptly — but OFF the read loop, since _attempt_delivery
+            # awaits a run_lua reply only this loop can read (awaiting it here
+            # would deadlock). Scheduling returns immediately so the handler
+            # doesn't block the read loop.
+            log.debug("game ReceivedPickups reverted %d -> %d; scheduling "
+                      "re-delivery off the read loop", previous, count)
+            self._schedule_revert_delivery()
+
+    def _schedule_revert_delivery(self) -> None:
+        """Schedule a single ``_attempt_delivery`` to run off the read loop.
+
+        Called from ``_handle_received_pickups`` (which runs ON the read loop and
+        therefore cannot await ``run_lua``). The task is tracked and
+        non-overlapping: a burst of revert pushes coalesces into at most one
+        in-flight delivery task, so we never spawn unbounded/overlapping tasks
+        nor fight the warp path. The warp path does its own restore under
+        ``_warp_in_progress``; ``_attempt_delivery`` already no-ops while that
+        flag is set, so a revert push observed mid-warp won't double-deliver.
+        """
+        if self._warp_in_progress:
+            # The warp path is rewinding the cursor itself and will re-deliver
+            # via its own restore; don't race it. _attempt_delivery would no-op
+            # anyway, but skip the task churn.
+            return
+        if self._revert_delivery_task is not None and \
+                not self._revert_delivery_task.done():
+            # A re-delivery is already queued/running; it will read the latest
+            # cursor when it fires, so coalesce this push into it.
+            return
+        self._revert_delivery_task = asyncio.create_task(
+            self._attempt_delivery(), name="dread-revert-delivery")
 
     def _resolve_item(self, network_item: Any) -> tuple[Optional[DreadItem], str]:
         item_id = _field(network_item, "item", 0)
@@ -987,11 +1037,14 @@ class DreadContext(CommonContext):
         no-op for anything that did NOT revert.
 
         Gated client-side on (a) bridge connected + bootstrap done, and
-        in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"`` and
-        (c) ``Scenario.IsUserInteractionEnabled(true)``, so a /warp issued
-        from the title screen or mid-cutscene returns a human-readable
-        "blocked" reason instead of firing into invalid state. Returns the
-        status string the caller surfaces to the user."""
+        in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"``,
+        (c) ``not RL.IsInBossArena()`` — refusing to warp out of a boss arena,
+        which corrupts the encounter (the Kraid brick: re-entry breaks the
+        fight, death-respawn bricks the game; boss-arena detection lives in
+        ``lua/warp_guard.lua``) — and (d) ``Scenario.IsUserInteractionEnabled(true)``,
+        so a /warp issued from the title screen, a boss fight, or mid-cutscene
+        returns a human-readable "blocked" reason instead of firing into invalid
+        state. Returns the status string the caller surfaces to the user."""
         if self._bridge is None or not self._bridge.is_connected():
             return "no active Switch connected"
         if not self._bootstrapped:
@@ -1016,6 +1069,12 @@ class DreadContext(CommonContext):
         try:
             src = (
                 'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
+                # Refuse to warp out of a boss arena — Game.LoadScenario mid-fight
+                # corrupts the encounter (the Kraid brick). RL.IsInBossArena is
+                # defined by lua/warp_guard.lua in our bootstrap; guard the call
+                # so an older/partial VM (function nil) degrades to allowing warp
+                # rather than erroring.
+                'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
                 'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
                 'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
                 'return "ok"'
@@ -1030,6 +1089,11 @@ class DreadContext(CommonContext):
                 return f"lua error: {body[:200]!r}"
             if body == "not_ingame":
                 return "blocked: not in-game (title or load menu)"
+            if body == "in_boss":
+                return ("blocked: you're in a boss arena — warping mid-fight "
+                        "corrupts the encounter (re-entry/respawn can brick the "
+                        "game). If you're stuck, reload your last save from the "
+                        "title screen.")
             if body == "no_interaction":
                 return "blocked: cutscene/cinematic in progress — try again in a moment"
             if body != "ok":

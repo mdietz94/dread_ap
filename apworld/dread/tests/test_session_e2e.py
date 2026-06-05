@@ -30,6 +30,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
+from dread.client import wire as W  # noqa: E402
 from dread.client.context import DreadContext  # noqa: E402
 from dread.client.datapackage import DataPackage  # noqa: E402
 from dread.client.state import BridgeState  # noqa: E402
@@ -372,6 +373,96 @@ async def test_game_restart_without_save_redelivers_lost_items():
 
 
 @pytest.mark.asyncio
+async def test_received_pickups_revert_push_redelivers_off_read_loop():
+    """A ``ReceivedPickups`` cursor REVERT pushed straight from the game (a
+    save-reload that dropped the delivery cursor, NOT routed through ``/warp``)
+    must re-deliver the dropped remote items — driven OFF the bridge read loop.
+
+    ``_handle_received_pickups`` runs ON the read loop. The old code awaited
+    ``_attempt_delivery`` there, which awaits a ``run_lua`` reply that ONLY the
+    read loop can deliver → deadlock. This test pushes the revert directly (so
+    the handler runs on the read loop) and asserts the dropped items are
+    re-granted. Under the old code the read loop would be wedged inside that
+    ``run_lua`` await and re-delivery would never complete, so the whole test is
+    bounded by ``asyncio.wait_for`` — a regression deadlocks and fails fast
+    rather than hanging the suite."""
+    async def body():
+        ctx, dp, fake = await _setup()
+        try:
+            missile = _ap_id_for(dp, "Missile Tank")
+            items = [_network_item(missile) for _ in range(3)]
+            await ctx._on_received_items({"index": 0, "items": items})
+            await _drive(ctx, fake, target=3)
+            assert fake.received_pickups == 3
+            assert fake.inventory_of(MISSILE_ITEM) == 6
+            # Sync the client's mirror of the game's two counters via one poll
+            # (game_received_pickups + game_inventory_index) so the post-revert
+            # ReceivePickup carries indices that match the fake's live counters.
+            await ctx._poll_once()
+            assert await _await_until(
+                lambda: ctx.state.game_received_pickups() == 3)
+
+            # The game reloads a save at received_pickups=1 and pushes the lower
+            # cursor straight to us (no /warp; _warp_in_progress stays False).
+            fake.received_pickups = 1
+            fake.inventory_index = 1
+            fake.inventory[MISSILE_ITEM] = 2
+            fake.collected_pickup_indices.clear()
+            # A real reload reverts BOTH counters; push the lower inventory index
+            # first so the client's mirror matches the game (the post-revert
+            # ReceivePickup must carry inv_idx == the game's live InventoryIndex
+            # or the fake refuses the grant), then push the lower delivery cursor.
+            await fake.push(W.Inventory(index=1, inventory=[]))
+            await fake.push(W.ReceivedPickups(count=1))
+
+            # (a) The read loop is NOT wedged. Push a marker log line AFTER the
+            #     revert and assert the client processes it — the read loop only
+            #     services this if _handle_received_pickups returned (it did NOT
+            #     await a run_lua reply). Under the old code the read loop is
+            #     blocked inside _attempt_delivery awaiting a reply only it can
+            #     read, so this marker never arrives within the window.
+            marker = "revert-liveness-probe-xyz"
+            await fake.push(W.Log(level="info", msg=marker))
+            assert await _await_until(
+                lambda: marker in ctx.state.last_messages, timeout=3.0), (
+                "read loop did not process a post-revert push — deadlocked?")
+
+            # (b) The handler scheduled a tracked off-loop task rather than
+            #     driving delivery on the read loop itself.
+            assert ctx._revert_delivery_task is not None
+
+            # (c) The dropped remote items are actually re-delivered: the off-loop
+            #     task re-grants one (1->2) and the poll loop finishes the rest,
+            #     exactly as the normal one-per-tick delivery path does.
+            assert await _await_until(
+                lambda: fake.received_pickups >= 2, timeout=3.0)
+            await _drive(ctx, fake, target=3)
+            assert fake.received_pickups == 3
+            assert fake.inventory_of(MISSILE_ITEM) == 6
+        finally:
+            await _teardown(ctx, fake)
+
+    # A deadlock here would hang indefinitely; bound it so a regression fails.
+    await asyncio.wait_for(body(), timeout=20.0)
+
+
+@pytest.mark.asyncio
+async def test_received_pickups_revert_during_warp_is_not_double_driven():
+    """A revert push observed while a ``/warp`` is in flight must NOT spawn a
+    competing off-loop delivery — the warp path owns the restore. The
+    ``_warp_in_progress`` guard in ``_schedule_revert_delivery`` skips it."""
+    ctx, dp, fake = await _setup()
+    try:
+        ctx._warp_in_progress = True
+        # Drive a revert push by hand; with the warp flag set, no task spawns.
+        await ctx._handle_received_pickups(W.ReceivedPickups(count=0))
+        assert ctx._revert_delivery_task is None
+    finally:
+        ctx._warp_in_progress = False
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_warp_restores_locally_collected_pickup():
     """Reproduces the missing-Energy-Tank bug. A local own-item pickup taken
     since the last save is granted by the game's seed-baked OnPickedUp and AP
@@ -457,6 +548,27 @@ async def test_warp_blocked_outside_ingame_does_not_touch_inventory():
         msg = await ctx._warp_to_start()
         assert "blocked" in msg
         assert fake.inventory_of("ITEM_ENERGY_TANKS") == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_warp_blocked_in_boss_arena_does_not_revert():
+    """The Kraid-brick case: a /warp issued from inside a boss arena is refused
+    in-Lua (in_boss) before LoadScenario, so the save is never reloaded and
+    nothing reverts. The player stays in the fight rather than corrupting it."""
+    ctx, dp, fake = await _setup()
+    try:
+        etank = "ITEM_ENERGY_TANKS"
+        fake.save()
+        fake.collect(3, grants={etank: 1})   # local pickup since save
+        fake.in_boss_arena = True
+        msg = await ctx._warp_to_start()
+        assert "blocked" in msg
+        assert "boss arena" in msg
+        # No LoadScenario fired → inventory untouched (not reverted to save's 0).
+        assert fake.inventory_of(etank) == 1
+        assert 3 in fake.collected_pickup_indices
     finally:
         await _teardown(ctx, fake)
 
