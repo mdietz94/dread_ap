@@ -301,6 +301,12 @@ class DreadContext(CommonContext):
         # double-count it). See _warp_to_start / _restore_after_warp.
         self._warp_in_progress: bool = False
         self.slot_data: dict = {}
+        # AP item name → per-pickup grant amount, from slot_data's `item_amounts`
+        # (the seed's Randovania-style `ammo_count` knobs). Overrides the static
+        # items.json quantity on the wire-delivery path so a remotely-delivered
+        # copy grants the seed's configured amount. Empty ⇒ fall back to
+        # items.json (older seeds / offline).
+        self._item_amounts: dict[str, int] = {}
 
         # DeathLink. ``_last_death_count`` is the last value we read from the
         # game's ProgressStat_PlayerDeaths prop; None means "no baseline yet"
@@ -475,6 +481,10 @@ class DreadContext(CommonContext):
         sd = args.get("slot_data")
         if isinstance(sd, dict):
             self.slot_data = sd
+            self._item_amounts = {
+                str(name): int(qty)
+                for name, qty in (sd.get("item_amounts") or {}).items()
+            }
         # Mirror the seed's DeathLink choice into the AP connection tag. Sends a
         # ConnectUpdate (we're already Connected here), which is the supported
         # way to toggle the tag post-connect.
@@ -535,8 +545,11 @@ class DreadContext(CommonContext):
                       "delivery stalled", _field(network_item, "item", 0), received)
             return
         message = f"Received {dread_item.ap_item_name} from {sender}"
-        progression = [pickup_resource_stage(dread_item.patcher_item_id,
-                                             dread_item.quantity)]
+        # Per-pickup grant amount: the seed's `item_amounts` (Randovania
+        # `ammo_count` knobs) override the static items.json quantity, so a
+        # wire-delivered copy grants the same amount as the seed-baked path.
+        qty = self._item_amounts.get(dread_item.ap_item_name, dread_item.quantity)
+        progression = [pickup_resource_stage(dread_item.patcher_item_id, qty)]
         inv_idx = self.state.game_inventory_index()
         # Surface each delivery attempt. The game grants only when the sent
         # received/inventory indices match its live counters, then silently

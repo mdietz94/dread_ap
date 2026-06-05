@@ -367,6 +367,18 @@ class DreadWorld(World):
         seed_id = str(self.multiworld.seed_name)
 
         o = self.options
+        # AP item name → per-pickup grant amount (mirrors Randovania's
+        # `ammo_count`). Shared by the placement loop (own seed-baked grants)
+        # and the slot_data `item_amounts` payload (live wire deliveries), so
+        # both paths grant the same configured amount.
+        ammo_amount_override = {
+            "Power Bomb":            int(o.starting_power_bombs.value),
+            "Missile Tank":          int(o.missile_tank_ammo.value),
+            "Missile+ Tank":         int(o.missile_plus_tank_ammo.value),
+            "Power Bomb Tank":       int(o.power_bomb_tank_ammo.value),
+            "Flash Shift Upgrade":   int(o.flash_shift_upgrade_amount.value),
+            "Speed Booster Upgrade": int(o.speed_booster_upgrade_amount.value),
+        }
         placements: list[dict[str, Any]] = []
         for loc in self.multiworld.get_locations(self.player):
             loc_data = location_name_to_location.get(loc.name)
@@ -390,10 +402,14 @@ class DreadWorld(World):
                     # shows what it grants instead of the starter preset's stale
                     # vanilla model (cross-slot items get CROSS_SLOT_MODEL).
                     patcher_model = own_item_data.model_name
-                    # Main Power Bomb pickup grants weapon + N PB capacity.
-                    # The option overrides items.json's vanilla default (2).
-                    if item.name == "Power Bomb":
-                        quantity = int(o.starting_power_bombs.value)
+                    # Per-pickup grant amounts: each option overrides items.json's
+                    # vanilla default (mirrors Randovania's `ammo_count`). The
+                    # main Power Bomb pickup grants weapon + N PB capacity; the
+                    # ammo/upgrade tanks grant their configured amount. Applied to
+                    # OWN items only — cross-slot copies keep quantity=1 and the
+                    # receiving player's own seed owns their amount.
+                    if item.name in ammo_amount_override:
+                        quantity = ammo_amount_override[item.name]
             placements.append({
                 "location_name": loc_data.name,
                 "scenario": loc_data.scenario,
@@ -496,6 +512,11 @@ class DreadWorld(World):
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,
+            # Per-pickup grant amounts (AP item name → capacity). The client
+            # reads this from slot_data so wire-delivered (multiworld) copies
+            # grant the seed's configured amount instead of the items.json
+            # default. Same map the placement quantities above were baked from.
+            "item_amounts": ammo_amount_override,
             # Real AP placement hints baked into the in-game Nav Station
             # plaques. Computed in pre_output (post-fill, pre-multidata) and
             # stashed there so it's already set when this method runs later in
