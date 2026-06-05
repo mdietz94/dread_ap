@@ -52,6 +52,13 @@ DRAIN_TIMEOUT = 30.0
 # finally arrived the future was already cleaned up. 45 s comfortably
 # covers a cold s010_cave load without changing the steady-state behavior.
 LUA_EXEC_TIMEOUT = 45.0
+# Short timeout for the cheap, idempotent steady-state poll queries. A death
+# (scenario reload) stalls the game-thread Lua tick for tens of seconds; with
+# the 45 s default the first poll call that lands in that window would hold the
+# per-connection exec_lock the whole time, head-of-line-blocking new checks and
+# /warp. These reads are tiny and re-fire every POLL_INTERVAL_SECONDS, so a
+# fast timeout + retry-next-tick is strictly better than waiting it out.
+POLL_LUA_TIMEOUT = 5.0
 
 
 # Callbacks the owning context can set. All optional.
@@ -190,8 +197,17 @@ class BridgeServer:
         out.sort(key=lambda d: (not d["active"], d["device_id"]))
         return out
 
-    async def run_lua(self, source: str) -> W.Response:
+    async def run_lua(self, source: str,
+                      timeout: float = LUA_EXEC_TIMEOUT) -> W.Response:
         """Send a ``LuaExec`` to the active Switch and await the reply.
+
+        ``timeout`` bounds how long we hold the per-connection ``exec_lock``
+        waiting for the reply. The 45 s default covers a cold scenario load
+        (see ``LUA_EXEC_TIMEOUT``), but it also means a single call that lands
+        while the game thread is stalled (e.g. a death→reload) head-of-line-
+        blocks every later call for that long. Cheap, idempotent callers (the
+        2 s poll queries) pass a short ``POLL_LUA_TIMEOUT`` so such a stall
+        drains fast and retries next tick instead of freezing the queue.
 
         Raises ``RuntimeError`` if no active Switch is connected — callers
         should treat this as "wait for the next on_active_connected" rather
@@ -206,7 +222,7 @@ class BridgeServer:
             self._pending_replies[seq] = fut
             try:
                 await self._send_to(conn, W.LuaExec(seq=seq, src=source))
-                reply = await asyncio.wait_for(fut, timeout=LUA_EXEC_TIMEOUT)
+                reply = await asyncio.wait_for(fut, timeout=timeout)
             finally:
                 self._pending_replies.pop(seq, None)
         return W.response_from_reply(reply)

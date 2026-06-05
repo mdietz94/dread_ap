@@ -28,7 +28,10 @@ from NetUtils import ClientStatus
 
 from .commands import parse_command
 from .datapackage import DataPackage
-from .bridge_server import BridgeServer, ActiveConnInfo, DEFAULT_PORT as BRIDGE_DEFAULT_PORT
+from .bridge_server import (
+    BridgeServer, ActiveConnInfo, DEFAULT_PORT as BRIDGE_DEFAULT_PORT,
+    POLL_LUA_TIMEOUT,
+)
 from .discovery import DiscoveryResponder, DEFAULT_DISCOVERY_PORT
 from . import wire as W
 from .protocol import (
@@ -792,31 +795,53 @@ class DreadContext(CommonContext):
     async def _poll_once(self) -> None:
         if self._bridge is None or not self._bootstrapped:
             return
-        await self._bridge.run_lua("RL.GetInventoryAndSend(); return ''")
-        await self._bridge.run_lua("RL.GetCollectedIndicesAndSend(); return ''")
-        await self._bridge.run_lua("RL.GetReceivedPickupsAndSend(); return ''")
-        # Refresh the game mode so _attempt_delivery only fires while the player
-        # is actually in the game world (not the title/load menu). Delivering on
-        # a menu sets a PendingPickup against transient pre-save state that can
-        # be orphaned across the menu→save transition, head-of-line-blocking the
-        # delivery queue (RL.ReceivePickup ignores resends while a pending
-        # is set). Gating here keeps us out of that state in the first place;
-        # mid-cutscene deliveries are still safe because the bootstrap's
+        # Every poll query uses POLL_LUA_TIMEOUT (not the 45 s bootstrap
+        # ceiling): a death triggers a scenario reload that stalls the
+        # game-thread Lua tick for tens of seconds, and these calls serialize
+        # on the bridge's per-connection exec_lock. A long timeout here would
+        # let the first call that lands in that window head-of-line-block new
+        # checks and /warp for ~45 s. Short timeout ⇒ it drains and retries
+        # next tick instead.
+        T = POLL_LUA_TIMEOUT
+        # Read the game mode FIRST so we can skip the heavy idempotent queries
+        # while the game thread is stalled (reload/cutscene). Refreshing the
+        # mode also lets _attempt_delivery fire only while the player is in the
+        # game world (not the title/load menu): delivering on a menu sets a
+        # PendingPickup against transient pre-save state that can be orphaned
+        # across the menu→save transition, head-of-line-blocking the delivery
+        # queue (RL.ReceivePickup ignores resends while a pending is set).
+        # Mid-cutscene deliveries are still safe because the bootstrap's
         # GivePendingPickup defers them until Scenario.IsUserInteractionEnabled.
         mode_resp = await self._bridge.run_lua(
-            "return tostring(Game.GetCurrentGameModeID())"
+            "return tostring(Game.GetCurrentGameModeID())", timeout=T
         )
+        ingame = False
         if mode_resp.success and mode_resp.payload is not None:
-            self.state.update_game_state(
-                game_mode_id=mode_resp.payload.decode("utf-8", "replace"))
+            mode = mode_resp.payload.decode("utf-8", "replace")
+            self.state.update_game_state(game_mode_id=mode)
+            ingame = mode == "INGAME"
+        # The three pickup/inventory pushes are only meaningful in-world, and
+        # firing them during a death reload just wastes timeouts and risks
+        # orphaned pushes. Skip them until the reload settles back to INGAME;
+        # the next tick (2 s) picks up anything collected during the gap.
+        if ingame:
+            await self._bridge.run_lua(
+                "RL.GetInventoryAndSend(); return ''", timeout=T)
+            await self._bridge.run_lua(
+                "RL.GetCollectedIndicesAndSend(); return ''", timeout=T)
+            await self._bridge.run_lua(
+                "RL.GetReceivedPickupsAndSend(); return ''", timeout=T)
+        # Goal + death detection run regardless of INGAME: the win sequence and
+        # the death reload are themselves non-INGAME states.
         state_resp = await self._bridge.run_lua(
-            "return tostring(Init.bBeatenSinceLastReboot)"
+            "return tostring(Init.bBeatenSinceLastReboot)", timeout=T
         )
         if state_resp.success and state_resp.payload == b"true":
             self.state.update_game_state(beaten_since_reboot=True)
             await self._maybe_report_goal()
         if "DeathLink" in self.tags:
-            death_resp = await self._bridge.run_lua(build_read_death_count_lua())
+            death_resp = await self._bridge.run_lua(
+                build_read_death_count_lua(), timeout=T)
             if death_resp.success:
                 try:
                     await self._maybe_report_death(int(death_resp.payload))
