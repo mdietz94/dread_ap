@@ -13,7 +13,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from .protocol import DreadItem, DreadPickupLocation
+from .protocol import (
+    DreadItem, DreadPickupLocation, pickup_class_for, pickup_resource_stage,
+)
 
 try:
     # Available when the apworld is importable (i.e. installed under
@@ -126,14 +128,36 @@ class DataPackage:
             )
 
     def _ingest_items(self, data: list[dict]) -> None:
+        by_name = {e["name"]: e for e in data}
         for entry in data:
             name = entry["name"]
             ap_id = entry.get("ap_id")
-            patcher_id = entry.get("patcher_item_id")
-            qty = entry.get("quantity", 1)
             if ap_id is not None:
                 self._ap_id_to_name[int(ap_id)] = name
                 self._ap_name_to_id[name] = int(ap_id)
+            tiers = entry.get("progression_tiers") or []
+            if tiers:
+                # Progressive item: build the full multi-stage progression from
+                # its tier components and pick the first tier's specific Lua
+                # class (matching the patcher's get_parent_for). The game grants
+                # the next missing tier from the full list — see DreadItem.
+                stages = []
+                for tname in tiers:
+                    te = by_name.get(tname, {})
+                    stages.append(pickup_resource_stage(
+                        te.get("patcher_item_id", ""),
+                        int(te.get("quantity", 1))))
+                first = by_name.get(tiers[0], {})
+                self._ap_name_to_dread[name] = DreadItem(
+                    patcher_item_id="",
+                    quantity=1,
+                    ap_item_name=name,
+                    progression_stages=stages,
+                    pickup_cls=pickup_class_for(first.get("patcher_item_id", "")),
+                )
+                continue
+            patcher_id = entry.get("patcher_item_id")
+            qty = entry.get("quantity", 1)
             if patcher_id:
                 self._ap_name_to_dread[name] = DreadItem(
                     patcher_item_id=patcher_id,

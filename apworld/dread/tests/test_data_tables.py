@@ -92,12 +92,38 @@ def test_item_and_location_id_ranges_disjoint(items, locations):
 
 def test_every_item_has_patcher_id_and_quantity(items):
     """Game items must have a patcher_item_id that maps to a runtime
-    ITEM_* identifier. DNA items map to ITEM_RANDO_ARTIFACT_k."""
+    ITEM_* identifier. DNA items map to ITEM_RANDO_ARTIFACT_k. Progressive
+    items are the exception — they carry no patcher_item_id of their own;
+    their resources derive from the tier items they reference (validated by
+    test_progressive_items_reference_real_tiers)."""
     for it in items:
+        if it.get("progression_tiers"):
+            assert not it["patcher_item_id"], (
+                f"progressive item should have blank patcher_item_id: {it}")
+            continue
         assert it["patcher_item_id"], f"missing patcher_item_id: {it}"
         assert it["patcher_item_id"].startswith("ITEM_"), f"bad shape: {it}"
         assert isinstance(it["quantity"], int)
         assert it["quantity"] >= 1
+
+
+def test_progressive_items_reference_real_tiers(items):
+    """Each progressive item's tiers must name real, non-progressive items, and
+    its pool_count must equal the tier count (one copy per tier)."""
+    by_name = {it["name"]: it for it in items}
+    progressives = [it for it in items if it.get("progression_tiers")]
+    assert progressives, "expected progressive items in the table"
+    for it in progressives:
+        tiers = it["progression_tiers"]
+        assert len(tiers) >= 2, f"{it['name']}: needs >=2 tiers"
+        assert it["pool_count"] == len(tiers), (
+            f"{it['name']}: pool_count {it['pool_count']} != {len(tiers)} tiers")
+        for tname in tiers:
+            assert tname in by_name, f"{it['name']}: unknown tier {tname!r}"
+            assert by_name[tname]["patcher_item_id"].startswith("ITEM_"), (
+                f"{it['name']}: tier {tname} has no patcher id")
+            assert not by_name[tname].get("progression_tiers"), (
+                f"{it['name']}: tier {tname} is itself progressive")
 
 
 def test_every_item_has_pool_count(items):

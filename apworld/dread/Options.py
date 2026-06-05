@@ -119,6 +119,53 @@ class NerfPowerBombs(DefaultOnToggle):
 
 
 # ---------------------------------------------------------------------------
+# Progressive items — mirror Randovania's Dread progressive groups. Each toggle
+# replaces a group's individual tier items with a single "Progressive X" item
+# (shipped in as many copies as there are tiers) that grants the next tier on
+# each collection. OFF by default: omitting them reproduces today's pool, where
+# every tier is shuffled as its own findable item. Enabling a group is pool-size
+# neutral — N tier items out, N progressive copies in — and does not change
+# solvability (the access logic still sees the same tier atoms; see
+# World.collect / World.remove).
+# ---------------------------------------------------------------------------
+
+class ProgressiveSuit(Toggle):
+    """Shuffle one Progressive Suit (Varia Suit → Gravity Suit) instead of the
+    two suits separately."""
+    display_name = "Progressive Suit"
+
+
+class ProgressiveSpin(Toggle):
+    """Shuffle one Progressive Spin (Spin Boost → Space Jump) instead of the
+    two spin upgrades separately."""
+    display_name = "Progressive Spin"
+
+
+class ProgressiveChargeBeam(Toggle):
+    """Shuffle one Progressive Charge Beam (Charge Beam → Diffusion Beam)
+    instead of the two separately."""
+    display_name = "Progressive Charge Beam"
+
+
+class ProgressiveBeam(Toggle):
+    """Shuffle one Progressive Beam (Wide → Plasma → Wave Beam) instead of the
+    three beams separately."""
+    display_name = "Progressive Beam"
+
+
+class ProgressiveMissile(Toggle):
+    """Shuffle one Progressive Missile (Super Missile → Ice Missile) instead of
+    the two separately."""
+    display_name = "Progressive Missile"
+
+
+class ProgressiveBomb(Toggle):
+    """Shuffle one Progressive Bomb (Bomb → Cross Bomb) instead of the two
+    separately."""
+    display_name = "Progressive Bomb"
+
+
+# ---------------------------------------------------------------------------
 # Goal — Metroid DNA collection (mirrors Randovania's objective system).
 # ---------------------------------------------------------------------------
 
@@ -298,6 +345,12 @@ class DreadOptions(PerGameCommonOptions):
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
+    progressive_suit: ProgressiveSuit
+    progressive_spin: ProgressiveSpin
+    progressive_charge_beam: ProgressiveChargeBeam
+    progressive_beam: ProgressiveBeam
+    progressive_missile: ProgressiveMissile
+    progressive_bomb: ProgressiveBomb
     required_artifacts: RequiredArtifacts
     artifact_placement: ArtifactPlacement
     energy_tank_count: EnergyTankCount

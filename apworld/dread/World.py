@@ -22,9 +22,17 @@ Logic status (see docs/randovania-logic-port-notes.md):
   * Trick Level option (3 pre-baked rule files); DNA-collection goal
     (RequiredArtifacts 0-12 + ArtifactPlacement; goal = reach-ship AND N DNA).
 
+Progressive items (Randovania's Progressive Suit/Spin/Charge Beam/Beam/Missile/
+Bomb) are exposed as six opt-out-by-default toggles. When a group is enabled its
+tier items leave the findable pool and one "Progressive X" item (one copy per
+tier) takes their place; collect/remove credit the k-th copy onto the k-th tier
+in state, so the compiled rules (which reference the tier names) are unchanged.
+Delivery sends the full multi-stage progression with the first tier's class and
+the game grants the next missing tier (see client/protocol.py + Options.py).
+
 Skipped for now (later phases):
-  * Progressive items; per-area starting-location randomization; hint
-    distribution; per-trick-category granularity; door/elevator randomization.
+  * Per-area starting-location randomization; hint distribution; per-trick-
+    category granularity; door/elevator randomization.
   * Ammo / damage / E-tank counting (v0.3) — rules collapse ammo to >=1 and
     damage to suit ownership (over/under-permissive, not blocking).
   * Cutscene-safe item delivery — see client/protocol.py + the risk note in
@@ -43,6 +51,7 @@ from worlds.AutoWorld import World, WebWorld
 from .Items import (
     CLASSIFICATION_MAP, DreadItem, DreadItemData, item_table, item_name_to_id,
     item_name_to_item, get_item_classification,
+    PROGRESSIVE_GROUPS, PROGRESSIVE_TIERS, PROGRESSIVE_MAP_ICON,
 )
 from .Locations import (
     DreadLocation, location_name_to_id, location_table,
@@ -219,6 +228,19 @@ class DreadWorld(World):
         if start_with_radar:
             pool_excluded.add("Pulse Radar")
 
+        # Progressive item groups (mirror Randovania). Each enabled group's
+        # single "Progressive X" item (pool_count == tier count) replaces its
+        # individual tier items in the findable pool — pool-size neutral. None
+        # of the forced starters (Slide / Pulse Radar / Missile Tank) overlap a
+        # progressive tier, so the swap is independent of the starting set.
+        enabled_progressives = {
+            prog_name for opt_attr, prog_name in PROGRESSIVE_GROUPS.items()
+            if bool(getattr(o, opt_attr).value)
+        }
+        replaced_components: set[str] = set()
+        for prog_name in enabled_progressives:
+            replaced_components.update(PROGRESSIVE_TIERS[prog_name])
+
         pool: list[Item] = []
         for it in item_table:
             if it.name.startswith("Event: "):
@@ -226,6 +248,14 @@ class DreadWorld(World):
             if it.name.startswith("Metroid DNA"):
                 continue
             if it.name in pool_excluded:
+                continue
+            # Progressive items live in the table for AP-ID stability but are
+            # only shuffled when their group's toggle is on.
+            if it.progression_tiers and it.name not in enabled_progressives:
+                continue
+            # When a group is on, its tier items are folded into the progressive
+            # item — drop them from the findable pool.
+            if it.name in replaced_components:
                 continue
             count = pool_overrides.get(it.name, it.pool_count)
             default_cls = CLASSIFICATION_MAP.get(
@@ -302,6 +332,39 @@ class DreadWorld(World):
         # which currently resolves to ``state.has("Event: Ship", player)``.
         # A post-set_rules override here would silently break that.
         set_rules(self)
+
+    # Progressive-item logic translation. The compiled access rules reference
+    # the individual tier items by name (e.g. state.has("Wave Beam")), but when
+    # a progressive group is enabled those tiers aren't in the pool — only the
+    # "Progressive X" item is. So we mirror each progressive copy onto its tier
+    # component in `state.prog_items`: the k-th "Progressive Beam" credits the
+    # k-th tier (Wide, then Plasma, then Wave), keeping the rules untouched.
+    # `remove` is the exact inverse so collect/remove round-trip during fill.
+    # (Standard AP progressive idiom; see [[ap-nonadvancement-invisible-to-state]]
+    # — the progressive items are `progression`, so AP's sweep calls collect.)
+    def collect(self, state, item) -> bool:
+        change = super().collect(state, item)
+        if change:
+            tiers = PROGRESSIVE_TIERS.get(item.name)
+            if tiers:
+                # super() just credited this progressive item; n is the new
+                # count, so the k-th copy grants the k-th tier.
+                n = state.prog_items[self.player][item.name]
+                if n <= len(tiers):
+                    state.add_item(tiers[n - 1], self.player)
+        return change
+
+    def remove(self, state, item) -> bool:
+        change = super().remove(state, item)
+        if change:
+            tiers = PROGRESSIVE_TIERS.get(item.name)
+            if tiers:
+                # super() just removed one copy; n is the new (post-decrement)
+                # count, so tiers[n] is the tier that copy had granted.
+                n = state.prog_items[self.player][item.name]
+                if n < len(tiers):
+                    state.remove_item(tiers[n], self.player)
+        return change
 
     # Baseline starting inventory — matches Randovania's starter preset.
     #   - Slide: required to pass under the first low ceiling in s010_cave
@@ -393,9 +456,29 @@ class DreadWorld(World):
             quantity = 1
             patcher_model = ""
             ap_item_name = item.name
+            # Progressive (multi-stage) fields — populated only for an own-slot
+            # progressive item; None for everything else (single-stage path).
+            progression_stages = None
+            progression_models = None
+            map_icon_id = None
             if is_own:
                 own_item_data = item_name_to_item.get(item.name)
-                if own_item_data is not None:
+                if own_item_data is not None and own_item_data.progression_tiers:
+                    # Progressive item: emit the FULL multi-stage resources +
+                    # per-tier model list + progressive map icon, exactly like
+                    # the starter preset's progressive pickups. The game grants
+                    # the next missing tier from this full progression, so the
+                    # local (seed-baked) and remote (wire) paths behave alike.
+                    from .client.protocol import pickup_resource_stage
+                    tiers = [item_name_to_item[t]
+                             for t in own_item_data.progression_tiers]
+                    progression_stages = [
+                        pickup_resource_stage(t.patcher_item_id, t.quantity)
+                        for t in tiers
+                    ]
+                    progression_models = [t.model_name for t in tiers]
+                    map_icon_id = PROGRESSIVE_MAP_ICON.get(item.name)
+                elif own_item_data is not None:
                     patcher_item_id = own_item_data.patcher_item_id
                     quantity = own_item_data.quantity
                     # In-world sphere model for THIS item, so a shuffled pickup
@@ -410,7 +493,7 @@ class DreadWorld(World):
                     # receiving player's own seed owns their amount.
                     if item.name in ammo_amount_override:
                         quantity = ammo_amount_override[item.name]
-            placements.append({
+            placement = {
                 "location_name": loc_data.name,
                 "scenario": loc_data.scenario,
                 "actor": loc_data.actor,
@@ -422,7 +505,12 @@ class DreadWorld(World):
                 "quantity": quantity,
                 "recipient_slot_name": recipient_slot,
                 "is_own_player": is_own,
-            })
+            }
+            if progression_stages is not None:
+                placement["progression_stages"] = progression_stages
+                placement["models"] = progression_models
+                placement["map_icon_id"] = map_icon_id
+            placements.append(placement)
 
         n_dna = int(o.required_artifacts.value)
         # Starting inventory: baseline + the artifacts the player ISN'T required

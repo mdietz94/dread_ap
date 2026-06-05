@@ -347,6 +347,34 @@ vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged
 fix + Charge Beam forced start — see above and the notes retro); the smoke seed
 runs under `items`.
 
+Progressive items: SHIPPED (world_version 0.4.0). Six opt-out-by-default toggles
+mirror Randovania — `progressive_suit` (Varia→Gravity), `progressive_spin`
+(Spin Boost→Space Jump), `progressive_charge_beam` (Charge→Diffusion),
+`progressive_beam` (Wide→Plasma→Wave), `progressive_missile` (Super→Ice),
+`progressive_bomb` (Bomb→Cross Bomb). items.json carries one entry per group with
+a `progression_tiers` list (the only schema addition); `Items.PROGRESSIVE_GROUPS`
+/ `PROGRESSIVE_TIERS` / `PROGRESSIVE_MAP_ICON` are the single source of truth.
+When a group is enabled, `World.create_items` drops its tier items and adds the
+`Progressive X` item at one copy per tier (pool-size neutral). The compiled rules
+are UNCHANGED: `World.collect`/`remove` mirror the k-th progressive copy onto the
+k-th tier name in `state.prog_items` (standard AP idiom), so `state.has("Wave
+Beam")` etc. still works. Delivery is the key faithfulness win — both the local
+(seed-baked) patcher resources AND the wire `RL.ReceivePickup` send the FULL
+multi-stage progression with `cls = pickup_class_for(first_tier_id)` (=
+open-dread-rando's `get_parent_for`). `randomizer_powerup.lua`'s
+`HandlePickupResources` grants the first stage whose first item the player lacks,
+so the game auto-advances to the next missing tier identically for local and
+remote pickups — no client-side tier counting, idempotent across restarts by the
+ReceivedPickups cursor. `_build_placements_payload` emits `progression_stages` /
+`models` / `map_icon_id` (PROGRESSIVE_* icon) for own progressive items;
+`patcher_pipeline.placements_to_overrides` threads them through (upstream
+`open_dread_rando` builds the `RandomizerProgressive…` class + animated models
+from the multi-stage `resources` + model list). `fakeswitch` is now stage-aware
+(`_grant_progression` models `HandlePickupResources`). Tests: pool swap +
+collect/remove round-trip (test_item_pool, AP-gated), datapackage progression +
+class (test_datapackage), patcher merge (test_seed_to_patcher), e2e ordered
+Wide→Plasma→Wave + saturation + restart (test_session_e2e).
+
 Per-item pickup classes: SHIPPED. `protocol.PATCHER_ITEM_ID_TO_CLASS` mirrors
 upstream `open_dread_rando/pickups/lua_editor.py` `SPECIFIC_CLASSES` exactly
 (13 entries), and `_attempt_delivery` resolves it per item via
