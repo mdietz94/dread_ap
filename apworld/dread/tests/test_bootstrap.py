@@ -57,16 +57,25 @@ def test_killplayer_defined_before_bootstrap_flag(real_rows):
 
 
 def test_warp_guard_defined_before_bootstrap_flag(real_rows):
-    """Our non-vendored boss-arena warp guard ships in the bootstrap (after the
-    vendored parts, before the done flag), with its boss table filled."""
+    """Our non-vendored warp guard ships in the bootstrap (after the vendored
+    parts, before the done flag), with its boss + nav-room tables filled."""
     items, locations = real_rows
     blocks = bs.build_bootstrap_code(items, locations)
     joined = "\n".join(blocks)
     assert "function RL.IsInBossArena" in joined
+    assert "function RL.IsInNavRoom" in joined
+    assert "function RL.IsInSaveRoom" in joined
     assert "Scenario.OnSubAreaChange" in joined
-    # TEMPLATE("boss_arenas") was substituted with the real nested table.
+    # The three camera tables ship as their own assignment blocks (kept out of
+    # warp_guard.lua so its code block fits the send buffer).
     assert "RL.BossArenas = {" in joined
     assert "collision_camera_063=true" in joined  # Kraid arena
+    assert "RL.NavRooms = {" in joined
+    assert "collision_camera_065=true" in joined  # s010_cave North Nav Station
+    assert "RL.SaveRooms = {" in joined
+    assert "collision_camera_076=true" in joined  # s010_cave North Save Station
+    # No TEMPLATE() holes survive anywhere in the bootstrap.
+    assert "TEMPLATE(" not in joined
     guard_idx = next(i for i, b in enumerate(blocks)
                      if "function RL.IsInBossArena" in b)
     assert guard_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true

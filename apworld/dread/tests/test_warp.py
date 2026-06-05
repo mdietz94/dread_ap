@@ -169,6 +169,41 @@ async def test_warp_blocked_in_boss_arena(ctx):
 
 
 @pytest.mark.asyncio
+async def test_warp_blocked_in_nav_room(ctx):
+    bridge = _stub_bridge(
+        ctx, connected=True, response=Response(success=True, payload=b"in_nav")
+    )
+    msg = await ctx._warp_to_start()
+    assert "blocked" in msg
+    assert "Navigation" in msg
+    # The warp src must probe RL.IsInNavRoom before LoadScenario, guarded so a
+    # pre-bootstrap VM (function nil) degrades to allowing the warp.
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert "RL.IsInNavRoom and RL.IsInNavRoom()" in src
+    assert src.index("RL.IsInNavRoom") < src.index("Game.LoadScenario")
+    # Boss check precedes the nav check (both before the LoadScenario).
+    assert src.index("RL.IsInBossArena") < src.index("RL.IsInNavRoom")
+
+
+@pytest.mark.asyncio
+async def test_warp_blocked_in_save_room(ctx):
+    bridge = _stub_bridge(
+        ctx, connected=True, response=Response(success=True, payload=b"in_save")
+    )
+    msg = await ctx._warp_to_start()
+    assert "blocked" in msg
+    assert "save station" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert "RL.IsInSaveRoom and RL.IsInSaveRoom()" in src
+    assert src.index("RL.IsInSaveRoom") < src.index("Game.LoadScenario")
+    # Order: boss → nav → save, all before the interaction/cutscene check.
+    assert src.index("RL.IsInNavRoom") < src.index("RL.IsInSaveRoom")
+    assert src.index("RL.IsInSaveRoom") < src.index("IsUserInteractionEnabled")
+
+
+@pytest.mark.asyncio
 async def test_warp_blocked_cutscene(ctx):
     _stub_bridge(
         ctx, connected=True, response=Response(success=True, payload=b"no_interaction")
