@@ -92,16 +92,21 @@ def test_event_branch_consults_state():
     assert pred(StubState({"ShipPickup": 1})) is False
 
 
-def test_trick_level_1_is_trivially_true():
+def test_trick_assumed_when_effective_level_meets_requirement():
+    # v3: tricks are symbolic; the effective level map decides. IBJ@1 is
+    # satisfied when the slot runs IBJ at level >= 1.
     ast = {"type": "trick", "name": "IBJ", "level": 1}
-    pred = compile_to_lambda(ast, player=1)
-    assert pred(StubState({})) is True
+    assert compile_to_lambda(ast, player=1, trick_levels={"IBJ": 1})(StubState({})) is True
+    assert compile_to_lambda(ast, player=1, trick_levels={"IBJ": 3})(StubState({})) is True
 
 
-def test_trick_level_2_is_impossible():
+def test_trick_rejected_when_below_effective_level_or_disabled():
     ast = {"type": "trick", "name": "IBJ", "level": 2}
-    pred = compile_to_lambda(ast, player=1)
-    assert pred(StubState({})) is False
+    # IBJ only at level 1 → a level-2 requirement is not assumed.
+    assert compile_to_lambda(ast, player=1, trick_levels={"IBJ": 1})(StubState({})) is False
+    # Disabled / absent from the map → never assumed.
+    assert compile_to_lambda(ast, player=1, trick_levels={"IBJ": 0})(StubState({})) is False
+    assert compile_to_lambda(ast, player=1)(StubState({})) is False
 
 
 # ---- composites ----

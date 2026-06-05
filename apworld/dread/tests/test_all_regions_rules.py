@@ -21,6 +21,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
 from dread.Rules import compile_to_lambda  # noqa: E402
+from dread.Tricks import DREAD_TRICKS  # noqa: E402
+
+# v3: tricks are symbolic and resolved at compile time. These hand-verified
+# assertions were written against the old default artifact (Beginner = every
+# trick at level 1, which collapsed to trivial), so resolve at that baseline to
+# preserve their meaning.
+BEGINNER_TRICKS = {t.short_name: 1 for t in DREAD_TRICKS}
 
 
 @pytest.fixture(scope="module")
@@ -108,7 +115,7 @@ def test_late_game_loadout_reaches_every_pickup_in_region(rules, region):
     region_rules = [(k, v) for k, v in rules.items() if k.startswith(f"{region}:")]
     unreachable = []
     for name, ast in region_rules:
-        pred = compile_to_lambda(ast, player=1)
+        pred = compile_to_lambda(ast, player=1, trick_levels=BEGINNER_TRICKS)
         if not pred(state):
             unreachable.append(name)
     assert not unreachable, \
@@ -122,7 +129,7 @@ def test_artaria_invisible_corpius_missile_reachable_with_late_game(rules):
     item-only (forward-resolver) rules it carries the real cross-region cost
     rather than being trivial, but a full loadout must reach it."""
     ast = rules["Artaria: Invisible Corpius Room"]
-    pred = compile_to_lambda(ast, player=1)
+    pred = compile_to_lambda(ast, player=1, trick_levels=BEGINNER_TRICKS)
     assert pred(State(LATE_GAME)), \
         "Invisible Corpius missile should be reachable with a full loadout"
 
@@ -133,7 +140,7 @@ def test_artaria_varia_suit_requires_varia_or_workaround(rules):
     Tested as 'late-game reaches it'. Don't assert specific blockers
     since the area-isolated compile may pick odd alternate paths."""
     ast = rules["Artaria: Varia Suit Room"]
-    pred = compile_to_lambda(ast, player=1)
+    pred = compile_to_lambda(ast, player=1, trick_levels=BEGINNER_TRICKS)
     assert pred(State(LATE_GAME)), "late-game must reach Varia pickup"
     # Should NOT be trivially reachable without anything
     assert not pred(State({})), \
@@ -145,7 +152,7 @@ def test_dairon_bomb_pickup_is_item_gated(rules):
     item-only rule (their cost folded into items), so it's no longer trivially
     reachable and a full loadout reaches it."""
     ast = rules["Dairon: Bomb Room - Bomb"]
-    pred = compile_to_lambda(ast, player=1)
+    pred = compile_to_lambda(ast, player=1, trick_levels=BEGINNER_TRICKS)
     assert not pred(State({})), \
         "Dairon Bomb pickup should NOT be trivially reachable"
     assert pred(State(LATE_GAME)), \
@@ -161,7 +168,7 @@ def test_event_gated_rules_still_satisfy_with_late_game(rules):
     up, or the per-event reach rule itself doesn't accept the late-game
     loadout — both are real bugs."""
     ast = rules["Burenia: Gravity Suit Room - Gravity Suit"]
-    pred = compile_to_lambda(ast, player=1)
+    pred = compile_to_lambda(ast, player=1, trick_levels=BEGINNER_TRICKS)
     assert pred(State(LATE_GAME))
 
 
@@ -173,7 +180,7 @@ def test_artaria_charge_beam_requires_some_traversal(rules):
     least one of those traversal items). Charge Beam itself is
     excluded to defeat the harmless self-loop disjunct."""
     ast = rules["Artaria: Charge Beam Room"]
-    pred = compile_to_lambda(ast, player=1)
+    pred = compile_to_lambda(ast, player=1, trick_levels=BEGINNER_TRICKS)
     assert not pred(State({})), "Charge Beam Room must not be trivially reachable"
     no_traversal = {k: v for k, v in LATE_GAME.items()
                     if k not in ("Charge Beam", "Morph Ball", "Slide",

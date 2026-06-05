@@ -33,15 +33,19 @@ if str(ROOT.parent) not in sys.path:
 
 
 def _ensure_compiled_rules() -> None:
-    """Run ``scripts/extract_dread_rules.py`` for each trick level if the
-    on-disk artifact is missing or stale.
+    """Run ``scripts/extract_dread_rules.py`` if the on-disk artifact is missing
+    or stale.
 
     Stale = older than the compiler script itself, or older than the pinned
     Randovania logic cache (``PINNED_COMMIT.txt``). Either signal means
     something upstream changed and the on-disk JSON no longer matches.
 
-    Total regen cost is ~10s for all three levels; only pays it when the
-    artifacts actually need updating, so warm runs are free."""
+    Since v3 there is a SINGLE artifact: tricks are kept symbolic and resolved
+    per-trick at generation time, so there is no longer a file per trick level.
+    The bake runs the forward resolver twice (symbolic + a level>=2-stripped
+    recovery pass that are OR-ed; see extract_dread_rules.compile_forward), so it
+    is ~10 min; only pays it when the artifact actually needs updating, so warm
+    runs are free."""
     repo_root = ROOT.parent.parent
     data_dir = ROOT / "data"
     extract = repo_root / "scripts" / "extract_dread_rules.py"
@@ -56,48 +60,28 @@ def _ensure_compiled_rules() -> None:
         # a clear FileNotFoundError pointing at the missing artifact.
         return
 
-    # Newest input mtime — if any output is older than this, regen.
+    # Newest input mtime — if the output is older than this, regen.
     input_mtime = max(extract.stat().st_mtime,
                       pinned.stat().st_mtime if pinned.exists() else 0)
 
-    targets = {
-        1: data_dir / "compiled_rules.json",
-        2: data_dir / "compiled_rules_l2.json",
-        3: data_dir / "compiled_rules_l3.json",
-    }
-
-    stale = [
-        (level, path) for level, path in targets.items()
-        if not path.exists() or path.stat().st_mtime < input_mtime
-    ]
-    if not stale:
+    target = data_dir / "compiled_rules.json"
+    if target.exists() and target.stat().st_mtime >= input_mtime:
         return
 
-    # Each level takes ~3.5 minutes on a single core. The three are
-    # independent (no shared state, separate output files), so launch all
-    # three in parallel and the wall-clock cost is ~3.5 min instead of ~10.
     sys.stderr.write(
-        f"\n[conftest] regenerating {len(stale)} compiled-rule artifact(s) "
-        f"in parallel (~3-4 minutes; cached afterward)...\n"
+        "\n[conftest] regenerating compiled_rules.json "
+        "(~10 minutes; cached afterward)...\n"
     )
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    procs = []
-    for level, path in stale:
-        cmd = [sys.executable, str(extract), "--all",
-               "--trick-level", str(level), "--out", str(path)]
-        procs.append((level, path, subprocess.Popen(
-            cmd, cwd=str(repo_root), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)))
-
-    failed = []
-    for level, path, proc in procs:
-        _, err = proc.communicate()
-        if proc.returncode != 0:
-            failed.append((path.name, err.decode("utf-8", errors="replace")))
-
-    if failed:
-        for name, err in failed:
-            sys.stderr.write(f"\n[conftest] regen of {name} failed:\n{err}\n")
+    proc = subprocess.Popen(
+        [sys.executable, str(extract), "--all", "--out", str(target)],
+        cwd=str(repo_root), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, err = proc.communicate()
+    if proc.returncode != 0:
+        sys.stderr.write(
+            f"\n[conftest] regen of compiled_rules.json failed:\n"
+            f"{err.decode('utf-8', errors='replace')}\n")
         # Don't raise — let the individual tests fail loudly with their own
         # assertion (focused error vs. bare CalledProcessError).
 

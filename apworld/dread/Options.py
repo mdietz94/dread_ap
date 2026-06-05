@@ -6,9 +6,11 @@ toggles and accessibility presets land later; DeathLink is wired (see
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, make_dataclass
 
 from Options import Choice, DefaultOnToggle, PerGameCommonOptions, Range, Toggle
+
+from .Tricks import FOLLOW_GLOBAL, VISIBLE_TRICKS
 
 
 class StartingArea(Choice):
@@ -28,17 +30,53 @@ class IncludeBossPickups(Toggle):
 
 
 class TrickLevel(Choice):
-    """How permissive the access logic is. Beginner assumes no tricks;
-    Intermediate assumes basic shinesparks / bomb jumps; Advanced assumes
-    everything Randovania classifies up through Advanced. Higher levels
-    ASSUME the player can perform the trick (it may be required to reach a
-    check) — they do not merely allow it. Selects one of three pre-baked
-    logic files."""
+    """Baseline permissiveness of the access logic — the difficulty assumed for
+    every trick left on 'follow global' (see the per-trick 'Trick: …' options).
+    Higher levels ASSUME the player can perform the trick (it may be REQUIRED to
+    reach a check) — they do not merely allow it. Beginner assumes only the
+    easiest tech; Mastery assumes everything Randovania classifies. Per-trick
+    overrides let you raise or disable individual tricks relative to this."""
     display_name = "Trick Level"
     option_beginner = 1
     option_intermediate = 2
     option_advanced = 3
+    option_expert = 4
+    option_mastery = 5
     default = 1
+
+
+class TrickOverride(Choice):
+    """Base for the generated per-trick options. 'follow_global' (default) uses
+    the global Trick Level; 'disabled' never assumes the trick; the named tiers
+    pin it to that difficulty regardless of the global baseline. Mirrors
+    Randovania's per-trick configuration."""
+    option_follow_global = FOLLOW_GLOBAL
+    option_disabled = 0
+    option_beginner = 1
+    option_intermediate = 2
+    option_advanced = 3
+    option_expert = 4
+    option_mastery = 5
+    default = FOLLOW_GLOBAL
+
+
+# One option per non-hidden Dread trick (Suitless is hidden in Randovania's own
+# UI and always follows the global baseline). Generated from the single-source
+# Tricks.VISIBLE_TRICKS table so the option set tracks the logic database.
+_TRICK_OPTION_CLASSES: dict[str, type] = {}
+for _trick in VISIBLE_TRICKS:
+    _TRICK_OPTION_CLASSES[_trick.attr] = type(
+        "".join(p.capitalize() for p in _trick.attr.split("_")),  # e.g. TrickWallJump
+        (TrickOverride,),
+        {
+            "display_name": f"Trick: {_trick.long_name}",
+            "__doc__": (
+                f"Difficulty level assumed for the '{_trick.long_name}' trick. "
+                f"'follow_global' uses the global Trick Level; 'disabled' never "
+                f"requires or assumes it."
+            ),
+        },
+    )
 
 
 class DeathLink(Toggle):
@@ -331,7 +369,7 @@ class SpeedBoosterUpgradeAmount(Range):
 
 
 @dataclass
-class DreadOptions(PerGameCommonOptions):
+class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
@@ -366,3 +404,14 @@ class DreadOptions(PerGameCommonOptions):
     power_bomb_tank_ammo: PowerBombTankAmmo
     flash_shift_upgrade_amount: FlashShiftUpgradeAmount
     speed_booster_upgrade_amount: SpeedBoosterUpgradeAmount
+
+
+# Final options dataclass = the explicit base above + one generated field per
+# non-hidden trick (kept out of the hand-written list so the per-trick set stays
+# driven by Tricks.VISIBLE_TRICKS). The trick fields sort after every explicit
+# option in the YAML template.
+DreadOptions = make_dataclass(
+    "DreadOptions",
+    [(attr, cls) for attr, cls in _TRICK_OPTION_CLASSES.items()],
+    bases=(_DreadOptionsBase,),
+)

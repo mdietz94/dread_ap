@@ -1,69 +1,168 @@
-"""Gate B regression coverage for the trick-level option.
+"""Coverage for the per-trick configuration (v3 symbolic-trick model).
 
-Pins the contract that three pre-baked rule files exist, share the pinned
-commit, carry their trick_level + region_access, and that the loader
-dispatches by level. These run without an Archipelago install.
+Since v3 there is a SINGLE compiled artifact that keeps trick requirements
+symbolic (``{"type":"trick","name","level"}``); the effective per-trick level is
+resolved at AP-generation time from the global ``Trick Level`` baseline plus any
+per-trick overrides. These tests pin that contract and run without an
+Archipelago install (no ``Options`` import — a tiny fake options object stands in
+for the dataclass).
 """
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
-from dread.Rules import _TRICK_LEVEL_FILE, load_compiled_rules  # noqa: E402
+from dread import Tricks  # noqa: E402
+from dread.Rules import (  # noqa: E402
+    EXPECTED_SCHEMA_VERSION,
+    compile_to_lambda,
+    load_compiled_rules,
+)
 
 DATA = ROOT / "data"
-LEVEL_FILES = {
-    1: "compiled_rules.json",
-    2: "compiled_rules_l2.json",
-    3: "compiled_rules_l3.json",
-}
 
+
+def _fake_options(global_level: int, **overrides) -> SimpleNamespace:
+    """Build a stand-in options object: ``.trick_level`` + one attr per visible
+    trick, each exposing ``.value``. ``overrides`` keys are trick attrs (e.g.
+    ``trick_wall_jump=0``)."""
+    ns = SimpleNamespace()
+    ns.trick_level = SimpleNamespace(value=global_level)
+    for t in Tricks.VISIBLE_TRICKS:
+        ns.__dict__[t.attr] = SimpleNamespace(
+            value=overrides.get(t.attr, Tricks.FOLLOW_GLOBAL))
+    return ns
+
+
+# --------------------------------------------------------------------------- #
+# Trick metadata table
+# --------------------------------------------------------------------------- #
+
+def test_trick_table_shape():
+    assert len(Tricks.DREAD_TRICKS) == 26
+    assert len(Tricks.VISIBLE_TRICKS) == 25  # Suitless hidden
+    # attrs unique and namespaced
+    attrs = [t.attr for t in Tricks.VISIBLE_TRICKS]
+    assert len(set(attrs)) == len(attrs)
+    assert all(a.startswith("trick_") for a in attrs)
+    suitless = next(t for t in Tricks.DREAD_TRICKS if t.short_name == "Suitless")
+    assert suitless.hidden
+
+
+# --------------------------------------------------------------------------- #
+# effective_trick_levels: baseline / override / hidden
+# --------------------------------------------------------------------------- #
+
+def test_follow_global_default_uses_baseline():
+    lv = Tricks.effective_trick_levels(_fake_options(2))
+    assert lv["Walljump"] == 2
+    assert lv["Movement"] == 2
+
+
+def test_hidden_trick_always_follows_global():
+    lv = Tricks.effective_trick_levels(_fake_options(3))
+    assert lv["Suitless"] == 3  # no option, tracks baseline
+
+
+def test_override_beats_global():
+    lv = Tricks.effective_trick_levels(_fake_options(1, trick_wall_jump=3))
+    assert lv["Walljump"] == 3
+    assert lv["Movement"] == 1  # untouched → baseline
+
+
+def test_disabled_override():
+    lv = Tricks.effective_trick_levels(_fake_options(3, trick_wall_jump=0))
+    assert lv["Walljump"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# compile_to_lambda resolves symbolic trick atoms
+# --------------------------------------------------------------------------- #
+
+def test_trick_atom_assumed_when_effective_level_high_enough():
+    ast = {"type": "trick", "name": "Walljump", "level": 2}
+    assert compile_to_lambda(ast, 1, {"Walljump": 2})(object()) is True
+    assert compile_to_lambda(ast, 1, {"Walljump": 3})(object()) is True
+
+
+def test_trick_atom_rejected_when_below_effective_level():
+    ast = {"type": "trick", "name": "Walljump", "level": 2}
+    assert compile_to_lambda(ast, 1, {"Walljump": 1})(object()) is False
+    assert compile_to_lambda(ast, 1, {"Walljump": 0})(object()) is False
+
+
+def test_trick_atom_missing_map_is_disabled():
+    ast = {"type": "trick", "name": "Walljump", "level": 1}
+    assert compile_to_lambda(ast, 1, None)(object()) is False
+    assert compile_to_lambda(ast, 1, {})(object()) is False
+
+
+def test_trick_inside_or_opens_alternate_path():
+    # OR(item Morph, trick Walljump@2): reachable via Morph regardless, and via
+    # the trick only when enabled.
+    ast = {"type": "or", "items": [
+        {"type": "item", "name": "Morph Ball", "amount": 1},
+        {"type": "trick", "name": "Walljump", "level": 2},
+    ]}
+    class _State:
+        def __init__(self, has): self._has = has
+        def has(self, name, player, amount=1): return self._has
+    # No Morph, trick disabled → unreachable
+    assert compile_to_lambda(ast, 1, {"Walljump": 0})(_State(False)) is False
+    # No Morph, trick enabled → reachable via trick
+    assert compile_to_lambda(ast, 1, {"Walljump": 2})(_State(False)) is True
+    # Has Morph, trick disabled → reachable via item
+    assert compile_to_lambda(ast, 1, {"Walljump": 0})(_State(True)) is True
+
+
+# --------------------------------------------------------------------------- #
+# Compiled artifact shape
+# --------------------------------------------------------------------------- #
 
 @pytest.fixture(scope="module")
-def levels():
-    return {n: json.loads((DATA / f).read_text()) for n, f in LEVEL_FILES.items()}
+def compiled():
+    path = DATA / "compiled_rules.json"
+    if not path.exists():
+        pytest.skip("compiled_rules.json not baked (run extract_dread_rules.py)")
+    return json.loads(path.read_text())
 
 
-def test_three_trick_level_files_exist_and_parse(levels):
-    for n, d in levels.items():
-        for key in ("rules", "events", "region_access", "victory_condition"):
-            assert key in d, f"L{n} missing {key}"
-        assert d["trick_level"] == n, f"L{n} file has trick_level {d['trick_level']}"
+def test_single_file_schema_and_no_trick_level_key(compiled):
+    assert compiled["schema_version"] == EXPECTED_SCHEMA_VERSION == 3
+    # The per-level baking knob is gone.
+    assert "trick_level" not in compiled
+    for key in ("rules", "events", "region_access", "victory_condition"):
+        assert key in compiled
 
 
-def test_all_levels_share_pinned_commit(levels):
-    commits = {d["pinned_commit"] for d in levels.values()}
-    assert len(commits) == 1, f"trick-level files disagree on pinned_commit: {commits}"
+def _iter_atoms(ast):
+    yield ast
+    for child in ast.get("items", []):
+        yield from _iter_atoms(child)
 
 
-def test_higher_levels_are_at_least_as_permissive(levels):
-    """More tricks → at most as many impossible rules. Uses >= so the test
-    still passes if the data has no per-level distinction for some rule."""
-    def n_impossible(d):
-        return sum(1 for r in d["rules"].values() if r.get("type") == "impossible")
-    assert n_impossible(levels[1]) >= n_impossible(levels[2]) >= n_impossible(levels[3])
+def test_compiled_rules_carry_symbolic_trick_atoms(compiled):
+    """The whole point of v3: trick requirements survive into the artifact
+    instead of being collapsed to trivial/impossible."""
+    seen_tricks = set()
+    for rule in compiled["rules"].values():
+        for node in _iter_atoms(rule):
+            if node.get("type") == "trick":
+                seen_tricks.add(node["name"])
+                assert isinstance(node["level"], int)
+    assert seen_tricks, "no symbolic trick atoms found in compiled rules"
+    # Every referenced trick is a known short_name.
+    known = {t.short_name for t in Tricks.DREAD_TRICKS}
+    assert seen_tricks <= known, f"unknown tricks: {seen_tricks - known}"
 
 
-def test_levels_differ(levels):
-    """The whole point of the option — the three files must not be identical
-    (else picking a level changes nothing)."""
-    assert levels[1]["rules"] != levels[2]["rules"]
-    assert levels[2]["rules"] != levels[3]["rules"]
-
-
-def test_loader_dispatches_by_level():
-    assert _TRICK_LEVEL_FILE == LEVEL_FILES
-    l1 = load_compiled_rules(1)
-    l2 = load_compiled_rules(2)
-    l3 = load_compiled_rules(3)
-    assert l1["trick_level"] == 1
-    assert l2["trick_level"] == 2
-    assert l3["trick_level"] == 3
-    # Unknown level falls back to canonical L1.
-    assert load_compiled_rules(99)["trick_level"] == 1
+def test_loader_returns_single_file(compiled):
+    loaded = load_compiled_rules()
+    assert loaded["schema_version"] == 3

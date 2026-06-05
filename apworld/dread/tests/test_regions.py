@@ -92,10 +92,15 @@ def test_pickup_rules_carry_real_item_gating(compiled):
     non_trivial = [loc for loc, r in compiled["rules"].items()
                    if r != {"type": "trivial"}]
     assert len(non_trivial) >= 100, "expected most pickups to be item-gated"
-    # No event/trick/damage atoms — rules are pure item logic now.
+    # No event/damage atoms — events are inlined and damage is collapsed. Trick
+    # atoms ARE expected (v3 keeps them symbolic, resolved per-trick at
+    # generation time); they must carry a name + level.
     for r in compiled["rules"].values():
         def walk(a):
-            assert a.get("type") not in ("event", "trick", "damage")
+            assert a.get("type") not in ("event", "damage")
+            if a.get("type") == "trick":
+                assert isinstance(a.get("name"), str)
+                assert isinstance(a.get("level"), int)
             for c in a.get("items", []):
                 walk(c)
         walk(r)

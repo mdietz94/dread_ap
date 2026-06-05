@@ -102,39 +102,23 @@ def _ensure_compiled_rules() -> None:
     input_mtime = max(extract.stat().st_mtime,
                       pinned.stat().st_mtime if pinned.exists() else 0)
 
-    targets = {
-        1: data_dir / "compiled_rules.json",
-        2: data_dir / "compiled_rules_l2.json",
-        3: data_dir / "compiled_rules_l3.json",
-    }
-
-    needs_regen = [
-        (level, path) for level, path in targets.items()
-        if not path.exists() or path.stat().st_mtime < input_mtime
-    ]
-    if not needs_regen:
+    # Single compiled file (v3): tricks are kept symbolic and resolved per-trick
+    # at AP-generation time, so there is no longer a per-trick-level bake.
+    target = data_dir / "compiled_rules.json"
+    if target.exists() and target.stat().st_mtime >= input_mtime:
         return
 
-    # Each level takes ~3.5 min single-threaded. Run all three in parallel
-    # to bring wall-clock down to ~3.5 min instead of ~10.
-    print(f"regenerating {len(needs_regen)} compiled-rule artifact(s) "
-          f"in parallel (~3-4 minutes)...")
+    print("regenerating compiled_rules.json (~10 minutes; two-pass resolver)...")
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    procs = []
-    for level, path in needs_regen:
-        cmd = [sys.executable, str(extract), "--all",
-               "--trick-level", str(level), "--out", str(path)]
-        procs.append((path, subprocess.Popen(
-            cmd, cwd=str(REPO), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)))
-    failed = []
-    for path, proc in procs:
-        _, err = proc.communicate()
-        if proc.returncode != 0:
-            failed.append((path.name, err.decode("utf-8", errors="replace")))
-    if failed:
-        for name, err in failed:
-            sys.stderr.write(f"regen of {name} failed:\n{err}\n")
+    proc = subprocess.Popen(
+        [sys.executable, str(extract), "--all", "--out", str(target)],
+        cwd=str(REPO), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, err = proc.communicate()
+    if proc.returncode != 0:
+        sys.stderr.write(
+            f"regen of {target.name} failed:\n"
+            f"{err.decode('utf-8', errors='replace')}\n")
         sys.exit(1)
 
 

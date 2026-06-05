@@ -163,11 +163,8 @@ def test_ast_to_dnf_rejects_stale_damage_node():
 DATA = Path(__file__).resolve().parents[1] / "data"
 
 
-@pytest.mark.parametrize("fn", [
-    "compiled_rules.json", "compiled_rules_l2.json", "compiled_rules_l3.json",
-])
-def test_compiled_artifact_carries_schema_version(fn):
-    raw = json.loads((DATA / fn).read_text())
+def test_compiled_artifact_carries_schema_version():
+    raw = json.loads((DATA / "compiled_rules.json").read_text())
     assert raw.get("schema_version") == edr.SCHEMA_VERSION
 
 
@@ -260,18 +257,17 @@ def test_compiled_artifacts_have_no_no_suit_damage_thresholds():
     per-location HP gate; it survives compile_forward only as a transient
     used to derive region floors, then gets stripped."""
     import json
-    for fn in ("compiled_rules.json", "compiled_rules_l2.json",
-               "compiled_rules_l3.json"):
-        raw = json.loads((DATA / fn).read_text())
-        def walk(a):
-            yield a
-            for c in a.get("items", []):
-                yield from walk(c)
-        for loc, rule in raw["rules"].items():
-            for n in walk(rule):
-                if n.get("type") == "damage_threshold":
-                    assert n.get("suit_options"), \
-                        f"{fn} {loc}: no-suit damage_threshold survived strip"
+    fn = "compiled_rules.json"
+    raw = json.loads((DATA / fn).read_text())
+    def walk(a):
+        yield a
+        for c in a.get("items", []):
+            yield from walk(c)
+    for loc, rule in raw["rules"].items():
+        for n in walk(rule):
+            if n.get("type") == "damage_threshold":
+                assert n.get("suit_options"), \
+                    f"{fn} {loc}: no-suit damage_threshold survived strip"
 
 
 def test_loader_refuses_mismatched_schema(monkeypatch):
@@ -288,4 +284,4 @@ def test_loader_refuses_mismatched_schema(monkeypatch):
         return real
     monkeypatch.setattr("dread.Rules.load_json", fake_load_json)
     with pytest.raises(RuntimeError, match="schema_version"):
-        load_compiled_rules(1)
+        load_compiled_rules()
