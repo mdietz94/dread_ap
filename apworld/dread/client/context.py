@@ -1079,11 +1079,15 @@ class DreadContext(CommonContext):
         in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"``,
         (c) ``not RL.IsInBossArena()`` — refusing to warp out of a boss arena,
         which corrupts the encounter (the Kraid brick: re-entry breaks the
-        fight, death-respawn bricks the game; boss-arena detection lives in
-        ``lua/warp_guard.lua``) — and (d) ``Scenario.IsUserInteractionEnabled(true)``,
-        so a /warp issued from the title screen, a boss fight, or mid-cutscene
-        returns a human-readable "blocked" reason instead of firing into invalid
-        state. Returns the status string the caller surfaces to the user."""
+        fight, death-respawn bricks the game) — (c2) ``not RL.IsInNavRoom()`` and
+        (c3) ``not RL.IsInSaveRoom()`` — refusing to warp out of a Navigation
+        (Adam) room or a save station, where the conversation / save dialog
+        survives the reload and strands an undismissable box (these collision-camera
+        detections live in ``lua/warp_guard.lua``) — and (d)
+        ``Scenario.IsUserInteractionEnabled(true)``, so a /warp issued from the
+        title screen, a boss fight, a Nav/save room, or mid-cutscene returns a
+        human-readable "blocked" reason instead of firing into invalid state.
+        Returns the status string the caller surfaces to the user."""
         if self._bridge is None or not self._bridge.is_connected():
             return "no active Switch connected"
         if not self._bootstrapped:
@@ -1114,6 +1118,19 @@ class DreadContext(CommonContext):
                 # so an older/partial VM (function nil) degrades to allowing warp
                 # rather than erroring.
                 'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
+                # Refuse to warp out of a Navigation (Adam) room — the conversation
+                # keeps Samus controllable but leaves a dialogue box that
+                # Game.LoadScenario doesn't tear down, stranding an undismissable
+                # text box. RL.IsInNavRoom is defined by lua/warp_guard.lua; guard
+                # the call so a pre-bootstrap VM (function nil) degrades to allowing
+                # the warp. A Nav room is a safe hub, so blocking here is free.
+                'if RL.IsInNavRoom and RL.IsInNavRoom() then return "in_nav" end '
+                # Refuse to warp from a save station — same stranded-dialog risk as
+                # a Nav room (the save box survives LoadScenario), and a save room
+                # is a safe hub where /warp is never needed (just save + reload).
+                # RL.IsInSaveRoom is defined by lua/warp_guard.lua; guard the call
+                # so a pre-bootstrap VM degrades to allowing the warp.
+                'if RL.IsInSaveRoom and RL.IsInSaveRoom() then return "in_save" end '
                 'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
                 'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
                 'return "ok"'
@@ -1133,6 +1150,16 @@ class DreadContext(CommonContext):
                         "corrupts the encounter (re-entry/respawn can brick the "
                         "game). If you're stuck, reload your last save from the "
                         "title screen.")
+            if body == "in_nav":
+                return ("blocked: you're in a Navigation (Adam) room — warping "
+                        "mid-conversation strands the dialogue box (you'd keep "
+                        "control with an undismissable text box). Finish talking "
+                        "to Adam or step out of the room, then /warp.")
+            if body == "in_save":
+                return ("blocked: you're at a save station — no need to /warp from "
+                        "a safe room, and a warp here can strand the save dialog. "
+                        "Save and reload from the title if you're stuck, or step "
+                        "out of the room before /warp.")
             if body == "no_interaction":
                 return "blocked: cutscene/cinematic in progress — try again in a moment"
             if body != "ok":

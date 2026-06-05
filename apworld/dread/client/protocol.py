@@ -321,28 +321,137 @@ BOSS_ARENA_CAMERAS: dict[str, dict[str, str]] = {
     },
 }
 
+# Navigation ("Adam") rooms — the same per-scenario collision-camera map shape as
+# BOSS_ARENA_CAMERAS, used by the same ``RL.IsInNavRoom()`` warp guard. Why block
+# /warp here: a Navigation-room conversation with Adam keeps Samus controllable
+# (interaction stays "enabled") yet renders a dialogue box that ``Game.LoadScenario``
+# does NOT tear down — warping mid-conversation strands an undismissable text box
+# (the reported bug). And unlike a softlock, a Nav room is a safe hub you can just
+# walk out of, so refusing to warp there costs the player nothing.
+#
+# Detection has NO state flag: probing the live game during an Adam talk showed
+# GetCurrentCutsceneStr()=nil, Scenario.ShowingPopup=false, IsUserInteractionEnabled
+# (true)=true, and the box is not a reachable IngameMenuRoot GUI composition — so
+# location is the only viable signal, exactly like boss arenas. Keys are scenario
+# ids; values map a collision-camera id (the id ``OnSubAreaChange`` reports, tracked
+# by lua/warp_guard.lua) to its room name. Curated from the patcher's published
+# ``camera_names_dict`` (every "Navigation Station ..." entry). ``*_Access`` is the
+# approach corridor, included because it's an equally-safe over-block.
+NAV_ROOM_CAMERAS: dict[str, dict[str, str]] = {
+    "s010_cave": {
+        "collision_camera_065": "Navigation Station North",
+        "collision_camera_068": "Navigation Station South",
+    },
+    "s020_magma": {
+        "collision_camera_002": "Navigation Station Southeast",
+        "collision_camera_058": "Navigation Station Northwest",
+    },
+    "s030_baselab": {
+        "collision_camera_014": "Navigation Station South",
+        "collision_camera_044": "Navigation Station North",
+    },
+    "s040_aqua": {
+        "collision_camera_009": "Navigation Station North",
+        "collision_camera_016": "Navigation Station South",
+    },
+    "s050_forest": {
+        "collision_camera_005": "Navigation Station Access",
+        "collision_camera_006": "Navigation Station",
+    },
+    "s070_basesanc": {
+        "collision_camera_016": "Navigation Station",
+    },
+    "s080_shipyard": {
+        "collision_camera_003": "Navigation Station",
+    },
+}
+
+# Save Stations — blocked from /warp for the same reason as Nav rooms: the save
+# dialog is a controllable-but-overlaid box that Game.LoadScenario won't dismiss,
+# and a save room is a safe hub (just save + reload if stuck) where /warp is never
+# needed. Same per-scenario collision-camera shape, same RL warp guard, same
+# OnSubAreaChange tracking. Curated from the patcher's ``camera_names_dict`` (every
+# "Save Station ..." entry). Verified disjoint from BOSS_ARENA_CAMERAS and
+# NAV_ROOM_CAMERAS within each scenario (a camera id reused across DIFFERENT
+# scenarios is fine — the guard keys on the live scenario).
+SAVE_STATION_CAMERAS: dict[str, dict[str, str]] = {
+    "s010_cave": {
+        "collision_camera_012": "Save Station West",
+        "collision_camera_025": "Save Station East",
+        "collision_camera_063": "Save Station South",
+        "collision_camera_076": "Save Station North",
+    },
+    "s020_magma": {
+        "collision_camera_033": "Save Station East",
+        "collision_camera_062": "Save Station West",
+    },
+    "s030_baselab": {
+        "collision_camera_000": "Save Station East",
+        "collision_camera_031": "Save Station West Tunnels",
+        "collision_camera_032": "Save Station West",
+    },
+    "s040_aqua": {
+        "collision_camera_011": "Save Station Middle",
+        "collision_camera_026": "Save Station South Access",
+        "collision_camera_027": "Save Station South",
+        "collision_camera_030": "Save Station North",
+    },
+    "s050_forest": {
+        "collision_camera_022": "Save Station Center",
+        "collision_camera_040": "Save Station East",
+    },
+    "s060_quarantine": {
+        "collision_camera_012": "Save Station",
+    },
+    "s070_basesanc": {
+        "collision_camera_029": "Save Station North",
+        "collision_camera_041": "Save Station Southeast",
+    },
+    "s090_skybase": {
+        "collision_camera_000": "Save Station",
+    },
+}
+
 # Lua bareword key pattern — scenario ids and collision-camera ids are emitted
 # as table keys (`{s020_magma={collision_camera_063=true}}`), so both must be
 # valid identifiers or the rendered Lua is malformed.
 _LUA_BAREWORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def build_boss_arenas_lua_table() -> str:
-    """Render :data:`BOSS_ARENA_CAMERAS` as the nested Lua table literal that
-    fills ``lua/warp_guard.lua``'s ``TEMPLATE("boss_arenas")`` hole, e.g.
-    ``{s020_magma={collision_camera_063=true},...}``. Camera ids are valid Lua
-    barewords, so they become keys with value ``true``."""
+def _build_camera_table_lua(cameras: dict[str, dict[str, str]], what: str) -> str:
+    """Render a per-scenario collision-camera map as the nested Lua table literal
+    the warp guard consumes, e.g. ``{s020_magma={collision_camera_063=true},...}``.
+    Camera ids are valid Lua barewords, so they become keys with value ``true``.
+    ``what`` names the table for the malformed-key error."""
     scen_parts = []
-    for scenario, cams in BOSS_ARENA_CAMERAS.items():
+    for scenario, cams in cameras.items():
         for key in (scenario, *cams):
             if not _LUA_BAREWORD.match(key):
                 raise ValueError(
-                    f"boss-arena key {key!r} is not a valid Lua bareword; "
-                    "build_boss_arenas_lua_table would emit malformed Lua"
+                    f"{what} key {key!r} is not a valid Lua bareword; "
+                    "the rendered warp-guard table would be malformed"
                 )
         cam_parts = ",".join(f"{cam}=true" for cam in cams)
         scen_parts.append(f"{scenario}={{{cam_parts}}}")
     return "{" + ",".join(scen_parts) + "}"
+
+
+def build_boss_arenas_lua_table() -> str:
+    """Render :data:`BOSS_ARENA_CAMERAS` as the ``RL.BossArenas`` table literal
+    (emitted as its own bootstrap block, read by ``lua/warp_guard.lua``)."""
+    return _build_camera_table_lua(BOSS_ARENA_CAMERAS, "boss-arena")
+
+
+def build_nav_rooms_lua_table() -> str:
+    """Render :data:`NAV_ROOM_CAMERAS` as the ``RL.NavRooms`` table literal
+    (emitted as its own bootstrap block)."""
+    return _build_camera_table_lua(NAV_ROOM_CAMERAS, "nav-room")
+
+
+def build_save_rooms_lua_table() -> str:
+    """Render :data:`SAVE_STATION_CAMERAS` as the ``RL.SaveRooms`` table literal
+    (emitted as its own bootstrap block)."""
+    return _build_camera_table_lua(SAVE_STATION_CAMERAS, "save-room")
 
 
 def build_set_received_pickups_lua(count: int) -> str:

@@ -26,7 +26,11 @@ import re
 from importlib.resources import files
 from typing import Optional
 
-from .protocol import build_boss_arenas_lua_table
+from .protocol import (
+    build_boss_arenas_lua_table,
+    build_nav_rooms_lua_table,
+    build_save_rooms_lua_table,
+)
 
 # Order matters: part_0 defines RL.Pickups + GetCollectedIndicesAndSend and
 # DoFile's the ROM-baked RandomizerPowerup; the locations blocks then fill
@@ -41,8 +45,9 @@ _LOCATIONS_TEMPLATE = "bootstrap_locations"
 # dread_ap originals (not vendored). Sent after the vendored parts so RL.* and
 # the ROM's Scenario.* exist when they load; inert unless called.
 #   deathlink   — RL.KillPlayer for DeathLink.
-#   warp_guard  — RL.IsInBossArena + the OnSubAreaChange wrap that feeds it, so
-#                 /warp can refuse to fire from inside a boss arena.
+#   warp_guard  — RL.IsInBossArena + RL.IsInNavRoom + the OnSubAreaChange wrap
+#                 that feeds them, so /warp can refuse to fire from inside a boss
+#                 arena or a Navigation (Adam) room.
 _EXTRAS = ("deathlink", "warp_guard")
 _BOOTSTRAP_DONE = "RL.Bootstrap=true"
 
@@ -102,10 +107,6 @@ def build_bootstrap_code(items_rows: list[dict], locations_rows: list[dict]) -> 
     base = {
         "num_pickup_nodes": str(num_pickup_nodes),
         "inventory": inventory_lua,
-        # Fills lua/warp_guard.lua's TEMPLATE("boss_arenas") hole. Harmless on the
-        # other blocks (none reference it); the leftover-template guard still
-        # ensures warp_guard's hole is actually filled.
-        "boss_arenas": build_boss_arenas_lua_table(),
     }
     blocks = [_substitute(_read_lua(part), base) for part in _BOOTSTRAP_PARTS]
 
@@ -127,6 +128,15 @@ def build_bootstrap_code(items_rows: list[dict], locations_rows: list[dict]) -> 
         pairs = ",".join(f"{loc['actor']}={int(loc['pickup_index']) + 1}" for loc in locs)
         blocks.append(_substitute(loc_template, {**base, "pairs": pairs,
                                                  "location": repr(scenario + "_")}))
+
+    # Warp-guard collision-camera tables, each emitted as its OWN block so
+    # warp_guard.lua's code stays well under the send buffer while the tables
+    # grow (boss arenas + Nav/Adam rooms + Save Stations). RL.IsIn*() read these
+    # globals only at /warp time, so these may run in any order relative to the
+    # warp_guard function block — they just have to precede the first /warp.
+    blocks.append("RL.BossArenas = " + build_boss_arenas_lua_table())
+    blocks.append("RL.NavRooms = " + build_nav_rooms_lua_table())
+    blocks.append("RL.SaveRooms = " + build_save_rooms_lua_table())
 
     # Our own (non-vendored) extra functions. No templates to fill, but run
     # _substitute anyway to catch an accidental TEMPLATE() in a hand-edited file.

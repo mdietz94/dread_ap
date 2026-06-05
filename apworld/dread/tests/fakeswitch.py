@@ -81,6 +81,13 @@ class FakeDreadGame:
         # When set, the /warp primitive's in-Lua guard returns "in_boss" before
         # Game.LoadScenario, so no revert/restore happens.
         self.in_boss_arena: bool = False
+        # Models RL.IsInNavRoom() — true while Samus stands in a Navigation
+        # (Adam) room. When set, the /warp guard returns "in_nav" before
+        # Game.LoadScenario.
+        self.in_nav_room: bool = False
+        # Models RL.IsInSaveRoom() — true while Samus stands at a save station.
+        # When set, the /warp guard returns "in_save" before Game.LoadScenario.
+        self.in_save_room: bool = False
         # Last committed save. Game.LoadScenario (the /warp primitive) reloads
         # Samus from this, reverting anything collected/delivered since save().
         self.saved_inventory: dict[str, int] = {}
@@ -302,11 +309,15 @@ class FakeDreadGame:
         if "Game.LoadScenario(" in src:
             # The /warp primitive. Model the in-Lua gates, then reload from save.
             # Gate order mirrors the warp src: INGAME, then boss arena, then
-            # cutscene/user-interaction.
+            # Nav room, then save station, then cutscene/user-interaction.
             if self.game_mode != "INGAME":
                 result = "not_ingame"
             elif self.in_boss_arena and "RL.IsInBossArena()" in src:
                 result = "in_boss"
+            elif self.in_nav_room and "RL.IsInNavRoom()" in src:
+                result = "in_nav"
+            elif self.in_save_room and "RL.IsInSaveRoom()" in src:
+                result = "in_save"
             elif self.in_cutscene:
                 result = "no_interaction"
             else:
