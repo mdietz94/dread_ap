@@ -237,6 +237,30 @@ now recovers from any stuck placement at runtime:
      GONE. `scripts/diagnose_reverse_reachability.py` (the tool that derived
      that table) is also deleted.
 
+UPDATE (`/warp` now refuses to fire from inside a boss arena): warping out of a
+boss fight with `Game.LoadScenario` corrupts the encounter (a user warped out of
+Kraid mid-fight → couldn't re-enter normally, the fight broke when entered from
+the exit, and the death-respawn bricked the game). So `/warp` now blocks while
+Samus stands in a boss arena. The engine has no getter for the live collision
+camera, but fires `Scenario.OnSubAreaChange(...)` on every subarea transition
+(the same hook the room-name display rides). `client/lua/warp_guard.lua` (our
+original non-vendored bootstrap extra, like `deathlink.lua`; added to
+`bootstrap._EXTRAS`) wraps that callback — chaining, not replacing, so the
+upstream progressive-model / blast-shield / room-name updates still run, and
+installed once via `RL._WarpGuardInstalled` so a reconnect can't double-wrap —
+to record the live `CurrentScenarioID` + subarea, and defines `RL.IsInBossArena()`
+which checks them against a baked boss-arena table. That table is
+`protocol.BOSS_ARENA_CAMERAS` (scenario → collision-camera id set, curated from
+the published room-name dict; EMMI zones deliberately excluded — warp there is
+legit recovery) rendered to Lua by `build_boss_arenas_lua_table`. The warp src
+calls `if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss"` before
+`LoadScenario`; the client surfaces a "reload your last save" message. Residual
+gap: connecting fresh while already standing in a boss arena (subarea untracked
+until the next transition) isn't caught; a death-respawn inside the same arena
+IS (we don't reset the tracked subarea on load). `fakeswitch` models it via
+`in_boss_arena`; tests in `test_warp.py` / `test_session_e2e.py` /
+`test_bootstrap.py` / `test_protocol.py`.
+
 Consequence by design: AP logic now gates only **entry** to a pickup, never
 the ability to leave it. Fill may place any item in a one-way room; if the
 player gets stuck, they `/warp`. Generation is *strictly easier* than before

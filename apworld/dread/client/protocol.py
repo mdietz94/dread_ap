@@ -7,6 +7,7 @@ what we send into Lua via ``RL.ReceivePickup``.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -217,6 +218,92 @@ def build_mark_collected_lua(pickup_indices: list[int]) -> str:
         "end "
         "return ''"
     )
+
+
+# Boss-arena warp guard ------------------------------------------------------
+#
+# Warping out of a boss arena with ``Game.LoadScenario`` corrupts the encounter:
+# the arena's intro / door-lock / checkpoint state half-commits, so the fight
+# can't be re-entered or reset cleanly. A user hit exactly this with Kraid —
+# after a mid-fight /warp the fight couldn't be re-entered the normal way, broke
+# when entered from the exit, and bricked the game on the death-respawn. So
+# /warp is BLOCKED while Samus's current subarea (collision camera) is a
+# boss-fight room. The engine exposes no getter for the live collision camera,
+# but fires ``Scenario.OnSubAreaChange`` on every transition — ``lua/warp_guard.lua``
+# wraps it to record the live scenario+subarea, and the warp src calls
+# ``RL.IsInBossArena()`` before firing.
+#
+# Keys are scenario ids; each maps a collision-camera id (the same id the engine
+# passes to ``OnSubAreaChange`` and that the patcher's camera-names dict keys on)
+# to its human room name. Only the key set is load-bearing — the name is a
+# comment for reviewers. Curated from the published room-name table. EMMI zones
+# are deliberately EXCLUDED: you can run from an EMMI and a /warp there is
+# legitimate softlock recovery, not a corrupting mid-fight bail. Only set-piece
+# bosses, Central Units, and Chozo-warrior/robot arenas — the rooms that lock
+# you in and set a fight checkpoint — are listed.
+BOSS_ARENA_CAMERAS: dict[str, dict[str, str]] = {
+    "s010_cave": {
+        "collision_camera_020": "Corpius Arena",
+        "collision_camera_090": "Central Unit",
+        "collision_camera_091": "Red Chozo Arena",
+    },
+    "s020_magma": {
+        "collision_camera_063": "Kraid Arena",
+        "collision_camera_037": "Central Unit",
+        "collision_camera_CooldownX": "Experiment Z-57 Fight",
+    },
+    "s030_baselab": {
+        "collision_camera_038": "Central Unit",
+    },
+    "s040_aqua": {
+        "collision_camera_028": "Drogyga Arena",
+    },
+    "s050_forest": {
+        "collision_camera_002": "Robot Fight Arena",
+        "collision_camera_023": "Chozo Warrior Arena",
+        "collision_camera_026": "Golzuna Arena",
+        "collision_camera_017": "Central Unit",
+    },
+    "s060_quarantine": {
+        "collision_camera_004": "Chozo Soldier Arena",
+    },
+    "s070_basesanc": {
+        "collision_camera_017": "Twin Robot Arena",
+        "collision_camera_027": "Escue Arena",
+        "collision_camera_035": "Central Unit",
+    },
+    "s080_shipyard": {
+        "collision_camera_005": "Gold Chozo Warrior Arena",
+        "collision_camera_012": "Central Unit",
+        "collision_camera_020": "Raven Beak X Arena",
+    },
+    "s090_skybase": {
+        "collision_camera_004": "Raven Beak Arena",
+    },
+}
+
+# Lua bareword key pattern — scenario ids and collision-camera ids are emitted
+# as table keys (`{s020_magma={collision_camera_063=true}}`), so both must be
+# valid identifiers or the rendered Lua is malformed.
+_LUA_BAREWORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def build_boss_arenas_lua_table() -> str:
+    """Render :data:`BOSS_ARENA_CAMERAS` as the nested Lua table literal that
+    fills ``lua/warp_guard.lua``'s ``TEMPLATE("boss_arenas")`` hole, e.g.
+    ``{s020_magma={collision_camera_063=true},...}``. Camera ids are valid Lua
+    barewords, so they become keys with value ``true``."""
+    scen_parts = []
+    for scenario, cams in BOSS_ARENA_CAMERAS.items():
+        for key in (scenario, *cams):
+            if not _LUA_BAREWORD.match(key):
+                raise ValueError(
+                    f"boss-arena key {key!r} is not a valid Lua bareword; "
+                    "build_boss_arenas_lua_table would emit malformed Lua"
+                )
+        cam_parts = ",".join(f"{cam}=true" for cam in cams)
+        scen_parts.append(f"{scenario}={{{cam_parts}}}")
+    return "{" + ",".join(scen_parts) + "}"
 
 
 def build_set_received_pickups_lua(count: int) -> str:

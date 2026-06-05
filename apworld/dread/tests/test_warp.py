@@ -153,6 +153,22 @@ async def test_warp_blocked_not_ingame(ctx):
 
 
 @pytest.mark.asyncio
+async def test_warp_blocked_in_boss_arena(ctx):
+    bridge = _stub_bridge(
+        ctx, connected=True, response=Response(success=True, payload=b"in_boss")
+    )
+    msg = await ctx._warp_to_start()
+    assert "blocked" in msg
+    assert "boss arena" in msg
+    # The warp src must probe RL.IsInBossArena before LoadScenario, guarded so a
+    # pre-bootstrap VM (function nil) degrades to allowing the warp.
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert "RL.IsInBossArena and RL.IsInBossArena()" in src
+    assert src.index("RL.IsInBossArena") < src.index("Game.LoadScenario")
+
+
+@pytest.mark.asyncio
 async def test_warp_blocked_cutscene(ctx):
     _stub_bridge(
         ctx, connected=True, response=Response(success=True, payload=b"no_interaction")

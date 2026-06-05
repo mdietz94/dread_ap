@@ -26,6 +26,8 @@ import re
 from importlib.resources import files
 from typing import Optional
 
+from .protocol import build_boss_arenas_lua_table
+
 # Order matters: part_0 defines RL.Pickups + GetCollectedIndicesAndSend and
 # DoFile's the ROM-baked RandomizerPowerup; the locations blocks then fill
 # RL.Pickups; the trailing assignment flips the bootstrapped flag.
@@ -36,9 +38,12 @@ _BOOTSTRAP_PARTS = (
     "bootstrap_part_3",
 )
 _LOCATIONS_TEMPLATE = "bootstrap_locations"
-# dread_ap original (not vendored) — defines RL.KillPlayer for DeathLink. Sent
-# after the vendored parts so it's always available; inert unless called.
-_EXTRAS = ("deathlink",)
+# dread_ap originals (not vendored). Sent after the vendored parts so RL.* and
+# the ROM's Scenario.* exist when they load; inert unless called.
+#   deathlink   — RL.KillPlayer for DeathLink.
+#   warp_guard  — RL.IsInBossArena + the OnSubAreaChange wrap that feeds it, so
+#                 /warp can refuse to fire from inside a boss arena.
+_EXTRAS = ("deathlink", "warp_guard")
 _BOOTSTRAP_DONE = "RL.Bootstrap=true"
 
 _TEMPLATE_LEFTOVER = re.compile(r'TEMPLATE\("([^"]+)"\)|T__(\w+)__T')
@@ -94,7 +99,14 @@ def build_bootstrap_code(items_rows: list[dict], locations_rows: list[dict]) -> 
             inventory.append(pid)
     inventory_lua = "{" + ",".join(repr(p) for p in inventory) + "}"
 
-    base = {"num_pickup_nodes": str(num_pickup_nodes), "inventory": inventory_lua}
+    base = {
+        "num_pickup_nodes": str(num_pickup_nodes),
+        "inventory": inventory_lua,
+        # Fills lua/warp_guard.lua's TEMPLATE("boss_arenas") hole. Harmless on the
+        # other blocks (none reference it); the leftover-template guard still
+        # ensures warp_guard's hole is actually filled.
+        "boss_arenas": build_boss_arenas_lua_table(),
+    }
     blocks = [_substitute(_read_lua(part), base) for part in _BOOTSTRAP_PARTS]
 
     # Group by scenario in first-appearance order (block order is cosmetic —

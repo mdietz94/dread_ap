@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT.parent))
 from dread.client.protocol import (  # noqa: E402
     _to_lua_table, build_receive_pickup_lua, DreadPickupLocation,
     pickup_class_for, build_kill_player_lua, build_read_death_count_lua,
-    DEATH_COUNT_PROP,
+    DEATH_COUNT_PROP, BOSS_ARENA_CAMERAS, build_boss_arenas_lua_table,
 )
 
 
@@ -43,6 +43,29 @@ def test_to_lua_table_string_escaping():
     assert _to_lua_table("hi") == '"hi"'
     assert _to_lua_table('quoted "thing"') == '"quoted \\"thing\\""'
     assert _to_lua_table("back\\slash") == '"back\\\\slash"'
+
+
+def test_boss_arenas_lua_table_shape():
+    lua = build_boss_arenas_lua_table()
+    # Nested table keyed by scenario then collision camera, value true. Kraid's
+    # arena (s020_magma / collision_camera_063) is the reported brick case.
+    assert lua.startswith("{") and lua.endswith("}")
+    assert "s020_magma={" in lua
+    assert "collision_camera_063=true" in lua
+    assert "s090_skybase={collision_camera_004=true}" in lua
+    # No quotes — camera ids are emitted as barewords (valid Lua identifiers).
+    assert '"' not in lua
+
+
+def test_boss_arena_keys_are_lua_barewords():
+    # Every scenario id and camera id must be a valid Lua identifier or the
+    # rendered table is malformed; the renderer enforces this.
+    import re as _re
+    ident = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+    for scenario, cams in BOSS_ARENA_CAMERAS.items():
+        assert ident.match(scenario), scenario
+        for cam in cams:
+            assert ident.match(cam), cam
 
 
 def test_to_lua_table_list():
