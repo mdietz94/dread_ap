@@ -131,6 +131,19 @@ WARP_RESTORE_SETTLE_SECONDS = 0.5
 # window must comfortably exceed the worst-case cutscene-deferral of the kill.
 DEATH_SUPPRESS_WINDOW_SECONDS = 15.0
 
+# When more than one received item is waiting (an AP "release" sends a burst),
+# we override the bootstrap's lone-item popup/reschedule timings so the backlog
+# drains faster than one item every ~7.5s. The grant itself is immediate;
+# BURST_RESCHEDULE_SECONDS only gates how soon the next item is accepted, and
+# BURST_POPUP_SECONDS is the popup display time. We keep popup < reschedule (same
+# 0.5s relationship as the lone-item 7.0/7.5 default) so popups never pile up: a
+# popup finishes before the next item lands. 3.0/3.5 roughly halves the per-item
+# time during a release while keeping each notification readable. The last item
+# of a burst falls back to the lone-item default (7.0/7.5) so the player gets a
+# normal, lingering popup once the flood ends.
+BURST_POPUP_SECONDS = 3.0
+BURST_RESCHEDULE_SECONDS = 3.5
+
 
 class DreadClientCommandProcessor(ClientCommandProcessor):
     """`/`-prefixed commands typed into the Kivy command bar."""
@@ -544,12 +557,24 @@ class DreadContext(CommonContext):
                     "later items are blocked behind it",
                     received, dread_item.ap_item_name, self._delivery_attempts,
                     received, inv_idx)
+        # If more items are already queued behind this one (a release), drain the
+        # backlog fast; the final item falls back to the bootstrap's lone-item
+        # defaults so its popup lingers normally. (target - received) is the
+        # number still pending, including this one.
+        if target - received > 1:
+            popup_seconds = BURST_POPUP_SECONDS
+            reschedule_seconds = BURST_RESCHEDULE_SECONDS
+        else:
+            popup_seconds = None
+            reschedule_seconds = None
         lua = build_receive_pickup_lua(
             message=message,
             progression=progression,
             received_pickup_index=received,
             inventory_index=inv_idx,
             cls=pickup_class_for(dread_item.patcher_item_id),
+            popup_seconds=popup_seconds,
+            reschedule_seconds=reschedule_seconds,
         )
         try:
             await self._bridge.run_lua(lua)
@@ -945,12 +970,22 @@ class DreadContext(CommonContext):
                         item=dread_item, sender=sender, inventory_index=idx))
             log.debug("game ReceivedPickups advanced %d -> %d", previous, count)
         self.state.set_game_received_pickups(count)
-        if count < previous:
-            # Cursor reverted (save-reload / warp). Re-deliver the dropped remote
-            # items promptly — but OFF the read loop, since _attempt_delivery
-            # awaits a run_lua reply only this loop can read (awaiting it here
-            # would deadlock). Scheduling returns immediately so the handler
-            # doesn't block the read loop.
+        # The cursor moved — drive the next delivery from here, not just the 2s
+        # poll. Either way it must run OFF the read loop, since _attempt_delivery
+        # awaits a run_lua reply only this loop can read (awaiting here deadlocks).
+        if count > previous:
+            # Forward advance: a received backlog ("release") — each grant's
+            # count-advance push clocks the next item. Spawn an attempt per push;
+            # an over-eager/duplicate send is a no-op (the game rejects any
+            # ReceivePickup whose index doesn't match its live counter), so the
+            # forward path does NOT want the revert path's single-flight
+            # coalescing — that would drop a push landing while a prior attempt is
+            # still finishing, stalling the drain.
+            asyncio.ensure_future(self._attempt_delivery())
+        elif count < previous:
+            # Cursor reverted (save-reload / warp): re-deliver the dropped remote
+            # items via the coalesced path (which also yields to an in-flight warp
+            # doing its own restore).
             log.debug("game ReceivedPickups reverted %d -> %d; scheduling "
                       "re-delivery off the read loop", previous, count)
             self._schedule_revert_delivery()
@@ -959,12 +994,15 @@ class DreadContext(CommonContext):
         """Schedule a single ``_attempt_delivery`` to run off the read loop.
 
         Called from ``_handle_received_pickups`` (which runs ON the read loop and
-        therefore cannot await ``run_lua``). The task is tracked and
-        non-overlapping: a burst of revert pushes coalesces into at most one
-        in-flight delivery task, so we never spawn unbounded/overlapping tasks
-        nor fight the warp path. The warp path does its own restore under
-        ``_warp_in_progress``; ``_attempt_delivery`` already no-ops while that
-        flag is set, so a revert push observed mid-warp won't double-deliver.
+        therefore cannot await ``run_lua``) for the cursor-revert case
+        (save-reload / warp). The task is tracked and non-overlapping: a burst of
+        revert pushes coalesces into at most one in-flight delivery task, which
+        re-reads the latest cursor when it fires, so we never spawn
+        unbounded/overlapping tasks nor fight the warp path. The warp path does
+        its own restore under ``_warp_in_progress``; ``_attempt_delivery`` already
+        no-ops while that flag is set, so a revert push observed mid-warp won't
+        double-deliver. (The forward backlog-drain case does NOT use this — see
+        ``_handle_received_pickups`` for why it spawns per-push instead.)
         """
         if self._warp_in_progress:
             # The warp path is rewinding the cursor itself and will re-deliver
@@ -973,11 +1011,11 @@ class DreadContext(CommonContext):
             return
         if self._revert_delivery_task is not None and \
                 not self._revert_delivery_task.done():
-            # A re-delivery is already queued/running; it will read the latest
+            # A delivery is already queued/running; it will read the latest
             # cursor when it fires, so coalesce this push into it.
             return
         self._revert_delivery_task = asyncio.create_task(
-            self._attempt_delivery(), name="dread-revert-delivery")
+            self._attempt_delivery(), name="dread-delivery-off-loop")
 
     def _resolve_item(self, network_item: Any) -> tuple[Optional[DreadItem], str]:
         item_id = _field(network_item, "item", 0)
