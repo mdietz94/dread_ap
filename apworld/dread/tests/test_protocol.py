@@ -150,3 +150,21 @@ def test_pickup_location_key():
 ])
 def test_pickup_class_for(patcher_item_id, expected_class):
     assert pickup_class_for(patcher_item_id) == expected_class
+
+
+def test_pickup_resource_stage_power_bomb_grants_unlock_plus_capacity():
+    """The Main Power Bomb must grant the unlock flag AND the ammo capacity;
+    granting only ITEM_WEAPON_POWER_BOMB leaves the player at 0/0 (unusable,
+    shows "?")."""
+    from dread.client.protocol import pickup_resource_stage
+    assert pickup_resource_stage("ITEM_WEAPON_POWER_BOMB", 2) == [
+        {"item_id": "ITEM_WEAPON_POWER_BOMB", "quantity": 1},
+        {"item_id": "ITEM_WEAPON_POWER_BOMB_MAX", "quantity": 2},
+    ]
+
+
+def test_pickup_resource_stage_passthrough_for_ordinary_items():
+    from dread.client.protocol import pickup_resource_stage
+    assert pickup_resource_stage("ITEM_WEAPON_MISSILE_MAX", 10) == [
+        {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 10},
+    ]
