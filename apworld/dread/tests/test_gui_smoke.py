@@ -22,7 +22,7 @@ def test_gui_module_imports_when_kivy_present():
     from dread.client import gui
 
     assert hasattr(gui, "DreadManager")
-    assert hasattr(gui, "ReconnectPopup")
+    assert hasattr(gui, "SwitchesPopup")
     # The log pane tails the client package logger; confirm the derivation
     # resolves to the shared "<pkg>.client" parent (not gui itself).
     assert gui._CLIENT_LOGGER.endswith(".client")
