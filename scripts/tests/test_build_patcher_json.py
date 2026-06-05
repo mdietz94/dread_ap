@@ -58,7 +58,7 @@ def _template() -> dict:
                                     "enable_room_name_display": "NEVER"}},
         },
         "game_patches": {"raven_beak_damage_table_handling": "consistent_low",
-                         "nerf_power_bombs": True},
+                         "nerf_power_bombs": True, "default_x_released": False},
         "objective": {"required_artifacts": 3, "hints": ["hint text"]},
     }
 
@@ -230,6 +230,7 @@ def test_cosmetic_combat_overrides_applied():
             "enable_room_name_display": "WITH_FADE",
             "raven_beak_damage_table_handling": "consistent_high",
             "nerf_power_bombs": False,
+            "default_x_released": True,
         },
     })
     ai = out["cosmetic_patches"]["config"]["AIManager"]
@@ -241,6 +242,7 @@ def test_cosmetic_combat_overrides_applied():
     assert out["cosmetic_patches"]["lua"]["custom_init"]["enable_death_counter"] is True
     assert out["game_patches"]["raven_beak_damage_table_handling"] == "consistent_high"
     assert out["game_patches"]["nerf_power_bombs"] is False
+    assert out["game_patches"]["default_x_released"] is True
 
 
 def test_cosmetic_combat_absent_leaves_template_untouched():
