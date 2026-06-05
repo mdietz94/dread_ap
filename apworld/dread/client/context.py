@@ -45,6 +45,7 @@ from .protocol import (
     build_restore_grant_lua,
     build_set_received_pickups_lua,
     pickup_class_for,
+    pickup_resource_stage,
 )
 from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
@@ -504,8 +505,8 @@ class DreadContext(CommonContext):
                       "delivery stalled", _field(network_item, "item", 0), received)
             return
         message = f"Received {dread_item.ap_item_name} from {sender}"
-        progression = [[{"item_id": dread_item.patcher_item_id,
-                         "quantity": dread_item.quantity}]]
+        progression = [pickup_resource_stage(dread_item.patcher_item_id,
+                                             dread_item.quantity)]
         inv_idx = self.state.game_inventory_index()
         # Surface each delivery attempt. The game grants only when the sent
         # received/inventory indices match its live counters, then silently

@@ -39,6 +39,7 @@ from ._vendor import (
     vendor_unavailable_diagnostic,
     vendored_open_dread_rando_src,
 )
+from .client.protocol import pickup_resource_stage
 
 
 def _patcher_subprocess_env(env: Optional[dict[str, str]] = None) -> dict[str, str]:
@@ -224,9 +225,11 @@ def placements_to_overrides(
             quantity = int(p.get("quantity", 1))
             if not patcher_item_id:
                 continue  # defensive — events were already filtered
-            pickup_resources[key] = [[
-                {"item_id": patcher_item_id, "quantity": quantity}
-            ]]
+            # Expand to the full resource stage — single resource for most
+            # items, but the Main Power Bomb grants the unlock flag + capacity
+            # pair (see pickup_resource_stage), without which the player gets a
+            # 0/0-ammo power bomb that shows as "?" in the menu.
+            pickup_resources[key] = [pickup_resource_stage(patcher_item_id, quantity)]
             # Overwrite the template's stale caption so the in-game popup names
             # the AP-placed item, not the starter-preset's vanilla one (e.g. a
             # pedestal now holding a Missile Tank shouldn't still say "Flash

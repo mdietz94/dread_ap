@@ -99,6 +99,28 @@ def pickup_class_for(patcher_item_id: str) -> str:
     return PATCHER_ITEM_ID_TO_CLASS.get(patcher_item_id, "RandomizerPowerup")
 
 
+def pickup_resource_stage(patcher_item_id: str, quantity: int) -> list[dict]:
+    """Expand one ``(item_id, quantity)`` into the resource stage the game
+    grants for that pickup (a list of ``{"item_id", "quantity"}`` dicts).
+
+    Most items are a single resource. The **Main Power Bomb** is the lone
+    exception: it must grant the weapon-unlock flag (``ITEM_WEAPON_POWER_BOMB``)
+    AND the ammo capacity (``ITEM_WEAPON_POWER_BOMB_MAX``) together. Granting
+    only ``ITEM_WEAPON_POWER_BOMB`` unlocks the weapon but leaves the player at
+    0/0 capacity — ``RandomizerPowerup.IncreaseAmmo`` only feeds
+    ``ITEM_WEAPON_POWER_BOMB_CURRENT`` off a ``..._MAX`` grant, never off the
+    bare unlock item — so power bombs are unusable and the HUD/menu shows
+    nothing. This mirrors open-dread-rando's canonical ``schema.json`` example
+    (``{POWER_BOMB:1}`` + ``{POWER_BOMB_MAX:N}``). The pickup's ``quantity`` is
+    the starting capacity ``N``."""
+    if patcher_item_id == "ITEM_WEAPON_POWER_BOMB":
+        return [
+            {"item_id": "ITEM_WEAPON_POWER_BOMB", "quantity": 1},
+            {"item_id": "ITEM_WEAPON_POWER_BOMB_MAX", "quantity": int(quantity)},
+        ]
+    return [{"item_id": patcher_item_id, "quantity": int(quantity)}]
+
+
 def build_receive_pickup_lua(
     *,
     message: str,

@@ -156,7 +156,10 @@ def _build_placements(*, starting_missiles: int = 15, energy_per_tank: int = 100
 
 def test_starting_power_bombs_quantity_routes_to_pickup_resource():
     """The Power Bomb placement's quantity (controlled by StartingPowerBombs)
-    must land in the patcher's pickup_resources for that location."""
+    must land in the patcher's pickup_resources as the ammo CAPACITY
+    (ITEM_WEAPON_POWER_BOMB_MAX), alongside the weapon-unlock flag. Granting
+    only ITEM_WEAPON_POWER_BOMB leaves the player at 0/0 ammo — an unusable
+    power bomb that reads as "?" in the menu."""
     from dread.patcher_pipeline import placements_to_overrides
 
     payload = _build_placements(power_bomb_quantity=4)
@@ -164,7 +167,10 @@ def test_starting_power_bombs_quantity_routes_to_pickup_resource():
     key = "s030_baselab/item_missiletank_001"
     assert key in overrides["pickup_resources"]
     resources = overrides["pickup_resources"][key]
-    assert resources == [[{"item_id": "ITEM_WEAPON_POWER_BOMB", "quantity": 4}]]
+    assert resources == [[
+        {"item_id": "ITEM_WEAPON_POWER_BOMB", "quantity": 1},
+        {"item_id": "ITEM_WEAPON_POWER_BOMB_MAX", "quantity": 4},
+    ]]
 
 
 def test_starting_missiles_routes_to_template_starting_items():
