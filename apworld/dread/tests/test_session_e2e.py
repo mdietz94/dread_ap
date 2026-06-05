@@ -176,6 +176,25 @@ async def test_full_session_happy_path():
 
 
 @pytest.mark.asyncio
+async def test_item_amounts_override_wire_delivery_quantity():
+    """A wire-delivered (multiworld) Missile Tank must grant the seed's
+    configured ``item_amounts`` amount, not the static items.json default (2).
+    ``_item_amounts`` is populated from slot_data on connect; set it directly
+    here since _setup doesn't route through the slot_data handler."""
+    ctx, dp, fake = await _setup()
+    try:
+        ctx._item_amounts = {"Missile Tank": 5}
+        missile = _ap_id_for(dp, "Missile Tank")
+        await ctx._on_received_items({"index": 0, "items": [_network_item(missile)]})
+        await _drive(ctx, fake, target=1)
+        assert fake.received_pickups == 1
+        # 5 (the option), not the items.json default of 2.
+        assert fake.inventory_of(MISSILE_ITEM) == 5
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_defines_rl_namespace_on_connect():
     ctx, _, fake = await _setup()
     try:

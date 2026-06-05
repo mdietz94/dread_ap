@@ -173,6 +173,40 @@ def test_starting_power_bombs_quantity_routes_to_pickup_resource():
     ]]
 
 
+@pytest.mark.parametrize(
+    "ap_item_name, patcher_item_id, amount",
+    [
+        ("Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 5),
+        ("Missile+ Tank", "ITEM_WEAPON_MISSILE_MAX", 25),
+        ("Power Bomb Tank", "ITEM_WEAPON_POWER_BOMB_MAX", 3),
+        ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 2),
+        ("Speed Booster Upgrade", "ITEM_UPGRADE_SPEED_BOOST_CHARGE", 4),
+    ],
+)
+def test_ammo_amount_quantity_routes_to_pickup_resource(
+        ap_item_name, patcher_item_id, amount):
+    """Each per-pickup ammo/upgrade amount option (mirroring Randovania's
+    `ammo_count`) must land in the patcher's pickup_resources as the granted
+    capacity. The amount rides each placement's `quantity`, which
+    placements_to_overrides expands via pickup_resource_stage."""
+    from dread.patcher_pipeline import placements_to_overrides
+
+    payload = _build_placements()
+    payload["placements"] = [
+        _make_placement(
+            scenario="s030_baselab", actor="item_missiletank_001",
+            ap_item_name=ap_item_name,
+            patcher_item_id=patcher_item_id,
+            quantity=amount,
+        ),
+    ]
+    overrides = placements_to_overrides(payload)
+    key = "s030_baselab/item_missiletank_001"
+    assert overrides["pickup_resources"][key] == [
+        [{"item_id": patcher_item_id, "quantity": amount}]
+    ]
+
+
 def test_starting_missiles_routes_to_template_starting_items():
     from dread.patcher_pipeline import (
         load_starter_template, placements_to_overrides, merge_overrides,
@@ -254,6 +288,15 @@ class _FakeMultiWorld:
     def push_precollected(self, item) -> None:
         self.precollected_items.append(item)
 
+    def get_player_name(self, player) -> str:
+        return "TestSlot"
+
+    def get_locations(self, player):
+        # _build_placements_payload iterates this; an empty world is enough to
+        # exercise the slot_data fields (item_amounts, starting_items) that don't
+        # depend on placed items.
+        return []
+
 
 def _build_world(**option_overrides):
     """Construct a DreadWorld bound to a fake multiworld, with the given
@@ -286,6 +329,45 @@ def test_pool_total_equals_non_event_locations():
     from dread.Locations import location_table
     target = sum(1 for l in location_table if l.pickup_type != "event")
     assert len(mw.itempool) == target
+
+
+@pytestmark_runtime
+def test_item_amounts_reflect_options_in_slot_data():
+    """The per-pickup ammo/upgrade amount options must flow into the slot_data
+    ``item_amounts`` map, which the client reads to grant the configured amount
+    on the live wire path (multiworld deliveries)."""
+    world, _ = _build_world(
+        missile_tank_ammo=5,
+        missile_plus_tank_ammo=25,
+        power_bomb_tank_ammo=3,
+        flash_shift_upgrade_amount=2,
+        speed_booster_upgrade_amount=4,
+        starting_power_bombs=2,
+    )
+    payload = world.fill_slot_data()
+    assert payload["item_amounts"] == {
+        "Power Bomb": 2,
+        "Missile Tank": 5,
+        "Missile+ Tank": 25,
+        "Power Bomb Tank": 3,
+        "Flash Shift Upgrade": 2,
+        "Speed Booster Upgrade": 4,
+    }
+
+
+@pytestmark_runtime
+def test_item_amounts_default_to_randovania_values():
+    """A default seed reproduces the starter-preset ammo amounts."""
+    world, _ = _build_world()
+    payload = world.fill_slot_data()
+    assert payload["item_amounts"] == {
+        "Power Bomb": 2,
+        "Missile Tank": 2,
+        "Missile+ Tank": 10,
+        "Power Bomb Tank": 1,
+        "Flash Shift Upgrade": 1,
+        "Speed Booster Upgrade": 1,
+    }
 
 
 @pytestmark_runtime
