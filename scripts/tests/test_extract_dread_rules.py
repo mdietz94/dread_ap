@@ -16,11 +16,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from extract_dread_rules import (  # noqa: E402
+    CompileError,
     Header,
     IMPOSSIBLE,
     RDV_ITEM_TO_AP,
     TRIVIAL,
     absorb_or,
+    ast_to_dnf,
+    dnf_to_ast,
     enumerate_paths,
     mk_and,
     mk_or,
@@ -136,18 +139,54 @@ def test_translate_resource_item():
         "type": "item", "name": "Morph Ball", "amount": 1}
 
 
-def test_translate_resource_trick_level_1_is_trivial():
+def test_translate_resource_trick_is_symbolic():
+    """v3: tricks are kept symbolic (name + level) instead of collapsed at
+    compile time. The per-trick level is resolved at AP-generation time."""
     hdr = _empty_header()
-    req = {"type": "resource", "data": {
-        "type": "tricks", "name": "IBJ", "amount": 1, "negate": False}}
-    assert translate_requirement(req, hdr) == TRIVIAL
+    for level in (1, 2, 3, 4, 5):
+        req = {"type": "resource", "data": {
+            "type": "tricks", "name": "IBJ", "amount": level, "negate": False}}
+        assert translate_requirement(req, hdr) == {
+            "type": "trick", "name": "IBJ", "level": level}
 
 
-def test_translate_resource_trick_level_2_is_impossible():
+def test_translate_resource_unknown_trick_raises():
     hdr = _empty_header()
     req = {"type": "resource", "data": {
-        "type": "tricks", "name": "IBJ", "amount": 2, "negate": False}}
-    assert translate_requirement(req, hdr) == IMPOSSIBLE
+        "type": "tricks", "name": "NotATrick", "amount": 1, "negate": False}}
+    with pytest.raises(CompileError):
+        translate_requirement(req, hdr)
+
+
+def test_trick_node_dnf_round_trip():
+    """A symbolic trick survives AST → DNF → AST so it reaches the artifact."""
+    ast = {"type": "trick", "name": "IBJ", "level": 2}
+    dnf = ast_to_dnf(ast)
+    assert dnf == frozenset({frozenset({("trick", "IBJ", 2)})})
+    assert dnf_to_ast(dnf) == ast
+
+
+def test_trick_atom_combines_with_items_in_dnf():
+    ast = {"type": "or", "items": [
+        {"type": "item", "name": "Morph Ball", "amount": 1},
+        {"type": "trick", "name": "Walljump", "level": 3},
+    ]}
+    dnf = ast_to_dnf(ast)
+    assert frozenset({("item", "Morph Ball", 1)}) in dnf
+    assert frozenset({("trick", "Walljump", 3)}) in dnf
+
+
+def test_disjunct_sort_key_prefers_item_only_over_trick_gated():
+    """The cap penalty must keep item-only paths ahead of trick-gated ones, so
+    truncation can only over-restrict a trick-disabled player (never falsely
+    reach). A single trick atom sorts AFTER a two-item, trick-free disjunct."""
+    from extract_dread_rules import _disjunct_sort_key
+    item_only = frozenset({("item", "Morph Ball", 1), ("item", "Spider", 1)})
+    trick_gated = frozenset({("trick", "Walljump", 2)})
+    assert _disjunct_sort_key(item_only) < _disjunct_sort_key(trick_gated)
+    # Two trick-free disjuncts keep pre-v3 (len, sorted) ordering.
+    short = frozenset({("item", "Morph Ball", 1)})
+    assert _disjunct_sort_key(short) < _disjunct_sort_key(item_only)
 
 
 def test_translate_resource_event():
@@ -209,9 +248,12 @@ def test_translate_and_or_recursion():
         ]}},
     ]}}
     out = translate_requirement(req, hdr)
-    # Trick at level 1 is trivial, so the OR collapses to trivial,
-    # which is then absorbed by the AND.
-    assert out == {"type": "item", "name": "Morph Ball", "amount": 1}
+    # v3: the trick stays symbolic, so the OR keeps it and the AND keeps both
+    # the Morph item and the (single-child OR collapsed) trick atom.
+    assert out == {"type": "and", "items": [
+        {"type": "item", "name": "Morph Ball", "amount": 1},
+        {"type": "trick", "name": "IBJ", "level": 1},
+    ]}
 
 
 def test_unmapped_item_fails_loudly():

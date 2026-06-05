@@ -61,7 +61,10 @@ if not CACHE_DIR.exists():
 # that doesn't match — we never want a stale artifact silently passing.
 # v1: pre-v0.3 (no sum / damage_threshold)
 # v2: sum + damage_threshold nodes (v0.3, ammo + HP-budget gating)
-SCHEMA_VERSION = 2
+# v3: tricks kept SYMBOLIC ({"type":"trick","name","level"}) instead of
+#     collapsed at compile time; one file, no per-level bake. Per-trick
+#     levels are resolved at AP-generation time (apworld/dread/Tricks.py).
+SCHEMA_VERSION = 3
 
 ALL_AREAS = [
     "Artaria", "Burenia", "Cataris", "Dairon", "Elun",
@@ -283,11 +286,6 @@ class Header:
     templates: dict[str, dict]          # template_name -> requirement tree
     dock_weakness: dict[str, dict]      # (dock_type, weakness_name) -> {open, lock}
     starting_location: dict
-    # Highest trick tier the solver may assume (1=Beginner, 2=Intermediate,
-    # 3=Advanced). A TrickReq of level N translates to Trivial when
-    # N <= trick_level, else Impossible. Default 1 keeps existing callers
-    # (and the M1/Gate-A behavior) unchanged.
-    trick_level: int = 1
 
     @classmethod
     def from_json(cls, hdr: dict) -> "Header":
@@ -421,15 +419,15 @@ def translate_requirement(
             return {"type": "event", "name": rname}
 
         if rtype == "tricks":
-            # A TrickReq of level N (amount) is assumed satisfiable when the
-            # configured trick_level is at least N — i.e. the seed ASSUMES the
-            # player can perform every trick up through `header.trick_level`.
-            # Level 1 ("Beginner") covers basic shinesparks / bomb jumps from
-            # clear ledges; higher tiers unlock progressively harder tech.
-            # Baked per level into compiled_rules_l{1,2,3}.json.
-            if amount <= header.trick_level:
-                return TRIVIAL
-            return IMPOSSIBLE
+            # Keep the trick SYMBOLIC — the level (amount) is carried through to
+            # the compiled output and resolved at AP-generation time against the
+            # seed's per-trick config (apworld/dread/Tricks.py). A requirement
+            # ``trick N`` is assumed satisfiable iff the effective level for that
+            # trick is >= N. (Pre-v3 this collapsed to Trivial/Impossible against
+            # one global header.trick_level and baked three files.)
+            if rname not in header.tricks_by_short:
+                raise CompileError(f"unknown trick {rname!r}")
+            return {"type": "trick", "name": rname, "level": amount}
 
         if rtype == "damage":
             return translate_damage(rname, amount)
@@ -675,11 +673,18 @@ TRIVIAL_DNF: DNF = frozenset({frozenset()})
 
 
 def _disjunct_sort_key(disjunct: Disjunct) -> tuple:
-    """Stable total order for the disjunct cap. Primary key = length, so
-    truncation keeps the shortest (easiest) paths and drops the longest;
-    the secondary key (sorted atoms) replaces frozenset iteration order,
-    which is hash-seed-dependent, so repeated bakes are byte-reproducible."""
-    return (len(disjunct), tuple(sorted(disjunct)))
+    """Stable total order for the disjunct cap. Primary key = number of trick
+    atoms, so item-only paths are always preferred over trick-gated ones at the
+    cap — a trick-disabled player keeps any item-only path, so truncation can
+    only ever *over*-restrict (never falsely-reach). Secondary key = length, so
+    truncation keeps the shortest (easiest) paths and drops the longest; the
+    tertiary key (sorted atoms) replaces frozenset iteration order, which is
+    hash-seed-dependent, so repeated bakes are byte-reproducible.
+
+    Disjuncts with zero trick atoms keep their pre-v3 relative order
+    (``(len, sorted)``), so non-trick rules stay byte-for-byte identical."""
+    n_tricks = sum(1 for a in disjunct if a[0] == "trick")
+    return (n_tricks, len(disjunct), tuple(sorted(disjunct)))
 
 
 def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
@@ -701,10 +706,10 @@ def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
     if t == "event":
         return frozenset({frozenset({("event", ast["name"])})})
     if t == "trick":
-        # Translator should have collapsed these, but be defensive.
-        if int(ast.get("level", 1)) <= 1:
-            return TRIVIAL_DNF
-        return EMPTY_DNF
+        # Symbolic (v3): carry name + level as an opaque atom; the lambda
+        # compiler resolves it against the seed's per-trick config. Treated
+        # like any other cost atom by the DNF engine.
+        return frozenset({frozenset({("trick", ast["name"], int(ast.get("level", 1)))})})
     if t == "sum":
         # Opaque counted-resource atom — the lambda compiler resolves
         # ``base + Σ count·per_unit ≥ threshold`` at runtime. Two sum atoms
@@ -782,6 +787,8 @@ def dnf_to_ast(dnf: DNF) -> dict:
                 and_items.append({"type": "item", "name": a[1], "amount": a[2]})
             elif a[0] == "event":
                 and_items.append({"type": "event", "name": a[1]})
+            elif a[0] == "trick":
+                and_items.append({"type": "trick", "name": a[1], "level": a[2]})
             elif a[0] == "sum":
                 terms = [{"name": n, "per_unit": p} for n, p in a[1]]
                 and_items.append({"type": "sum", "terms": terms,
@@ -1127,6 +1134,31 @@ def _substitute_events(ast: dict, event_cost: dict) -> dict:
     return ast
 
 
+def _strip_tricks_above(ast: dict, floor: int) -> dict:
+    """Replace every trick atom with level > ``floor`` by IMPOSSIBLE; keep tricks
+    at level <= floor SYMBOLIC (unchanged). Simplifies the surrounding AND/OR.
+
+    Used for compile_forward's recovery pass (see its two-pass union). Keeping
+    tricks symbolic adds a trick atom to every gated disjunct, so the harder
+    (level >= 2) variants crowd the bounded-DNF cap and truncate the long
+    item-only / Beginner-trick detours to deep pickups (marking them unreachable
+    at low trick configs though a path exists). The recovery pass strips just the
+    level > floor edges — removing that crowding — while leaving the floor-level
+    (default Beginner) tricks symbolic, so they're still resolved per-trick at
+    generation time (disable a Beginner trick and the atom goes false). OR-ing
+    this pass into the full symbolic rules restores the low paths with NO false
+    positives: every recovered disjunct is item-only or gated on a still-symbolic
+    floor-level trick."""
+    t = ast.get("type")
+    if t == "trick":
+        return IMPOSSIBLE if int(ast.get("level", 1)) > floor else ast
+    if t == "and":
+        return mk_and([_strip_tricks_above(c, floor) for c in ast["items"]])
+    if t == "or":
+        return mk_or([_strip_tricks_above(c, floor) for c in ast["items"]])
+    return ast
+
+
 def _location_easiest_hp(ast: dict) -> int | float:
     """For a compiled-rule AST, return the HP needed via the EASIEST
     surviving disjunct — min over OR-paths of (max no-suit
@@ -1235,7 +1267,9 @@ def compile_forward(
     ap_loc_by_pickup_index: dict,
     *,
     max_rounds: int = 40,
-    cap: int = 32,
+    node_cap: int = 32,
+    edge_cap: int = 32,
+    strip_tricks_above: int | None = None,
 ) -> tuple[dict, dict, dict]:
     """Randovania-style forward resolver over the global graph, emitting
     ITEM-ONLY rules.
@@ -1253,7 +1287,22 @@ def compile_forward(
     bootstrap like ordinary AP item logic. Returns
     (rules_by_loc, event_rule_by_name, event_region_by_name); all rules are
     item-only and global (region_access becomes a star, boss/EMMI gated
-    directly). Requires translate_requirement's negated temporal → Trivial."""
+    directly). Requires translate_requirement's negated temporal → Trivial.
+
+    ``node_cap`` / ``edge_cap`` bound the per-node reach DNF and per-edge
+    requirement DNF respectively (split so a future tweak can raise one without
+    the other — raising edge_cap explodes compile time via AND-expansion).
+
+    ``strip_tricks_above`` runs the resolver with trick edges above that level
+    treated as IMPOSSIBLE (tricks at/below it stay symbolic). main() runs a
+    SECOND pass with floor=1 and OR-s it into the symbolic per-pickup rules:
+    keeping ALL tricks symbolic adds disjuncts that crowd the bounded-DNF cap and
+    truncate the long item-only / Beginner-trick detours to deep pickups, so this
+    recovery pass — with the level>=2 competition removed — restores them. The
+    union is sound (every recovered disjunct is item-only or gated on a
+    still-symbolic Beginner trick, so it is resolved per-trick at generation time
+    with no false positive) and the full symbolic pass still supplies the
+    higher-level trick shortcuts."""
     edges, nodes = build_global_graph(areas, header)
     start = header.starting_location
     entry = (start["region"], start["area"], start["node"])
@@ -1269,12 +1318,15 @@ def compile_forward(
     node_reach: dict = {}
     for _ in range(max_rounds):
         round_edges = {
-            u: [(v, _substitute_events(req, event_cost)) for v, req in adj]
+            u: [(v, _substitute_events(
+                    _strip_tricks_above(req, strip_tricks_above)
+                    if strip_tricks_above is not None else req, event_cost))
+                for v, req in adj]
             for u, adj in edges.items()
         }
         node_reach = enumerate_paths(
             [entry], round_edges, set(nodes.keys()),
-            max_disjuncts_per_node=cap, max_disjuncts_per_edge=cap,
+            max_disjuncts_per_node=node_cap, max_disjuncts_per_edge=edge_cap,
         )
         newly = {nm for k, nm in ev_name_by_node.items()
                  if nm not in event_cost
@@ -1338,14 +1390,6 @@ def main(argv: list[str] | None = None) -> int:
         default=DATA_DIR / "compiled_rules.json",
         help="output path for compiled_rules.json",
     )
-    parser.add_argument(
-        "--trick-level",
-        type=int,
-        default=1,
-        choices=(1, 2, 3),
-        help="highest trick tier the solver may assume "
-             "(1=Beginner, 2=Intermediate, 3=Advanced). Bake one file per level.",
-    )
     args = parser.parse_args(argv)
 
     if args.all:
@@ -1358,7 +1402,6 @@ def main(argv: list[str] | None = None) -> int:
     pinned = (CACHE_DIR / "PINNED_COMMIT.txt").read_text().strip()
     header_data = json.loads((CACHE_DIR / "header.json").read_text())
     header = Header.from_json(header_data)
-    header.trick_level = args.trick_level
 
     ap_loc_by_key, ap_region_scenario = load_ap_locations()
     ap_items = json.loads((DATA_DIR / "items.json").read_text())
@@ -1390,11 +1433,32 @@ def main(argv: list[str] | None = None) -> int:
     out_rules, event_rule_by_name, event_region_by_name = compile_forward(
         all_area_data, header, ap_loc_by_actor, ap_loc_by_pickup_index)
 
+    # Recovery pass with level>=2 trick edges stripped (Beginner tricks kept
+    # symbolic). The full symbolic pass's harder-trick disjuncts crowd the
+    # bounded-DNF cap and truncate the long item-only / Beginner-trick detours to
+    # deep pickups (marking them unreachable at low trick configs though a path
+    # exists); this pass — without that crowding — keeps them. OR-ing it in
+    # restores those paths with NO false positives: every recovered disjunct is
+    # item-only or gated on a still-symbolic Beginner trick (resolved per-trick at
+    # generation time). The full symbolic pass still supplies level>=2 shortcuts.
+    print("running recovery pass (level>=2 tricks stripped) for union ...")
+    item_rules, item_event_rules, _ = compile_forward(
+        all_area_data, header, ap_loc_by_actor, ap_loc_by_pickup_index,
+        strip_tricks_above=1)
+    out_rules = {
+        loc: mk_or([item_rules.get(loc, IMPOSSIBLE), ast])
+        for loc, ast in out_rules.items()
+    }
+
     # Victory: inline the goal event's item-only cost (no event atoms remain).
-    victory_ast = _substitute_events(
-        translate_requirement(header_data["victory_condition"], header),
-        event_rule_by_name,
-    )
+    # Union the symbolic and recovery goal costs for the same reason.
+    victory_translated = translate_requirement(
+        header_data["victory_condition"], header)
+    victory_ast = mk_or([
+        _substitute_events(
+            _strip_tricks_above(victory_translated, 1), item_event_rules),
+        _substitute_events(victory_translated, event_rule_by_name),
+    ])
 
     # ---- Build the events list ------------------------------------------------
     # Events are inlined into the per-pickup rules and the victory_condition,
@@ -1450,7 +1514,6 @@ def main(argv: list[str] | None = None) -> int:
         "schema_version": SCHEMA_VERSION,
         "pinned_commit": pinned,
         "areas_compiled": sorted(all_area_data.keys()),
-        "trick_level": args.trick_level,
         "victory_condition": victory_ast,
         "region_access": region_access,
         "events": events_out,

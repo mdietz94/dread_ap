@@ -74,8 +74,6 @@ Thumbs.db
 # zip distribution, so end users still get them.
 # ============================================================================
 apworld/dread/data/compiled_rules.json
-apworld/dread/data/compiled_rules_l2.json
-apworld/dread/data/compiled_rules_l3.json
 apworld/dread/data/events.json
 
 # ============================================================================

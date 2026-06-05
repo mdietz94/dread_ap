@@ -360,7 +360,7 @@ event renames as a deliberate seed-bumping event.
 | Item | Why deferred |
 |---|---|
 | Cross-region access in `Regions.py` | Gate B. The compiler already collects `cross_region_exits` per area; emitting them to compiled_rules.json + rewiring `create_regions()` to consume them is mechanical but out of Gate A's "high-impact bar" framing. Without it `accessibility: items` mode fails. |
-| `TrickLevel` Choice option in `Options.py` | Gate B. Requires three pre-baked rule files (`compiled_rules_l{1,2,3}.json`) plus the per-trick-level compile pass. |
+| `TrickLevel` Choice option in `Options.py` | Gate B. (Superseded: per-trick toggles, world_version 0.5.0 — tricks are kept symbolic in ONE `compiled_rules.json` and resolved per-trick at generation time; the three-file bake is gone. See CLAUDE.md "Per-trick toggles".) |
 | Three trick-level rule files | Gate B. The compiler already accepts trick configuration, but the apworld currently only loads `compiled_rules.json` — adding the dispatch layer is small but unblocks nothing for v0.1 single-player. |
 | Stale docstrings in some test files | Cosmetic. Touched the ones in Rules.py / Regions.py / World.py; test files' historical M1 comments are mostly self-correcting through the LATE_GAME-with-events refactor. |
 

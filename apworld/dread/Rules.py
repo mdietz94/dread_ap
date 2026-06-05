@@ -14,9 +14,12 @@ Milestone 2 plumbing (this file):
     compiled artifact (currently ``state.has("Event: Ship", player)``).
 
 Gate B shipped (see ``docs/randovania-logic-port-notes.md``):
-  * Trick level is a user option. ``load_compiled_rules(trick_level)``
-    picks one of three pre-baked artifacts; each collapses tricks at or
-    below the chosen tier to Trivial and higher tiers to False.
+  * Per-trick configuration (world_version 0.5.0). Tricks are kept SYMBOLIC
+    in one ``compiled_rules.json`` (``{"type":"trick","name","level"}``);
+    ``compile_to_lambda`` resolves each against the slot's effective per-trick
+    levels (``Tricks.effective_trick_levels`` — global ``Trick Level`` baseline
+    plus per-trick overrides). The old three-file (Beginner/Intermediate/
+    Advanced) bake is gone.
   * Cross-region access is modeled. ``compiled_rules.json`` carries a
     ``region_access`` map (global reach rule per region); Regions.py
     gates Menu→region on it, composing with the per-pickup reach rules.
@@ -53,8 +56,15 @@ def _const_false(_: Any) -> bool:
     return False
 
 
-def compile_to_lambda(ast: dict, player: int) -> Predicate:
+def compile_to_lambda(
+    ast: dict, player: int, trick_levels: dict[str, int] | None = None
+) -> Predicate:
     """Translate a compiled rule AST into a Predicate.
+
+    ``trick_levels`` maps each trick short_name to the slot's effective level
+    (``Tricks.effective_trick_levels``); a ``trick`` atom of level N is assumed
+    iff ``N <= trick_levels[name]``. A trick missing from the map (or no map at
+    all) resolves to level 0 = disabled, the conservative fallback.
 
     Closure-capture care: every list-comprehension binds locals (`name`,
     `amount`, etc.) eagerly so the resulting lambda isn't bitten by
@@ -82,10 +92,13 @@ def compile_to_lambda(ast: dict, player: int) -> Predicate:
         return lambda state, n=f"Event: {name}": state.has(n, player)
 
     if t == "trick":
+        # Symbolic (v3): the trick is assumed iff the slot's effective level for
+        # it is at least this requirement's level. A constant per seed (depends
+        # only on options, not collected items), so it never reintroduces the
+        # item↔event cycle the forward resolver exists to break.
         level = int(ast.get("level", 1))
-        # The compiler should have already collapsed these, but defend
-        # in case a hand-edited rule slips through.
-        return _const_true if level <= 1 else _const_false
+        eff = (trick_levels or {}).get(ast["name"], 0)
+        return _const_true if level <= eff else _const_false
 
     if t == "sum":
         terms = tuple((tr["name"], int(tr["per_unit"])) for tr in ast["terms"])
@@ -113,7 +126,7 @@ def compile_to_lambda(ast: dict, player: int) -> Predicate:
         return _dthr_pred
 
     if t == "and":
-        children = [compile_to_lambda(c, player) for c in ast["items"]]
+        children = [compile_to_lambda(c, player, trick_levels) for c in ast["items"]]
         if not children:
             return _const_true
         if len(children) == 1:
@@ -121,7 +134,7 @@ def compile_to_lambda(ast: dict, player: int) -> Predicate:
         return lambda state, cs=children: all(c(state) for c in cs)
 
     if t == "or":
-        children = [compile_to_lambda(c, player) for c in ast["items"]]
+        children = [compile_to_lambda(c, player, trick_levels) for c in ast["items"]]
         if not children:
             return _const_false
         if len(children) == 1:
@@ -131,48 +144,32 @@ def compile_to_lambda(ast: dict, player: int) -> Predicate:
     raise ValueError(f"unknown rule AST type: {t!r}")
 
 
-# Trick-level → pre-baked rule file. Beginner is the canonical
-# compiled_rules.json (so the default reproduces historical behavior); the
-# higher tiers are baked siblings. All three are produced by
-# scripts/extract_dread_rules.py --trick-level {1,2,3}.
-_TRICK_LEVEL_FILE = {
-    1: "compiled_rules.json",
-    2: "compiled_rules_l2.json",
-    3: "compiled_rules_l3.json",
-}
-
 # Must match scripts/extract_dread_rules.py::SCHEMA_VERSION. A mismatch means
-# the on-disk artifact predates a vocabulary change (e.g. v1 had `damage`
-# nodes, v2 has `sum` + `damage_threshold`) and would silently route through
-# stale collapses. Fail closed and prompt for a regen.
-EXPECTED_SCHEMA_VERSION = 2
+# the on-disk artifact predates a vocabulary change (v1 had `damage` nodes, v2
+# added `sum` + `damage_threshold`, v3 keeps tricks symbolic) and would silently
+# route through stale semantics. Fail closed and prompt for a regen.
+EXPECTED_SCHEMA_VERSION = 3
 
 
-def load_compiled_rules(trick_level: int = 1) -> dict[str, Any]:
-    """Load the pre-baked rule set for the given trick level.
+def load_compiled_rules() -> dict[str, Any]:
+    """Load the single compiled rule set.
 
-    Unknown level → canonical L1. A missing ``_lN`` file falls back to the
-    canonical ``compiled_rules.json`` so a dev box that only baked L1 still
-    works; a missing canonical file raises FileNotFoundError, preserving the
-    "everything reachable" fallback that set_rules / create_regions honor.
+    Since v3 there is ONE artifact: tricks are kept symbolic and resolved
+    per-trick at AP-generation time (see ``compile_to_lambda`` /
+    ``Tricks.effective_trick_levels``), so there is no longer a file per trick
+    level. A missing file raises FileNotFoundError, preserving the "everything
+    reachable" fallback that set_rules / create_regions honor.
 
-    Raises ``RuntimeError`` if the artifact's ``schema_version`` does not
-    match ``EXPECTED_SCHEMA_VERSION`` — regenerate with
-    ``python scripts/extract_dread_rules.py --trick-level {1,2,3}``."""
-    name = _TRICK_LEVEL_FILE.get(int(trick_level), "compiled_rules.json")
-    try:
-        compiled = load_json(name)
-    except FileNotFoundError:
-        if name != "compiled_rules.json":
-            return load_compiled_rules(1)
-        raise
+    Raises ``RuntimeError`` if the artifact's ``schema_version`` does not match
+    ``EXPECTED_SCHEMA_VERSION`` — regenerate with
+    ``python scripts/extract_dread_rules.py --all``."""
+    compiled = load_json("compiled_rules.json")
     version = compiled.get("schema_version")
     if version != EXPECTED_SCHEMA_VERSION:
         raise RuntimeError(
             f"compiled_rules.json schema_version={version!r} but loader "
             f"expects {EXPECTED_SCHEMA_VERSION}. Regenerate with "
-            f"`python scripts/extract_dread_rules.py --trick-level "
-            f"{{1,2,3}}`."
+            f"`python scripts/extract_dread_rules.py --all`."
         )
     return compiled
 
@@ -193,11 +190,14 @@ def set_rules(world) -> None:
     """
     from worlds.generic.Rules import add_rule  # local import for test isolation
 
+    from .Tricks import effective_trick_levels
+
     multiworld = world.multiworld
     player = world.player
+    trick_levels = effective_trick_levels(world.options)
 
     try:
-        compiled = load_compiled_rules(int(world.options.trick_level.value))
+        compiled = load_compiled_rules()
     except FileNotFoundError:
         # No compiled rules — preserve "everything reachable" behavior
         # so the apworld still loads in pre-compile dev environments.
@@ -215,7 +215,7 @@ def set_rules(world) -> None:
             # Compiled rule for a location not in our data table —
             # surface but don't crash so we can iterate.
             continue
-        predicate = compile_to_lambda(rule_ast, player)
+        predicate = compile_to_lambda(rule_ast, player, trick_levels)
         add_rule(location, predicate)
 
     # 2. Events are NOT AP items/locations anymore — their reach cost is inlined
@@ -260,7 +260,7 @@ def set_rules(world) -> None:
     #    state.has("Event: Ship", player). When DNA is required, AND in the
     #    "collected N Metroid DNA" check; N=0 leaves the bare ship goal.
     victory_ast = compiled.get("victory_condition", {"type": "trivial"})
-    base_victory = compile_to_lambda(victory_ast, player)
+    base_victory = compile_to_lambda(victory_ast, player, trick_levels)
     if n_dna > 0:
         dna_names = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))
         multiworld.completion_condition[player] = (

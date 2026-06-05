@@ -190,8 +190,9 @@ event locations; the lambda compiler's event branch consults
 `victory_condition` from compiled output. Gate B: cross-region access is
 modeled via a global-reachability `region_access` map (item-only — see the
 notes retro for why) that gates `Menu→region`, so boss/EMMI locations are no
-longer trivially reachable; Trick Level is a user option backed by three
-pre-baked `compiled_rules{,_l2,_l3}.json`. The compiler is now deterministic
+longer trivially reachable; Trick Level is a user option (NOTE: superseded by
+the per-trick model — see the "Per-trick toggles" update below; tricks are no
+longer pre-collapsed into three files). The compiler is now deterministic
 (stable disjunct-cap tie-break). Generation smoke produces a solvable seed
 under `accessibility: minimal` across trick levels and DNA configs.
 Negation handling was made faithful (config-`misc` flags resolved against our
@@ -265,9 +266,9 @@ Consequence by design: AP logic now gates only **entry** to a pickup, never
 the ability to leave it. Fill may place any item in a one-way room; if the
 player gets stuck, they `/warp`. Generation is *strictly easier* than before
 (escape rules and vanilla pins only ever added constraints), so the prior
-"0 fill failures" coverage still holds. `compiled_rules{,_l2,_l3}.json` are
-regenerated escape-free by `conftest._ensure_compiled_rules` (they're
-gitignored, never committed). The historical escape-cascade saga (commit
+"0 fill failures" coverage still holds. `compiled_rules.json` is
+regenerated escape-free by `conftest._ensure_compiled_rules` (it's
+gitignored, never committed; one file since the per-trick update). The historical escape-cascade saga (commit
 `7c5a451`, the Morph-Ball single-copy circular-dependency, the 106→24
 tightening count) is kept here only as the rationale for *why* the runtime
 approach replaced it — none of that code remains.
@@ -418,9 +419,49 @@ the real upstream `open_dread_rando` `schema.json`, and all 12 original_actor
 refs survive. Tests in `scripts/tests/test_seed_to_patcher.py` +
 `test_build_patcher_json.py`.
 
+Per-trick toggles: SHIPPED (world_version 0.5.0). Tricks are no longer collapsed
+to Trivial/Impossible at compile time against one global level (the old
+`compiled_rules{,_l2,_l3}.json` triple-bake is GONE — `.gitignore`, release.yml,
+conftest, install_apworld all single-file now; `SCHEMA_VERSION` 2→3). Instead the
+compiler keeps each trick SYMBOLIC: `translate_requirement` emits
+`{"type":"trick","name","level"}`, `ast_to_dnf`/`dnf_to_ast` carry a
+`("trick", name, level)` atom (the DNF engine treats it as an opaque cost atom;
+`_substitute_events` already passes non-event atoms through), and
+`_disjunct_sort_key` penalizes trick atoms so item-only paths win at the cap —
+truncation can only ever over-restrict a trick-disabled player, never
+falsely-reach (AP accessibility stays sound). One `compiled_rules.json` now
+carries trick atoms. **Two-pass union** (the bake runs the forward resolver
+twice, ~10 min): keeping ALL tricks symbolic adds disjuncts that crowd the
+bounded-DNF cap and truncate the long item-only / Beginner-trick detours to ~9
+deep pickups (Burenia/Cataris/Ferenia/Hanubia), marking them unreachable at low
+trick configs though a path exists. So `main()` runs a second `compile_forward`
+with `strip_tricks_above=1` (level>=2 trick edges → impossible, Beginner tricks
+kept SYMBOLIC) and OR-s it into the per-pickup rules + victory. The union is
+sound — every recovered disjunct is item-only or gated on a still-symbolic
+Beginner trick (resolved per-trick at generation, disable-able with no false
+positive) — and the full symbolic pass still supplies level>=2 shortcuts. Result:
+all 149 pickups + victory reachable at Beginner with a full loadout (old default
+behavior preserved), verified. At AP-generation time `Rules.compile_to_lambda(ast, player,
+trick_levels)` resolves each atom against `Tricks.effective_trick_levels(options)`
+— a constant per seed (depends only on options, not items), so it never
+reintroduces the item↔event cycle the forward resolver breaks. `apworld/dread/Tricks.py`
+is the single source of truth: the 26 Randovania tricks (short/long name, hidden
+flag; Suitless is hidden→always follows global), level names (1=Beginner…5=Mastery),
+and the effective-level helper. Options: the global `TrickLevel` stays as the
+BASELINE (now extended with Expert/Mastery) applied to any trick left on
+`follow_global`; `Options.py` generates one `TrickOverride(Choice)` subclass per
+non-hidden trick (`trick_<name>`, default follow_global) from `VISIBLE_TRICKS`
+and composes `DreadOptions` via `make_dataclass`. Untouched YAMLs behave exactly
+as the old Beginner default. Tests: `tests/test_trick_level.py` (rewritten:
+effective-level map + symbolic-atom resolution + artifact carries trick atoms),
+`tests/test_rule_compiler.py` + `scripts/tests/test_extract_dread_rules.py`
+(trick translation now symbolic, DNF round-trip, sort-key penalty). Faithful win:
+levels 4–5 (Expert/Mastery) are now reachable, which the old 1–3 file system
+could not express.
+
 Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
-collapse ammo to >=1 and damage to suit ownership); per-trick-category
-granularity; door/elevator randomization. Real-hardware (or Ryujinx)
+collapse ammo to >=1 and damage to suit ownership); door/elevator randomization.
+Real-hardware (or Ryujinx)
 end-to-end run is the next manual gate — but now an *integration smoke* (does the
 bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
 NOT a semantics probe: the counter/cutscene questions are settled from source.
