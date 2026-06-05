@@ -274,6 +274,62 @@ class EnergyPerTank(Range):
     default = 100
 
 
+# ---------------------------------------------------------------------------
+# Per-pickup grant amounts — mirror Randovania's `ammo_pickup_configuration`
+# `ammo_count` knob (one per ammo-style pickup). Like the count knobs above,
+# these are logic-inert today (compiled rules collapse ammo to "have >=1 of the
+# granting item", CLAUDE.md v0.3 deferred) — pure difficulty/flavor. Defaults
+# match the Randovania starter preset, so omitting them in YAML reproduces
+# today's patcher output exactly. The chosen amount flows to BOTH the seed-baked
+# patcher path (per-placement `quantity`) AND the live wire path (via slot_data
+# `item_amounts`), so own and remotely-delivered copies grant the same amount.
+# ---------------------------------------------------------------------------
+
+class MissileTankAmmo(Range):
+    """How much missile capacity each Missile Tank grants. Randovania
+    `ammo_count` default: 2."""
+    display_name = "Missile Tank Ammo"
+    range_start = 0
+    range_end = 99
+    default = 2
+
+
+class MissilePlusTankAmmo(Range):
+    """How much missile capacity each Missile+ Tank grants. Randovania
+    `ammo_count` default: 10."""
+    display_name = "Missile+ Tank Ammo"
+    range_start = 0
+    range_end = 99
+    default = 10
+
+
+class PowerBombTankAmmo(Range):
+    """How much Power Bomb capacity each Power Bomb Tank grants. Randovania
+    `ammo_count` default: 1."""
+    display_name = "Power Bomb Tank Ammo"
+    range_start = 0
+    range_end = 10
+    default = 1
+
+
+class FlashShiftUpgradeAmount(Range):
+    """How many extra Flash Shift chain dashes each Flash Shift Upgrade grants.
+    Randovania `ammo_count` default: 1 (one additional dash per upgrade)."""
+    display_name = "Flash Shift Upgrade Amount"
+    range_start = 1
+    range_end = 9
+    default = 1
+
+
+class SpeedBoosterUpgradeAmount(Range):
+    """How many Speed Booster charge-time upgrades each Speed Booster Upgrade
+    grants. Randovania `ammo_count` default: 1."""
+    display_name = "Speed Booster Upgrade Amount"
+    range_start = 1
+    range_end = 9
+    default = 1
+
+
 @dataclass
 class DreadOptions(PerGameCommonOptions):
     starting_area: StartingArea
@@ -305,3 +361,8 @@ class DreadOptions(PerGameCommonOptions):
     starting_power_bombs: StartingPowerBombs
     starting_missiles: StartingMissiles
     energy_per_tank: EnergyPerTank
+    missile_tank_ammo: MissileTankAmmo
+    missile_plus_tank_ammo: MissilePlusTankAmmo
+    power_bomb_tank_ammo: PowerBombTankAmmo
+    flash_shift_upgrade_amount: FlashShiftUpgradeAmount
+    speed_booster_upgrade_amount: SpeedBoosterUpgradeAmount

@@ -13,6 +13,8 @@ from dread.client.protocol import (  # noqa: E402
     _to_lua_table, build_receive_pickup_lua, DreadPickupLocation,
     pickup_class_for, build_kill_player_lua, build_read_death_count_lua,
     DEATH_COUNT_PROP, BOSS_ARENA_CAMERAS, build_boss_arenas_lua_table,
+    NAV_ROOM_CAMERAS, build_nav_rooms_lua_table,
+    SAVE_STATION_CAMERAS, build_save_rooms_lua_table,
 )
 
 
@@ -68,6 +70,61 @@ def test_boss_arena_keys_are_lua_barewords():
             assert ident.match(cam), cam
 
 
+def test_nav_rooms_lua_table_shape():
+    lua = build_nav_rooms_lua_table()
+    # Same nested-table shape as the boss table. s010_cave's North Navigation
+    # Station (collision_camera_065) is a representative Adam room.
+    assert lua.startswith("{") and lua.endswith("}")
+    assert "s010_cave={" in lua
+    assert "collision_camera_065=true" in lua
+    # Camera ids are emitted as barewords — no quotes.
+    assert '"' not in lua
+
+
+def test_nav_room_keys_are_lua_barewords():
+    import re as _re
+    ident = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+    for scenario, cams in NAV_ROOM_CAMERAS.items():
+        assert ident.match(scenario), scenario
+        for cam in cams:
+            assert ident.match(cam), cam
+
+
+def test_save_rooms_lua_table_shape():
+    lua = build_save_rooms_lua_table()
+    # Same nested-table shape; s010_cave's West Save Station (collision_camera_012).
+    assert lua.startswith("{") and lua.endswith("}")
+    assert "s010_cave={" in lua
+    assert "collision_camera_012=true" in lua
+    assert '"' not in lua
+
+
+def test_save_room_keys_are_lua_barewords():
+    import re as _re
+    ident = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+    for scenario, cams in SAVE_STATION_CAMERAS.items():
+        assert ident.match(scenario), scenario
+        for cam in cams:
+            assert ident.match(cam), cam
+
+
+def test_warp_block_tables_disjoint_per_scenario():
+    # Within a single scenario, the three no-warp camera sets must not overlap, or
+    # the guards would contradict / a room would be misclassified. (The SAME camera
+    # id in DIFFERENT scenarios is fine — every guard keys on the live scenario.)
+    tables = {
+        "boss": BOSS_ARENA_CAMERAS,
+        "nav": NAV_ROOM_CAMERAS,
+        "save": SAVE_STATION_CAMERAS,
+    }
+    scenarios = set().union(*(t.keys() for t in tables.values()))
+    for scenario in scenarios:
+        sets = {name: set(t.get(scenario, {})) for name, t in tables.items()}
+        for a, b in (("boss", "nav"), ("boss", "save"), ("nav", "save")):
+            overlap = sets[a] & sets[b]
+            assert not overlap, (scenario, a, b, overlap)
+
+
 def test_to_lua_table_list():
     assert _to_lua_table([1, 2, 3]) == "{1, 2, 3}"
 
@@ -105,6 +162,38 @@ def test_build_receive_pickup_lua_shape():
     # inner quotes are escaped:
     assert '\\"ITEM_WEAPON_MISSILE_MAX\\"' in lua
     assert "quantity=2" in lua
+
+
+def test_build_receive_pickup_lua_default_is_five_args():
+    # No popup/reschedule overrides → the lone-item 5-arg call (bootstrap
+    # defaults to 7.0s / 7.5s). This keeps normal single-item receipt unchanged.
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_X", "quantity": 1}]],
+        received_pickup_index=2, inventory_index=4,
+    )
+    assert lua.endswith(", 2, 4)")
+
+
+def test_build_receive_pickup_lua_burst_emits_timing_overrides():
+    # During a release the client passes short popup/reschedule seconds so the
+    # backlog drains fast instead of one item every ~7.5s.
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_X", "quantity": 1}]],
+        received_pickup_index=2, inventory_index=4,
+        popup_seconds=1.5, reschedule_seconds=0.3,
+    )
+    assert lua.endswith(", 2, 4, 1.5, 0.3)")
+
+
+def test_build_receive_pickup_lua_partial_override_fills_default():
+    # A single override still produces a valid 7-arg call, defaulting the other
+    # to the bootstrap's lone-item constant.
+    lua = build_receive_pickup_lua(
+        message="m", progression=[[{"item_id": "ITEM_X", "quantity": 1}]],
+        received_pickup_index=0, inventory_index=0,
+        reschedule_seconds=0.3,
+    )
+    assert lua.endswith(", 0, 0, 7, 0.3)")
 
 
 def test_build_receive_pickup_lua_custom_class():

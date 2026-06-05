@@ -20,6 +20,7 @@ Run with:  python -m pytest apworld/dread/tests/test_session_e2e.py -v
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import time
 import unittest.mock
@@ -176,6 +177,25 @@ async def test_full_session_happy_path():
 
 
 @pytest.mark.asyncio
+async def test_item_amounts_override_wire_delivery_quantity():
+    """A wire-delivered (multiworld) Missile Tank must grant the seed's
+    configured ``item_amounts`` amount, not the static items.json default (2).
+    ``_item_amounts`` is populated from slot_data on connect; set it directly
+    here since _setup doesn't route through the slot_data handler."""
+    ctx, dp, fake = await _setup()
+    try:
+        ctx._item_amounts = {"Missile Tank": 5}
+        missile = _ap_id_for(dp, "Missile Tank")
+        await ctx._on_received_items({"index": 0, "items": [_network_item(missile)]})
+        await _drive(ctx, fake, target=1)
+        assert fake.received_pickups == 1
+        # 5 (the option), not the items.json default of 2.
+        assert fake.inventory_of(MISSILE_ITEM) == 5
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_defines_rl_namespace_on_connect():
     ctx, _, fake = await _setup()
     try:
@@ -274,6 +294,47 @@ async def test_progressive_beam_restart_does_not_re_advance():
             await asyncio.sleep(0.02)
         assert fake.received_pickups == 2
         assert fake.inventory_of("ITEM_WEAPON_WAVE_BEAM") == 0  # no over-advance
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_release_burst_drains_fast_and_uses_burst_timings():
+    """A release (burst of received items) drains via the post-grant pushes
+    without one poll per item, and every item except the last carries the short
+    burst popup/reschedule overrides so it isn't gated to ~7.5s each."""
+    ctx, dp, fake = await _setup()
+    try:
+        # Prime the client's game-mode mirror to INGAME (a poll would normally
+        # read this) so delivery isn't held by the menu gate. We do this once,
+        # NOT per item — the point of this test is that the post-grant pushes
+        # clock the backlog without a poll between each item.
+        ctx.state.update_game_state(game_mode_id="INGAME")
+        missile = _ap_id_for(dp, "Missile Tank")
+        items = [_network_item(missile) for _ in range(5)]
+        await ctx._on_received_items({"index": 0, "items": items})
+        # _on_received_items kicks off delivery; the fake's post-grant pushes
+        # then clock each subsequent item — no explicit per-item poll needed.
+        assert await _await_until(lambda: fake.received_pickups >= 5, timeout=5.0)
+        assert fake.received_pickups == 5
+        assert len(fake.onpickedup_calls) == 5
+        assert fake.inventory_of(MISSILE_ITEM) == 10
+
+        # Only calls that actually granted matter for the timing assertion;
+        # rejected (stale-index) retries are harmless no-ops. Group the granted
+        # sources by received index to find the first accepted call per item.
+        granted = {}
+        for src in fake.receive_srcs:
+            m = re.search(r',\s*(\d+)\s*,\s*\d+(?:\s*,[^)]*)?\)\s*$', src)
+            if m is None:
+                continue
+            idx = int(m.group(1))
+            granted.setdefault(idx, src)
+        # Items 0..3 had more behind them → burst timings (3.0/3.5, rendered by
+        # _lua_number as "3"/"3.5"); item 4 was last → lone-item default (5-arg).
+        for idx in range(4):
+            assert ", 3, 3.5)" in granted[idx], (idx, granted.get(idx))
+        assert granted[4].rstrip().endswith(", 4, 4)"), granted[4]
     finally:
         await _teardown(ctx, fake)
 

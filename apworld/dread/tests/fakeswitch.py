@@ -43,7 +43,9 @@ _RECEIVE_RE = re.compile(
     r'(\w+)\s*,\s*'                 # 2: cls
     r'("(?:[^"\\]|\\.)*")\s*,\s*'   # 3: progression source (quoted)
     r'(-?\d+)\s*,\s*'              # 4: receivedPickupIndex
-    r'(-?\d+)\s*\)'                # 5: inventoryIndex
+    r'(-?\d+)\s*'                 # 5: inventoryIndex
+    r'(?:,[^)]*)?'                # optional popup/reschedule overrides (burst)
+    r'\)'
 )
 
 
@@ -116,6 +118,13 @@ class FakeDreadGame:
         # When set, the /warp primitive's in-Lua guard returns "in_boss" before
         # Game.LoadScenario, so no revert/restore happens.
         self.in_boss_arena: bool = False
+        # Models RL.IsInNavRoom() — true while Samus stands in a Navigation
+        # (Adam) room. When set, the /warp guard returns "in_nav" before
+        # Game.LoadScenario.
+        self.in_nav_room: bool = False
+        # Models RL.IsInSaveRoom() — true while Samus stands at a save station.
+        # When set, the /warp guard returns "in_save" before Game.LoadScenario.
+        self.in_save_room: bool = False
         # Last committed save. Game.LoadScenario (the /warp primitive) reloads
         # Samus from this, reverting anything collected/delivered since save().
         self.saved_inventory: dict[str, int] = {}
@@ -138,6 +147,9 @@ class FakeDreadGame:
         # ---- observability ----
         self.onpickedup_calls: list[list[tuple[str, int]]] = []
         self.lua_log: list[str] = []
+        # Full RL.ReceivePickup(...) source strings, in arrival order — lets
+        # tests assert the burst popup/reschedule overrides the client sends.
+        self.receive_srcs: list[str] = []
         self.bootstrap_chunks: list[str] = []
         self.bootstrapped: bool = False
         self.hello_ack: Optional[W.HelloAck] = None
@@ -279,21 +291,26 @@ class FakeDreadGame:
         self.inventory_index += 1
         self.received_pickups += 1
 
-    def _receive_pickup(self, src: str) -> None:
+    def _receive_pickup(self, src: str) -> bool:
+        """Apply one ``RL.ReceivePickup`` call. Returns True iff it granted
+        (so the caller can mirror the bootstrap's post-grant counter pushes)."""
+        self.receive_srcs.append(src)
         m = _RECEIVE_RE.search(src)
         if m is None:
-            return
+            return False
         msg = _unescape_lua_string(m.group(1))
         prog = _unescape_lua_string(m.group(3))
         recv_index = int(m.group(4))
         inv_index = int(m.group(5))
         self.lua_log.append(msg)
         if self._pending is not None:
-            return
+            return False
         if recv_index != self.received_pickups or inv_index != self.inventory_index:
-            return
+            return False
+        before = self.received_pickups
         self._pending = _parse_progression_stages(prog)
         self._try_grant_pending()
+        return self.received_pickups > before
 
     # ---- wire / dispatch ----------------------------------------------
 
@@ -333,18 +350,32 @@ class FakeDreadGame:
             return
 
         if "RL.ReceivePickup(" in src:
-            self._receive_pickup(src)
+            granted = self._receive_pickup(src)
             await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            if granted:
+                # Mirror the bootstrap's post-grant reschedule
+                # (RL.GivePendingPickup): it re-sends InventoryIndex then
+                # ReceivedPickups, which is what clocks the next delivery.
+                # Inventory first so the client's next ReceivePickup carries the
+                # post-grant index. (In the real mod this fires after the
+                # reschedule delay; here it is immediate, which is fine — the
+                # client drives delivery off these pushes, not off wall-clock.)
+                await self._send(W.Inventory(index=self.inventory_index, inventory=[]))
+                await self._send(W.ReceivedPickups(count=self.received_pickups))
             return
 
         if "Game.LoadScenario(" in src:
             # The /warp primitive. Model the in-Lua gates, then reload from save.
             # Gate order mirrors the warp src: INGAME, then boss arena, then
-            # cutscene/user-interaction.
+            # Nav room, then save station, then cutscene/user-interaction.
             if self.game_mode != "INGAME":
                 result = "not_ingame"
             elif self.in_boss_arena and "RL.IsInBossArena()" in src:
                 result = "in_boss"
+            elif self.in_nav_room and "RL.IsInNavRoom()" in src:
+                result = "in_nav"
+            elif self.in_save_room and "RL.IsInSaveRoom()" in src:
+                result = "in_save"
             elif self.in_cutscene:
                 result = "no_interaction"
             else:

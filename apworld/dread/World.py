@@ -110,6 +110,18 @@ class DreadWorld(World):
             self.player,
         )
 
+    def create_filler(self) -> Item:
+        """Junk fill. ``get_filler_item_name`` returns a real expansion (usually
+        Missile Tank), whose items.json classification is advancement — but a
+        FILLER copy must be non-advancement, or AP's fill (and our own pool
+        padding) would silently inject extra advancement items, re-saturating
+        the progression pool we deliberately cap (see
+        MIXED_CLASSIFICATION_FIRST_N / test_missile_tank_classification). Force
+        ``filler`` regardless of the item's default class."""
+        return self.create_item(
+            self.get_filler_item_name(), classification=ItemClassification.filler
+        )
+
     def create_regions(self) -> None:
         create_regions(self)
 
@@ -158,18 +170,27 @@ class DreadWorld(World):
         #     each, so pool_count=2 matches the game; the FIRST copy is
         #     logic-gating (any rule disjunct needing the upgrade is
         #     satisfiable with just one), the second is QoL routing.
-        # (Missile Tank has NO entry on purpose: its 3634 amount=1 atoms +
-        # `sum` ammo gates need state.has/count to see it, so EVERY copy stays
-        # progression_skip_balancing — not capped to N. Precollecting it does
-        # NOT substitute for advancement: AP's collect_item skips non-
-        # advancement items, so a `useful` precollected copy never enters
-        # prog_items and state.has("Missile Tank") would be permanently False.
-        # That was the items/full + minimal generation bug; see
-        # test_missile_tank_copies_are_advancement.)
+        #   - Missile Tank: all its logic atoms are amount=1, satisfied by the
+        #     PRECOLLECTED copy (BASE_STARTING_ITEMS), which is advancement
+        #     because create_item reads items.json's class, NOT this cap. Its
+        #     `sum` missile-capacity gates have a real binding of only 17 (= 15
+        #     base + the precollected copy's 2): every higher threshold (up to
+        #     203) is OR'd with a weapon alternative that's always reachable, so
+        #     NO findable Missile Tank is logically required (verified 0
+        #     unreachable with this cap at 0, across all trick levels). Leaving
+        #     all 60 findable copies advancement starved AP's fill_restrictive
+        #     of swap space (advancement items must land in reachable spots),
+        #     making generation fragile and slow. Cap to a small safety margin
+        #     and let the rest be `useful` (non-advancement → placeable
+        #     anywhere). The precollected copy keeps state.has("Missile Tank")
+        #     true. (create_filler() force-classes its junk `filler` for the
+        #     same reason — get_filler_item_name returns Missile Tank.) See
+        #     test_missile_tank_classification.
         MIXED_CLASSIFICATION_FIRST_N = {
             "Missile+ Tank": 1,
             "Flash Shift Upgrade": 1,
             "Speed Booster Upgrade": 1,
+            "Missile Tank": 3,
             # Region floors (Hanubia at trick levels 1/2) gate Menu→Region on
             # `state.has("Energy Tank", 3)`; the first 3 copies are
             # progression-relevant, the remaining 5 are pure HP capacity and
@@ -268,16 +289,16 @@ class DreadWorld(World):
         with guidance pointing at the user-facing knobs to lower.
 
         Only NON-advancement copies are eligible for trimming. Removing an
-        advancement copy would silently break logic: e.g. every Missile Tank is
-        ``progression_skip_balancing`` (its ``state.has("Missile Tank")`` atom
-        gates ~every location), and the first few Energy Tank / Power Bomb Tank
-        / Missile+ Tank copies are progression too. Trimming those to "make it
-        fit" would produce an unsolvable seed with no fill error (the compiled
-        rules collapse ammo to >=1, so AP's fill can't catch it). So we trim the
-        slack (filler + the useful overflow copies) and, if that isn't enough,
-        raise rather than eat a required item."""
+        advancement copy would silently break logic: the first few Energy Tank /
+        Power Bomb Tank / Missile+ Tank / Missile Tank copies are progression
+        (and the precollected Missile Tank gates ~every location). Trimming
+        those to "make it fit" would produce an unsolvable seed with no fill
+        error (the compiled rules collapse ammo to >=1, so AP's fill can't catch
+        it). So we trim the slack (filler + the useful overflow copies, which
+        now include most Missile Tanks) and, if that isn't enough, raise rather
+        than eat a required item."""
         while len(pool) < target:
-            pool.append(self.create_item(self.get_filler_item_name()))
+            pool.append(self.create_filler())
         if len(pool) <= target:
             return
         # Trim least-impactful items first — but never an advancement copy.
@@ -409,6 +430,18 @@ class DreadWorld(World):
         seed_id = str(self.multiworld.seed_name)
 
         o = self.options
+        # AP item name → per-pickup grant amount (mirrors Randovania's
+        # `ammo_count`). Shared by the placement loop (own seed-baked grants)
+        # and the slot_data `item_amounts` payload (live wire deliveries), so
+        # both paths grant the same configured amount.
+        ammo_amount_override = {
+            "Power Bomb":            int(o.starting_power_bombs.value),
+            "Missile Tank":          int(o.missile_tank_ammo.value),
+            "Missile+ Tank":         int(o.missile_plus_tank_ammo.value),
+            "Power Bomb Tank":       int(o.power_bomb_tank_ammo.value),
+            "Flash Shift Upgrade":   int(o.flash_shift_upgrade_amount.value),
+            "Speed Booster Upgrade": int(o.speed_booster_upgrade_amount.value),
+        }
         placements: list[dict[str, Any]] = []
         for loc in self.multiworld.get_locations(self.player):
             loc_data = location_name_to_location.get(loc.name)
@@ -452,10 +485,14 @@ class DreadWorld(World):
                     # shows what it grants instead of the starter preset's stale
                     # vanilla model (cross-slot items get CROSS_SLOT_MODEL).
                     patcher_model = own_item_data.model_name
-                    # Main Power Bomb pickup grants weapon + N PB capacity.
-                    # The option overrides items.json's vanilla default (2).
-                    if item.name == "Power Bomb":
-                        quantity = int(o.starting_power_bombs.value)
+                    # Per-pickup grant amounts: each option overrides items.json's
+                    # vanilla default (mirrors Randovania's `ammo_count`). The
+                    # main Power Bomb pickup grants weapon + N PB capacity; the
+                    # ammo/upgrade tanks grant their configured amount. Applied to
+                    # OWN items only — cross-slot copies keep quantity=1 and the
+                    # receiving player's own seed owns their amount.
+                    if item.name in ammo_amount_override:
+                        quantity = ammo_amount_override[item.name]
             placement = {
                 "location_name": loc_data.name,
                 "scenario": loc_data.scenario,
@@ -563,6 +600,11 @@ class DreadWorld(World):
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,
+            # Per-pickup grant amounts (AP item name → capacity). The client
+            # reads this from slot_data so wire-delivered (multiworld) copies
+            # grant the seed's configured amount instead of the items.json
+            # default. Same map the placement quantities above were baked from.
+            "item_amounts": ammo_amount_override,
             # Real AP placement hints baked into the in-game Nav Station
             # plaques. Computed in pre_output (post-fill, pre-multidata) and
             # stashed there so it's already set when this method runs later in

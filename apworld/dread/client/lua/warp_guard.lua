@@ -1,34 +1,48 @@
 -- dread_ap ORIGINAL -- NOT vendored from Randovania.
--- /warp boss-arena guard. Warping out of a boss fight with Game.LoadScenario
--- corrupts the encounter: the arena's intro / door-lock / checkpoint state
--- half-commits, so the fight can't be re-entered or reset cleanly (a player hit
--- this with Kraid -- re-entry broke the fight and the death-respawn bricked the
--- game). So the client refuses to /warp while Samus stands in a boss arena.
---
--- The engine exposes no getter for the live collision camera, but it fires
--- Scenario.OnSubAreaChange(old_sa, old_ag, new_sa, new_ag, ...) on every subarea
--- (collision-camera) transition -- the same hook the room-name display rides. We
--- WRAP it (chaining, never replacing, so the upstream body's progressive-model /
--- blast-shield / room-name updates still run) to record the live scenario +
--- subarea; RL.IsInBossArena() then checks them against the baked boss table.
+-- /warp location guards. Game.LoadScenario from the wrong room is destructive:
+--   * boss arena -> half-commits the fight's intro/door-lock/checkpoint so it
+--     can't be re-entered or reset (a player hit this with Kraid: re-entry broke
+--     the fight, the death-respawn bricked the game);
+--   * Navigation ("Adam") room / Save Station -> the conversation or save dialog
+--     keeps Samus controllable but survives the reload, stranding an undismissable
+--     box. Both are safe hubs you can walk out of, so blocking /warp costs nothing.
+-- No state flag distinguishes any of these from open play, so we gate on the live
+-- collision camera. The engine has no getter for it, but fires
+-- Scenario.OnSubAreaChange on every transition -- we WRAP that (chaining, never
+-- replacing, so upstream's progressive-model / blast-shield / room-name updates
+-- still run) to record the live scenario+subarea, then RL.IsIn*() check it.
 --
 -- We do NOT reset RL.CurrentSubArea on scenario load: that keeps the guard armed
--- through a death-respawn inside the same arena (no fresh subarea event fires, so
--- the stored Kraid camera persists and the warp stays blocked). The one residual
--- gap is connecting fresh while already standing in a boss arena -- CurrentSubArea
--- is nil until the next transition, so the very first /warp there isn't caught.
--- The wrap is installed once (RL._WarpGuardInstalled) so a reconnect re-sending
--- this bootstrap can't double-wrap and call the upstream body twice.
-RL.BossArenas = TEMPLATE("boss_arenas")
+-- through a death-respawn in the same room (no fresh subarea event fires). Residual
+-- gap: connecting fresh while already standing in a guarded room leaves
+-- CurrentSubArea nil until the next transition, so the first /warp there isn't
+-- caught. The wrap installs once (RL._WarpGuardInstalled) so a reconnect re-sending
+-- this bootstrap can't double-wrap. The RL.BossArenas / RL.NavRooms / RL.SaveRooms
+-- tables are assigned by their own bootstrap blocks (bootstrap.py), keeping this
+-- code block under the 4 KiB send buffer; RL.IsIn*() read them at /warp time, so
+-- those blocks just have to run before the first /warp (order-independent).
 
-function RL.IsInBossArena()
+-- Shared check: is the live tracked subarea in `cams` for the current scenario?
+local function _rl_subarea_in(cams_by_scenario)
     if Game.GetCurrentGameModeID() ~= 'INGAME' then return false end
     if RL.CurrentSubArea == nil then return false end
     -- Only trust the tracked subarea if it belongs to the live scenario (guards
     -- against a stale camera id colliding with a different scenario's ids).
     if RL.CurrentScenario ~= CurrentScenarioID then return false end
-    local cams = RL.BossArenas[CurrentScenarioID]
+    local cams = cams_by_scenario[CurrentScenarioID]
     return cams ~= nil and cams[RL.CurrentSubArea] == true
+end
+
+function RL.IsInBossArena()
+    return _rl_subarea_in(RL.BossArenas)
+end
+
+function RL.IsInNavRoom()
+    return _rl_subarea_in(RL.NavRooms)
+end
+
+function RL.IsInSaveRoom()
+    return _rl_subarea_in(RL.SaveRooms)
 end
 
 -- type-check guards a non-rando / unexpected ROM: if the hook is missing we

@@ -131,6 +131,19 @@ WARP_RESTORE_SETTLE_SECONDS = 0.5
 # window must comfortably exceed the worst-case cutscene-deferral of the kill.
 DEATH_SUPPRESS_WINDOW_SECONDS = 15.0
 
+# When more than one received item is waiting (an AP "release" sends a burst),
+# we override the bootstrap's lone-item popup/reschedule timings so the backlog
+# drains faster than one item every ~7.5s. The grant itself is immediate;
+# BURST_RESCHEDULE_SECONDS only gates how soon the next item is accepted, and
+# BURST_POPUP_SECONDS is the popup display time. We keep popup < reschedule (same
+# 0.5s relationship as the lone-item 7.0/7.5 default) so popups never pile up: a
+# popup finishes before the next item lands. 3.0/3.5 roughly halves the per-item
+# time during a release while keeping each notification readable. The last item
+# of a burst falls back to the lone-item default (7.0/7.5) so the player gets a
+# normal, lingering popup once the flood ends.
+BURST_POPUP_SECONDS = 3.0
+BURST_RESCHEDULE_SECONDS = 3.5
+
 
 class DreadClientCommandProcessor(ClientCommandProcessor):
     """`/`-prefixed commands typed into the Kivy command bar."""
@@ -288,6 +301,12 @@ class DreadContext(CommonContext):
         # double-count it). See _warp_to_start / _restore_after_warp.
         self._warp_in_progress: bool = False
         self.slot_data: dict = {}
+        # AP item name → per-pickup grant amount, from slot_data's `item_amounts`
+        # (the seed's Randovania-style `ammo_count` knobs). Overrides the static
+        # items.json quantity on the wire-delivery path so a remotely-delivered
+        # copy grants the seed's configured amount. Empty ⇒ fall back to
+        # items.json (older seeds / offline).
+        self._item_amounts: dict[str, int] = {}
 
         # DeathLink. ``_last_death_count`` is the last value we read from the
         # game's ProgressStat_PlayerDeaths prop; None means "no baseline yet"
@@ -462,6 +481,10 @@ class DreadContext(CommonContext):
         sd = args.get("slot_data")
         if isinstance(sd, dict):
             self.slot_data = sd
+            self._item_amounts = {
+                str(name): int(qty)
+                for name, qty in (sd.get("item_amounts") or {}).items()
+            }
         # Mirror the seed's DeathLink choice into the AP connection tag. Sends a
         # ConnectUpdate (we're already Connected here), which is the supported
         # way to toggle the tag post-connect.
@@ -530,8 +553,11 @@ class DreadContext(CommonContext):
             progression = [list(stage) for stage in dread_item.progression_stages]
             cls = dread_item.pickup_cls or "RandomizerPowerup"
         else:
-            progression = [pickup_resource_stage(dread_item.patcher_item_id,
-                                                 dread_item.quantity)]
+            # Per-pickup grant amount: the seed's `item_amounts` (Randovania
+            # `ammo_count` knobs) override the static items.json quantity, so a
+            # wire-delivered copy grants the same amount as the seed-baked path.
+            qty = self._item_amounts.get(dread_item.ap_item_name, dread_item.quantity)
+            progression = [pickup_resource_stage(dread_item.patcher_item_id, qty)]
             cls = pickup_class_for(dread_item.patcher_item_id)
         inv_idx = self.state.game_inventory_index()
         # Surface each delivery attempt. The game grants only when the sent
@@ -552,12 +578,24 @@ class DreadContext(CommonContext):
                     "later items are blocked behind it",
                     received, dread_item.ap_item_name, self._delivery_attempts,
                     received, inv_idx)
+        # If more items are already queued behind this one (a release), drain the
+        # backlog fast; the final item falls back to the bootstrap's lone-item
+        # defaults so its popup lingers normally. (target - received) is the
+        # number still pending, including this one.
+        if target - received > 1:
+            popup_seconds = BURST_POPUP_SECONDS
+            reschedule_seconds = BURST_RESCHEDULE_SECONDS
+        else:
+            popup_seconds = None
+            reschedule_seconds = None
         lua = build_receive_pickup_lua(
             message=message,
             progression=progression,
             received_pickup_index=received,
             inventory_index=inv_idx,
             cls=cls,
+            popup_seconds=popup_seconds,
+            reschedule_seconds=reschedule_seconds,
         )
         try:
             await self._bridge.run_lua(lua)
@@ -953,12 +991,22 @@ class DreadContext(CommonContext):
                         item=dread_item, sender=sender, inventory_index=idx))
             log.debug("game ReceivedPickups advanced %d -> %d", previous, count)
         self.state.set_game_received_pickups(count)
-        if count < previous:
-            # Cursor reverted (save-reload / warp). Re-deliver the dropped remote
-            # items promptly — but OFF the read loop, since _attempt_delivery
-            # awaits a run_lua reply only this loop can read (awaiting it here
-            # would deadlock). Scheduling returns immediately so the handler
-            # doesn't block the read loop.
+        # The cursor moved — drive the next delivery from here, not just the 2s
+        # poll. Either way it must run OFF the read loop, since _attempt_delivery
+        # awaits a run_lua reply only this loop can read (awaiting here deadlocks).
+        if count > previous:
+            # Forward advance: a received backlog ("release") — each grant's
+            # count-advance push clocks the next item. Spawn an attempt per push;
+            # an over-eager/duplicate send is a no-op (the game rejects any
+            # ReceivePickup whose index doesn't match its live counter), so the
+            # forward path does NOT want the revert path's single-flight
+            # coalescing — that would drop a push landing while a prior attempt is
+            # still finishing, stalling the drain.
+            asyncio.ensure_future(self._attempt_delivery())
+        elif count < previous:
+            # Cursor reverted (save-reload / warp): re-deliver the dropped remote
+            # items via the coalesced path (which also yields to an in-flight warp
+            # doing its own restore).
             log.debug("game ReceivedPickups reverted %d -> %d; scheduling "
                       "re-delivery off the read loop", previous, count)
             self._schedule_revert_delivery()
@@ -967,12 +1015,15 @@ class DreadContext(CommonContext):
         """Schedule a single ``_attempt_delivery`` to run off the read loop.
 
         Called from ``_handle_received_pickups`` (which runs ON the read loop and
-        therefore cannot await ``run_lua``). The task is tracked and
-        non-overlapping: a burst of revert pushes coalesces into at most one
-        in-flight delivery task, so we never spawn unbounded/overlapping tasks
-        nor fight the warp path. The warp path does its own restore under
-        ``_warp_in_progress``; ``_attempt_delivery`` already no-ops while that
-        flag is set, so a revert push observed mid-warp won't double-deliver.
+        therefore cannot await ``run_lua``) for the cursor-revert case
+        (save-reload / warp). The task is tracked and non-overlapping: a burst of
+        revert pushes coalesces into at most one in-flight delivery task, which
+        re-reads the latest cursor when it fires, so we never spawn
+        unbounded/overlapping tasks nor fight the warp path. The warp path does
+        its own restore under ``_warp_in_progress``; ``_attempt_delivery`` already
+        no-ops while that flag is set, so a revert push observed mid-warp won't
+        double-deliver. (The forward backlog-drain case does NOT use this — see
+        ``_handle_received_pickups`` for why it spawns per-push instead.)
         """
         if self._warp_in_progress:
             # The warp path is rewinding the cursor itself and will re-deliver
@@ -981,11 +1032,11 @@ class DreadContext(CommonContext):
             return
         if self._revert_delivery_task is not None and \
                 not self._revert_delivery_task.done():
-            # A re-delivery is already queued/running; it will read the latest
+            # A delivery is already queued/running; it will read the latest
             # cursor when it fires, so coalesce this push into it.
             return
         self._revert_delivery_task = asyncio.create_task(
-            self._attempt_delivery(), name="dread-revert-delivery")
+            self._attempt_delivery(), name="dread-delivery-off-loop")
 
     def _resolve_item(self, network_item: Any) -> tuple[Optional[DreadItem], str]:
         item_id = _field(network_item, "item", 0)
@@ -1049,11 +1100,15 @@ class DreadContext(CommonContext):
         in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"``,
         (c) ``not RL.IsInBossArena()`` — refusing to warp out of a boss arena,
         which corrupts the encounter (the Kraid brick: re-entry breaks the
-        fight, death-respawn bricks the game; boss-arena detection lives in
-        ``lua/warp_guard.lua``) — and (d) ``Scenario.IsUserInteractionEnabled(true)``,
-        so a /warp issued from the title screen, a boss fight, or mid-cutscene
-        returns a human-readable "blocked" reason instead of firing into invalid
-        state. Returns the status string the caller surfaces to the user."""
+        fight, death-respawn bricks the game) — (c2) ``not RL.IsInNavRoom()`` and
+        (c3) ``not RL.IsInSaveRoom()`` — refusing to warp out of a Navigation
+        (Adam) room or a save station, where the conversation / save dialog
+        survives the reload and strands an undismissable box (these collision-camera
+        detections live in ``lua/warp_guard.lua``) — and (d)
+        ``Scenario.IsUserInteractionEnabled(true)``, so a /warp issued from the
+        title screen, a boss fight, a Nav/save room, or mid-cutscene returns a
+        human-readable "blocked" reason instead of firing into invalid state.
+        Returns the status string the caller surfaces to the user."""
         if self._bridge is None or not self._bridge.is_connected():
             return "no active Switch connected"
         if not self._bootstrapped:
@@ -1084,6 +1139,19 @@ class DreadContext(CommonContext):
                 # so an older/partial VM (function nil) degrades to allowing warp
                 # rather than erroring.
                 'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
+                # Refuse to warp out of a Navigation (Adam) room — the conversation
+                # keeps Samus controllable but leaves a dialogue box that
+                # Game.LoadScenario doesn't tear down, stranding an undismissable
+                # text box. RL.IsInNavRoom is defined by lua/warp_guard.lua; guard
+                # the call so a pre-bootstrap VM (function nil) degrades to allowing
+                # the warp. A Nav room is a safe hub, so blocking here is free.
+                'if RL.IsInNavRoom and RL.IsInNavRoom() then return "in_nav" end '
+                # Refuse to warp from a save station — same stranded-dialog risk as
+                # a Nav room (the save box survives LoadScenario), and a save room
+                # is a safe hub where /warp is never needed (just save + reload).
+                # RL.IsInSaveRoom is defined by lua/warp_guard.lua; guard the call
+                # so a pre-bootstrap VM degrades to allowing the warp.
+                'if RL.IsInSaveRoom and RL.IsInSaveRoom() then return "in_save" end '
                 'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
                 'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
                 'return "ok"'
@@ -1103,6 +1171,16 @@ class DreadContext(CommonContext):
                         "corrupts the encounter (re-entry/respawn can brick the "
                         "game). If you're stuck, reload your last save from the "
                         "title screen.")
+            if body == "in_nav":
+                return ("blocked: you're in a Navigation (Adam) room — warping "
+                        "mid-conversation strands the dialogue box (you'd keep "
+                        "control with an undismissable text box). Finish talking "
+                        "to Adam or step out of the room, then /warp.")
+            if body == "in_save":
+                return ("blocked: you're at a save station — no need to /warp from "
+                        "a safe room, and a warp here can strand the save dialog. "
+                        "Save and reload from the title if you're stuck, or step "
+                        "out of the room before /warp.")
             if body == "no_interaction":
                 return "blocked: cutscene/cinematic in progress — try again in a moment"
             if body != "ok":

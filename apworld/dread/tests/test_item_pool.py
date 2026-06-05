@@ -177,6 +177,40 @@ def test_starting_power_bombs_quantity_routes_to_pickup_resource():
     ]]
 
 
+@pytest.mark.parametrize(
+    "ap_item_name, patcher_item_id, amount",
+    [
+        ("Missile Tank", "ITEM_WEAPON_MISSILE_MAX", 5),
+        ("Missile+ Tank", "ITEM_WEAPON_MISSILE_MAX", 25),
+        ("Power Bomb Tank", "ITEM_WEAPON_POWER_BOMB_MAX", 3),
+        ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 2),
+        ("Speed Booster Upgrade", "ITEM_UPGRADE_SPEED_BOOST_CHARGE", 4),
+    ],
+)
+def test_ammo_amount_quantity_routes_to_pickup_resource(
+        ap_item_name, patcher_item_id, amount):
+    """Each per-pickup ammo/upgrade amount option (mirroring Randovania's
+    `ammo_count`) must land in the patcher's pickup_resources as the granted
+    capacity. The amount rides each placement's `quantity`, which
+    placements_to_overrides expands via pickup_resource_stage."""
+    from dread.patcher_pipeline import placements_to_overrides
+
+    payload = _build_placements()
+    payload["placements"] = [
+        _make_placement(
+            scenario="s030_baselab", actor="item_missiletank_001",
+            ap_item_name=ap_item_name,
+            patcher_item_id=patcher_item_id,
+            quantity=amount,
+        ),
+    ]
+    overrides = placements_to_overrides(payload)
+    key = "s030_baselab/item_missiletank_001"
+    assert overrides["pickup_resources"][key] == [
+        [{"item_id": patcher_item_id, "quantity": amount}]
+    ]
+
+
 def test_starting_missiles_routes_to_template_starting_items():
     from dread.patcher_pipeline import (
         load_starter_template, placements_to_overrides, merge_overrides,
@@ -258,6 +292,15 @@ class _FakeMultiWorld:
     def push_precollected(self, item) -> None:
         self.precollected_items.append(item)
 
+    def get_player_name(self, player) -> str:
+        return "TestSlot"
+
+    def get_locations(self, player):
+        # _build_placements_payload iterates this; an empty world is enough to
+        # exercise the slot_data fields (item_amounts, starting_items) that don't
+        # depend on placed items.
+        return []
+
 
 def _build_world(**option_overrides):
     """Construct a DreadWorld bound to a fake multiworld, with the given
@@ -293,6 +336,45 @@ def test_pool_total_equals_non_event_locations():
 
 
 @pytestmark_runtime
+def test_item_amounts_reflect_options_in_slot_data():
+    """The per-pickup ammo/upgrade amount options must flow into the slot_data
+    ``item_amounts`` map, which the client reads to grant the configured amount
+    on the live wire path (multiworld deliveries)."""
+    world, _ = _build_world(
+        missile_tank_ammo=5,
+        missile_plus_tank_ammo=25,
+        power_bomb_tank_ammo=3,
+        flash_shift_upgrade_amount=2,
+        speed_booster_upgrade_amount=4,
+        starting_power_bombs=2,
+    )
+    payload = world.fill_slot_data()
+    assert payload["item_amounts"] == {
+        "Power Bomb": 2,
+        "Missile Tank": 5,
+        "Missile+ Tank": 25,
+        "Power Bomb Tank": 3,
+        "Flash Shift Upgrade": 2,
+        "Speed Booster Upgrade": 4,
+    }
+
+
+@pytestmark_runtime
+def test_item_amounts_default_to_randovania_values():
+    """A default seed reproduces the starter-preset ammo amounts."""
+    world, _ = _build_world()
+    payload = world.fill_slot_data()
+    assert payload["item_amounts"] == {
+        "Power Bomb": 2,
+        "Missile Tank": 2,
+        "Missile+ Tank": 10,
+        "Power Bomb Tank": 1,
+        "Flash Shift Upgrade": 1,
+        "Speed Booster Upgrade": 1,
+    }
+
+
+@pytestmark_runtime
 def test_default_pool_has_randovania_counts():
     world, mw = _build_world()
     world.create_items()
@@ -311,30 +393,42 @@ def test_default_pool_has_randovania_counts():
 
 
 @pytestmark_runtime
-def test_missile_tank_copies_are_advancement():
-    """Missile Tank MUST be advancement (progression_skip_balancing).
+def test_missile_tank_classification():
+    """The PRECOLLECTED Missile Tank must be advancement; the findable copies
+    need not be.
 
-    Regression guard for the bug fixed here: a prior commit reclassified
-    Missile Tank to "useful" on the premise that "it's precollected in
-    BASE_STARTING_ITEMS, so the atom is satisfied from turn 0." That premise
-    is false — AP's ``World.collect_item`` skips non-advancement items, so a
-    *useful* precollected Missile Tank never enters ``state.prog_items`` and
-    ``state.has("Missile Tank")`` is permanently False. Since ~every compiled
-    location rule (and all victory disjuncts) carries an ``item Missile
-    Tank>=1`` atom, that made 36 locations — including bosses — unreachable
-    with a full inventory, breaking generation under accessibility items/full
-    and (seed-dependently) minimal. The copies must be advancement so
-    ``has``/``count`` see them; skip_balancing keeps the 60 copies from
-    flooding the progression-balancing pass."""
+    Every compiled atom on Missile Tank is amount=1, so the single precollected
+    copy (BASE_STARTING_ITEMS) satisfies them all from turn 0 — and it IS
+    advancement because create_item reads items.json's classification, not the
+    MIXED cap. (Regression guard for the original bug: a *useful* precollected
+    copy never enters prog_items, so state.has("Missile Tank") would be
+    permanently False, making ~36 locations unreachable.)
+
+    The 60 findable copies, by contrast, carry no logic weight: the binding
+    missile-capacity `sum` gate is only 17 (= 15 base + the precollected copy's
+    2); every higher threshold is OR'd with a weapon alternative. Leaving all 60
+    advancement starved fill_restrictive of swap space (fragile/slow
+    generation). So only a small margin stays advancement; the rest are
+    non-advancement (`useful` from the cap + `filler` from padding)."""
     from BaseClasses import ItemClassification
     world, mw = _build_world()
     world.create_items()
+
+    # Precollected copy: advancement — the actual logic requirement.
+    pre = [it for it in mw.precollected_items if it.name == "Missile Tank"]
+    assert pre, "Missile Tank must be precollected"
+    assert all(it.advancement for it in pre), \
+        "precollected Missile Tank must be advancement (else state.has is blind)"
+
+    # Findable copies: a small advancement margin, the rest non-advancement.
     mt = [it for it in mw.itempool if it.name == "Missile Tank"]
-    assert mt, "no Missile Tank copies in pool"
-    assert all(it.advancement for it in mt), (
-        "Missile Tank copies must be advancement (else state.has is blind to "
-        f"them): {[it.classification.name for it in mt[:5]]}..."
-    )
+    assert mt, "no findable Missile Tank copies"
+    adv = sum(1 for it in mt if it.advancement)
+    assert adv == 3, f"expected 3 advancement findable Missile Tanks, got {adv}"
+    assert all(it.classification in (ItemClassification.useful,
+                                     ItemClassification.filler)
+               for it in mt if not it.advancement), \
+        "non-margin Missile Tanks must be useful/filler (non-advancement)"
 
 
 @pytestmark_runtime
@@ -472,19 +566,24 @@ def test_filler_respects_missile_tank_zero():
 
 
 @pytestmark_runtime
-def test_overflow_raises_option_error_when_unrecoverable():
-    """Set every tank to its max — even after trimming, the pool may exceed
-    149 slots. The error should be clear about which knobs to lower."""
-    from Options import OptionError
-    world, _ = _build_world(
+def test_max_tank_counts_fit_after_trim():
+    """Every tank dialed to its max no longer overflows: now that Missile Tanks
+    are mostly non-advancement, _balance_pool_to_locations can trim the junk
+    down to the location count instead of raising. (Before the Missile-Tank
+    reclassification the 60+ advancement copies were untrimmable and this raised
+    OptionError.) The requested counts sum to ~244 tanks, far more than the ~141
+    locations, so a fit proves trimming worked."""
+    world, mw = _build_world(
         energy_tank_count=20,
         energy_part_count=64,
         missile_tank_count=120,
         missile_plus_tank_count=20,
         power_bomb_tank_count=20,
     )
-    with pytest.raises(OptionError):
-        world.create_items()
+    world.create_items()  # must NOT raise
+    assert len(mw.itempool) <= 160, (
+        f"pool should be trimmed to ~location count, got {len(mw.itempool)}"
+    )
 
 
 # ---- progressive items ----------------------------------------------------
