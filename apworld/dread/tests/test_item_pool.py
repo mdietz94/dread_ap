@@ -307,30 +307,42 @@ def test_default_pool_has_randovania_counts():
 
 
 @pytestmark_runtime
-def test_missile_tank_copies_are_advancement():
-    """Missile Tank MUST be advancement (progression_skip_balancing).
+def test_missile_tank_classification():
+    """The PRECOLLECTED Missile Tank must be advancement; the findable copies
+    need not be.
 
-    Regression guard for the bug fixed here: a prior commit reclassified
-    Missile Tank to "useful" on the premise that "it's precollected in
-    BASE_STARTING_ITEMS, so the atom is satisfied from turn 0." That premise
-    is false — AP's ``World.collect_item`` skips non-advancement items, so a
-    *useful* precollected Missile Tank never enters ``state.prog_items`` and
-    ``state.has("Missile Tank")`` is permanently False. Since ~every compiled
-    location rule (and all victory disjuncts) carries an ``item Missile
-    Tank>=1`` atom, that made 36 locations — including bosses — unreachable
-    with a full inventory, breaking generation under accessibility items/full
-    and (seed-dependently) minimal. The copies must be advancement so
-    ``has``/``count`` see them; skip_balancing keeps the 60 copies from
-    flooding the progression-balancing pass."""
+    Every compiled atom on Missile Tank is amount=1, so the single precollected
+    copy (BASE_STARTING_ITEMS) satisfies them all from turn 0 — and it IS
+    advancement because create_item reads items.json's classification, not the
+    MIXED cap. (Regression guard for the original bug: a *useful* precollected
+    copy never enters prog_items, so state.has("Missile Tank") would be
+    permanently False, making ~36 locations unreachable.)
+
+    The 60 findable copies, by contrast, carry no logic weight: the binding
+    missile-capacity `sum` gate is only 17 (= 15 base + the precollected copy's
+    2); every higher threshold is OR'd with a weapon alternative. Leaving all 60
+    advancement starved fill_restrictive of swap space (fragile/slow
+    generation). So only a small margin stays advancement; the rest are
+    non-advancement (`useful` from the cap + `filler` from padding)."""
     from BaseClasses import ItemClassification
     world, mw = _build_world()
     world.create_items()
+
+    # Precollected copy: advancement — the actual logic requirement.
+    pre = [it for it in mw.precollected_items if it.name == "Missile Tank"]
+    assert pre, "Missile Tank must be precollected"
+    assert all(it.advancement for it in pre), \
+        "precollected Missile Tank must be advancement (else state.has is blind)"
+
+    # Findable copies: a small advancement margin, the rest non-advancement.
     mt = [it for it in mw.itempool if it.name == "Missile Tank"]
-    assert mt, "no Missile Tank copies in pool"
-    assert all(it.advancement for it in mt), (
-        "Missile Tank copies must be advancement (else state.has is blind to "
-        f"them): {[it.classification.name for it in mt[:5]]}..."
-    )
+    assert mt, "no findable Missile Tank copies"
+    adv = sum(1 for it in mt if it.advancement)
+    assert adv == 3, f"expected 3 advancement findable Missile Tanks, got {adv}"
+    assert all(it.classification in (ItemClassification.useful,
+                                     ItemClassification.filler)
+               for it in mt if not it.advancement), \
+        "non-margin Missile Tanks must be useful/filler (non-advancement)"
 
 
 @pytestmark_runtime
@@ -468,16 +480,21 @@ def test_filler_respects_missile_tank_zero():
 
 
 @pytestmark_runtime
-def test_overflow_raises_option_error_when_unrecoverable():
-    """Set every tank to its max — even after trimming, the pool may exceed
-    149 slots. The error should be clear about which knobs to lower."""
-    from Options import OptionError
-    world, _ = _build_world(
+def test_max_tank_counts_fit_after_trim():
+    """Every tank dialed to its max no longer overflows: now that Missile Tanks
+    are mostly non-advancement, _balance_pool_to_locations can trim the junk
+    down to the location count instead of raising. (Before the Missile-Tank
+    reclassification the 60+ advancement copies were untrimmable and this raised
+    OptionError.) The requested counts sum to ~244 tanks, far more than the ~141
+    locations, so a fit proves trimming worked."""
+    world, mw = _build_world(
         energy_tank_count=20,
         energy_part_count=64,
         missile_tank_count=120,
         missile_plus_tank_count=20,
         power_bomb_tank_count=20,
     )
-    with pytest.raises(OptionError):
-        world.create_items()
+    world.create_items()  # must NOT raise
+    assert len(mw.itempool) <= 160, (
+        f"pool should be trimmed to ~location count, got {len(mw.itempool)}"
+    )
