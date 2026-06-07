@@ -123,18 +123,22 @@ class DreadWorld(World):
             self.get_filler_item_name(), classification=ItemClassification.filler
         )
 
-    # Native region-graph logic (door/transport rando + fast per-seed
-    # reachability). Used automatically when an option needs it (door rando), and
-    # otherwise opt-in via DREAD_GRAPH_LOGIC=1 while it's validated against the
-    # closed-form path. See graph_logic.py / [[dread-native-graph-spike]].
+    # Native region-graph logic is the DEFAULT (fast per-seed reachability +
+    # door/transport/start rando). The closed-form compiled_rules.json path is
+    # the fallback — used only when logic_graph.json is absent (e.g. a partial
+    # dev tree) or when DREAD_CLOSED_FORM=1 forces it. Door/transport/non-Artaria
+    # options REQUIRE the graph and override the opt-out. See graph_logic.py /
+    # [[dread-native-graph-spike]].
     def _use_graph_logic(self) -> bool:
-        if int(self.options.door_lock_rando.value) != 0:
+        forced = (int(self.options.door_lock_rando.value) != 0
+                  or int(self.options.transport_rando.value) != 0
+                  or int(self.options.starting_area.value) != 0)
+        if forced:
             return True
-        if int(self.options.transport_rando.value) != 0:
-            return True
-        if int(self.options.starting_area.value) != 0:
-            return True  # non-Artaria spawn needs per-seed reachability
-        return os.environ.get("DREAD_GRAPH_LOGIC") == "1"
+        if os.environ.get("DREAD_CLOSED_FORM") == "1":
+            return False
+        from ._data_loader import data_exists
+        return data_exists("logic_graph.json")
 
     def generate_early(self) -> None:
         # Resolve transports, spawn, and door assignment now, so

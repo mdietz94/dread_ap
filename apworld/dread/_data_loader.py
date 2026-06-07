@@ -38,6 +38,15 @@ def read_text(name: str) -> str:
     return resource.read_text(encoding="utf-8")
 
 
+def data_exists(name: str) -> bool:
+    """Zip-safe check for whether a data file is present (e.g. the optional
+    ``logic_graph.json``). Lists the ``data/`` dir rather than reading the file."""
+    try:
+        return any(p.name == name for p in data_resource().iterdir())
+    except Exception:
+        return False
+
+
 def data_resource(*parts: str):
     """Return a ``Traversable`` for a path under the apworld's ``data/`` dir.
 
