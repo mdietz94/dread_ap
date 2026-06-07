@@ -54,9 +54,12 @@ def test_graph_schema_and_shape(graph):
 
 @graph_required
 def test_every_pickup_maps_to_an_ap_location(graph):
-    from dread.Locations import location_name_to_id
+    # Read names straight from locations.json so this runs without the AP runtime
+    # (importing dread.Locations pulls BaseClasses, absent in CI).
+    locs = json.loads((ROOT / "data" / "locations.json").read_text())
+    names = {l["name"] for l in locs}
     for _comp, name in graph["pickups"]:
-        assert name in location_name_to_id, f"pickup {name!r} not in AP locations"
+        assert name in names, f"pickup {name!r} not in AP locations"
 
 
 @graph_required
