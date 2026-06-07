@@ -75,6 +75,7 @@ Thumbs.db
 # ============================================================================
 apworld/dread/data/compiled_rules.json
 apworld/dread/data/events.json
+apworld/dread/data/logic_graph.json
 
 # ============================================================================
 # Test scratch

@@ -41,6 +41,7 @@ Skipped for now (later phases):
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -122,8 +123,22 @@ class DreadWorld(World):
             self.get_filler_item_name(), classification=ItemClassification.filler
         )
 
+    # Native region-graph logic (door/transport rando + fast per-seed
+    # reachability). Opt-in via DREAD_GRAPH_LOGIC=1 while it's validated against
+    # the closed-form path; will become the default once the graph migration
+    # lands. See graph_logic.py / [[dread-native-graph-spike]].
+    def _use_graph_logic(self) -> bool:
+        return os.environ.get("DREAD_GRAPH_LOGIC") == "1"
+
     def create_regions(self) -> None:
-        create_regions(self)
+        if self._use_graph_logic():
+            # Events are graph regions; AP's BFS must re-derive event-gated
+            # entrances when an event region becomes reachable.
+            type(self).explicit_indirect_conditions = True
+            from .graph_logic import build_regions
+            build_regions(self)
+        else:
+            create_regions(self)
 
     def create_items(self) -> None:
         # Pool layout (post-M2 + Dreadvania options):
@@ -331,7 +346,11 @@ class DreadWorld(World):
         # Rules.py wires it via compile_to_lambda(victory_condition),
         # which currently resolves to ``state.has("Event: Ship", player)``.
         # A post-set_rules override here would silently break that.
-        set_rules(self)
+        if self._use_graph_logic():
+            from .graph_logic import set_graph_rules
+            set_graph_rules(self)
+        else:
+            set_rules(self)
 
     # Progressive-item logic translation. The compiled access rules reference
     # the individual tier items by name (e.g. state.has("Wave Beam")), but when

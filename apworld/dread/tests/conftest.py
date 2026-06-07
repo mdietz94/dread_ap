@@ -86,7 +86,38 @@ def _ensure_compiled_rules() -> None:
         # assertion (focused error vs. bare CalledProcessError).
 
 
+def _ensure_logic_graph() -> None:
+    """Materialize ``logic_graph.json`` (native-graph model) if missing or older
+    than the extract script. Fast (~1s): reuses the item-only victory from
+    ``compiled_rules.json`` via ``--graph-only`` (no forward resolver). Skips
+    silently if the cache or the closed-form artifact aren't available."""
+    repo_root = ROOT.parent.parent
+    data_dir = ROOT / "data"
+    extract = repo_root / "scripts" / "extract_dread_rules.py"
+    cache = repo_root / ".dread-cache" / "randovania-logic"
+    compiled = data_dir / "compiled_rules.json"
+    target = data_dir / "logic_graph.json"
+
+    if not extract.exists() or not cache.exists() or not compiled.exists():
+        return
+    if target.exists() and target.stat().st_mtime >= extract.stat().st_mtime:
+        return
+
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    proc = subprocess.Popen(
+        [sys.executable, str(extract), "--all", "--graph-only",
+         "--out", str(compiled), "--graph-out", str(target)],
+        cwd=str(repo_root), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, err = proc.communicate()
+    if proc.returncode != 0:
+        sys.stderr.write(
+            f"\n[conftest] regen of logic_graph.json failed:\n"
+            f"{err.decode('utf-8', errors='replace')}\n")
+
+
 _ensure_compiled_rules()
+_ensure_logic_graph()
 
 
 def _install_common_client_stub() -> None:

@@ -1363,6 +1363,190 @@ def compile_forward(
 
 
 # ---------------------------------------------------------------------------
+# Native-graph emit (logic_graph.json) — the fast per-seed reachability model.
+#
+# Instead of the closed-form item-only bake, emit the SYMBOLIC graph and let AP's
+# own region sweep solve reachability per seed (O(edges), ~0.1s). Nodes collapse
+# to one Region per trivial-SCC; each cross-region edge becomes an Entrance whose
+# access rule is the symbolic edge AST. Rando-eligible door docks emit a
+# {"type":"dock","side_id":...} atom the apworld resolves per-seed against the
+# door assignment (vanilla default when door rando is off); all other docks bake
+# their requirement. Events are pure-logic regions in the apworld (no locations),
+# so victory uses the item-only `victory_condition` (passed in). See
+# scripts/spike_graph_speed.py and [[dread-native-graph-spike]].
+# ---------------------------------------------------------------------------
+
+GRAPH_SCHEMA_VERSION = 1
+
+# Dock types whose weakness can be randomized (door-lock rando). Transports
+# (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel
+# / other are structural. v1: doors only.
+RANDOMIZABLE_DOCK_TYPES = {"door"}
+
+
+def _trivial_scc(nodes: dict, conn_edges: list) -> dict:
+    """Collapse nodes into regions = strongly-connected components of the
+    TRIVIAL connection-edge digraph (free mutual reachability). Dock edges never
+    participate (they stay region boundaries). Returns {node_key: region_id}."""
+    adj = {k: [] for k in nodes}
+    radj = {k: [] for k in nodes}
+    for u, v, ast in conn_edges:
+        if v in nodes and ast.get("type") == "trivial":
+            adj[u].append(v)
+            radj[v].append(u)
+    visited: set = set()
+    order: list = []
+    for s in nodes:
+        if s in visited:
+            continue
+        stack = [(s, 0)]
+        while stack:
+            node, i = stack.pop()
+            if i == 0:
+                if node in visited:
+                    continue
+                visited.add(node)
+            if i < len(adj[node]):
+                stack.append((node, i + 1))
+                w = adj[node][i]
+                if w not in visited:
+                    stack.append((w, 0))
+            else:
+                order.append(node)
+    comp: dict = {}
+    lab = 0
+    seen: set = set()
+    for k in reversed(order):
+        if k in seen:
+            continue
+        stk = [k]
+        seen.add(k)
+        while stk:
+            x = stk.pop()
+            comp[x] = lab
+            for w in radj[x]:
+                if w not in seen:
+                    seen.add(w)
+                    stk.append(w)
+        lab += 1
+    return comp
+
+
+def emit_graph(
+    areas: dict[str, dict],
+    header: Header,
+    ap_loc_by_actor: dict,
+    ap_loc_by_pickup_index: dict,
+    victory_item_only: dict,
+) -> dict:
+    """Build the native logic graph artifact (see module header)."""
+    # Per-(dock_type,weakness) open-requirement table the apworld resolves dock
+    # atoms against.
+    weakness_requirements: dict[str, dict] = {}
+    for (dock_type, wname) in header.dock_weakness:
+        weakness_requirements[f"{dock_type}::{wname}"] = dock_open_requirement(
+            header, dock_type, wname)
+
+    scenario_of = {region: ad["extra"].get("scenario_id")
+                   for region, ad in areas.items()}
+
+    nodes: dict = {}
+    conn_edges: list = []           # (u, v, ast)
+    for region, ad in areas.items():
+        for sub_name, sub in ad["areas"].items():
+            for n_name, n in sub["nodes"].items():
+                key = (region, sub_name, n_name)
+                nodes[key] = n
+                for tgt, req in n.get("connections", {}).items():
+                    conn_edges.append((key, (region, sub_name, tgt),
+                                       translate_requirement(req, header)))
+
+    # Dock edges + per-side metadata. Rando-eligible doors emit a symbolic atom;
+    # everything else bakes its vanilla open requirement.
+    dock_edges: list = []           # (u, v, ast)
+    dock_sides: dict = {}
+    for key, n in nodes.items():
+        if n.get("node_type") != "dock":
+            continue
+        dc = n.get("default_connection")
+        if not dc:
+            continue
+        region, sub_name, n_name = key
+        dock_type = n.get("dock_type")
+        weakness = n.get("default_dock_weakness")
+        far = (dc["region"], dc["area"], dc["node"])
+        side_id = "::".join(key)
+        override = n.get("override_default_open_requirement")
+        rando_eligible = (
+            dock_type in RANDOMIZABLE_DOCK_TYPES
+            and not n.get("exclude_from_dock_rando")
+            and override is None
+            and (dock_type, weakness) in header.dock_weakness
+        )
+        if rando_eligible:
+            ast = {"type": "dock", "side_id": side_id}
+            dock_sides[side_id] = {
+                "dock_type": dock_type,
+                "default_weakness": weakness,
+                "paired_side_id": "::".join(far),
+                "incompatible_weaknesses": n.get("incompatible_dock_weaknesses", []),
+                "patcher": {"scenario": scenario_of.get(region),
+                            "actor": n.get("extra", {}).get("actor_name")},
+            }
+        elif override is not None:
+            ast = translate_requirement(override, header)
+        else:
+            ast = dock_open_requirement(header, dock_type, weakness)
+        dock_edges.append((key, far, ast))
+
+    comp = _trivial_scc(nodes, conn_edges)
+    n_regions = (max(comp.values()) + 1) if comp else 0
+
+    # Cross-region entrances (intra-component edges are free → dropped).
+    entrances: list = []
+    for u, v, ast in conn_edges + dock_edges:
+        if v in nodes and comp[u] != comp[v]:
+            entrances.append([comp[u], comp[v], ast])
+
+    pickups: list = []              # [comp, ap_location_name]
+    events: list = []               # [comp, event_name]
+    start_comps: dict = {}          # "region::area::node" -> comp (valid starts)
+    for key, n in nodes.items():
+        nt = n.get("node_type")
+        if nt == "pickup":
+            actor = n.get("extra", {}).get("actor_name")
+            name = (ap_loc_by_actor.get((key[0], actor))
+                    or ap_loc_by_pickup_index.get(n.get("pickup_index")))
+            if name:
+                pickups.append([comp[key], name])
+        elif nt == "event":
+            events.append([comp[key], n["event_name"]])
+        if n.get("valid_starting_location"):
+            region = key[0]
+            start_comps["::".join(key)] = {
+                "comp": comp[key],
+                "patcher": {"scenario": scenario_of.get(region),
+                            "actor": n.get("extra", {}).get("actor_name")},
+            }
+
+    start = header.starting_location
+    start_key = (start["region"], start["area"], start["node"])
+
+    return {
+        "graph_schema_version": GRAPH_SCHEMA_VERSION,
+        "n_regions": n_regions,
+        "start_comp": comp[start_key],
+        "start_comps": start_comps,
+        "entrances": entrances,
+        "dock_sides": dock_sides,
+        "weakness_requirements": weakness_requirements,
+        "pickups": pickups,
+        "events": events,
+        "victory_condition": victory_item_only,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -1389,6 +1573,26 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=DATA_DIR / "compiled_rules.json",
         help="output path for compiled_rules.json",
+    )
+    parser.add_argument(
+        "--graph",
+        action="store_true",
+        help="also emit the native logic_graph.json (fast per-seed reachability "
+             "model — see emit_graph). Reuses the item-only victory computed for "
+             "the closed-form pass.",
+    )
+    parser.add_argument(
+        "--graph-out",
+        type=Path,
+        default=DATA_DIR / "logic_graph.json",
+        help="output path for logic_graph.json (with --graph)",
+    )
+    parser.add_argument(
+        "--graph-only",
+        action="store_true",
+        help="emit ONLY logic_graph.json, reusing the item-only victory from an "
+             "existing compiled_rules.json (--out). Fast (~1s); skips the forward "
+             "resolver. For conftest/CI graph materialization.",
     )
     args = parser.parse_args(argv)
 
@@ -1428,6 +1632,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"missing cache file: {p}", file=sys.stderr)
             return 2
         all_area_data[area_name] = json.loads(p.read_text())
+
+    # Fast path: emit ONLY logic_graph.json, sourcing the item-only victory from
+    # an existing compiled_rules.json (skips the ~10-min forward resolver). Used
+    # by conftest/CI to materialize the graph artifact quickly.
+    if args.graph_only:
+        cf = json.loads(args.out.read_text())
+        victory_ast = cf["victory_condition"]
+        graph = emit_graph(all_area_data, header,
+                           ap_loc_by_actor, ap_loc_by_pickup_index, victory_ast)
+        graph["pinned_commit"] = pinned
+        args.graph_out.parent.mkdir(parents=True, exist_ok=True)
+        args.graph_out.write_text(json.dumps(graph, indent=2))
+        print(f"wrote {args.graph_out} (graph-only) — {graph['n_regions']} "
+              f"regions, {len(graph['entrances'])} entrances, "
+              f"{len(graph['dock_sides'])} rando-eligible doors")
+        return 0
 
     print("running forward resolver (item-only inlining) over all areas ...")
     out_rules, event_rule_by_name, event_region_by_name = compile_forward(
@@ -1530,6 +1750,17 @@ def main(argv: list[str] | None = None) -> int:
         "events": [e["name"] for e in events_out],
     }, indent=2))
     print(f"wrote {events_path} — {len(events_out)} events")
+
+    if args.graph:
+        graph = emit_graph(all_area_data, header,
+                           ap_loc_by_actor, ap_loc_by_pickup_index, victory_ast)
+        graph["pinned_commit"] = pinned
+        args.graph_out.parent.mkdir(parents=True, exist_ok=True)
+        args.graph_out.write_text(json.dumps(graph, indent=2))
+        print(f"wrote {args.graph_out} — {graph['n_regions']} regions, "
+              f"{len(graph['entrances'])} entrances, {len(graph['pickups'])} "
+              f"pickups, {len(graph['events'])} event nodes, "
+              f"{len(graph['dock_sides'])} rando-eligible doors")
 
     return 0
 
