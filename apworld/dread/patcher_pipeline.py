@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -626,6 +627,37 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
     return None
 
 
+# winget's per-user CPython lands at %LOCALAPPDATA%/Programs/Python/Python<MM>
+# (64-bit) or .../Python<MM>-32 (32-bit). Kept in lockstep with
+# _setup.prereqs.winget_python_dir_key — this module stays decoupled from the
+# wizard package (it must import on headless gen hosts), so the small parser is
+# duplicated rather than imported.
+_WINGET_PYTHON_DIR_RE = re.compile(r"^Python(\d)(\d+)(-32)?$", re.IGNORECASE)
+
+
+def _winget_python_dir_key(path: Path) -> tuple:
+    """Descending-preference sort key for a winget per-user CPython dir.
+
+    Ranks an exact 3.12 first, then any other ``>=3.10`` by descending
+    version, then older; 64-bit over 32-bit. A lexical ``sorted()`` on the
+    dir name ranks ``Python38-32`` above ``Python312`` (``'8' > '1'``), which
+    is how the open-dread-rando deps could get pip-installed into a stale 3.8.
+    See _setup.prereqs.winget_python_dir_key for the full rationale.
+    """
+    m = _WINGET_PYTHON_DIR_RE.match(path.name)
+    if not m:
+        return (-1, (0, 0), 0)
+    major, minor = int(m.group(1)), int(m.group(2))
+    is_64 = 0 if m.group(3) else 1
+    if (major, minor) == (3, 12):
+        tier = 2
+    elif (major, minor) >= (3, 10):
+        tier = 1
+    else:
+        tier = 0
+    return (tier, (major, minor), is_64)
+
+
 def _candidate_pythons() -> list[str]:
     """Best-effort, ordered list of real Python interpreters to probe for the
     patcher deps. Deduped by literal absolute path (NOT symlink-resolved — a
@@ -693,7 +725,8 @@ def _candidate_pythons() -> list[str]:
         if local:
             base = Path(local) / "Programs" / "Python"
             if base.is_dir():
-                for child in sorted(base.glob("Python*")):
+                for child in sorted(base.glob("Python*"),
+                                    key=_winget_python_dir_key, reverse=True):
                     _add(str(child / "python.exe"))
     return candidates
 

@@ -20,6 +20,7 @@ results without touching the user's machine.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -157,6 +158,42 @@ def _winget_python312_commands() -> list[list[str]]:
     if python.is_file():
         cmds.append([str(python), "--version"])
     return cmds
+
+
+# winget's per-user CPython lands at %LOCALAPPDATA%/Programs/Python/Python<MM>
+# (64-bit) or .../Python<MM>-32 (32-bit), e.g. ``Python312`` or ``Python38-32``.
+_WINGET_PYTHON_DIR_RE = re.compile(r"^Python(\d)(\d+)(-32)?$", re.IGNORECASE)
+
+
+def winget_python_dir_key(path: Path) -> tuple[int, tuple[int, int], int]:
+    """Descending-preference sort key for a winget per-user CPython dir.
+
+    Use with ``sorted(..., key=winget_python_dir_key, reverse=True)``. Ranks
+    (highest first): an EXACT 3.12 match (the version the wizard installs and
+    ``check_python312`` validates, and the only one upstream pins a wheel for),
+    then any other ``>=3.10`` interpreter by descending version, then anything
+    older; 64-bit outranks 32-bit as a tie-break.
+
+    A plain ``sorted(reverse=True)`` on the directory NAME is WRONG: it
+    compares lexically, so ``Python38-32`` (3.8, 32-bit) sorts ABOVE
+    ``Python312`` (3.12) because ``'8' > '1'`` at the 8th character. On a
+    machine with a stale 3.8 alongside a fresh winget 3.12 that made
+    ``candidate_pythons()[0]`` resolve to 3.8, so the open-dread-rando deps
+    (which require ``>=3.10``) were pip-installed into 3.8 and failed with
+    "No matching distribution found" — see the wizard.log retro.
+    """
+    m = _WINGET_PYTHON_DIR_RE.match(path.name)
+    if not m:
+        return (-1, (0, 0), 0)  # unparseable → lowest priority
+    major, minor = int(m.group(1)), int(m.group(2))
+    is_64 = 0 if m.group(3) else 1
+    if (major, minor) == (3, 12):
+        tier = 2
+    elif (major, minor) >= (3, 10):
+        tier = 1
+    else:
+        tier = 0
+    return (tier, (major, minor), is_64)
 
 
 def _prepend_path(dir_path: Path) -> None:
@@ -449,13 +486,16 @@ def candidate_pythons() -> list[str]:
         venv_root = Path(venv)
         for rel in ("bin/python", "bin/python3", "Scripts/python.exe"):
             _add(str(venv_root / rel))
-    # Winget-deterministic per-user installs, newest version first so 3.12
-    # outranks 3.10 if both exist.
+    # Winget-deterministic per-user installs. Order by parsed version so the
+    # supported 3.12 outranks any stale older interpreter (e.g. a leftover
+    # Python38-32) — a lexical reverse sort would rank ``Python38-32`` above
+    # ``Python312``. See winget_python_dir_key.
     localapp = os.environ.get("LOCALAPPDATA")
     if localapp:
         base = Path(localapp) / "Programs" / "Python"
         if base.is_dir():
-            for child in sorted(base.glob("Python*"), reverse=True):
+            for child in sorted(base.glob("Python*"),
+                                key=winget_python_dir_key, reverse=True):
                 _add(str(child / "python.exe"))
     # PATH lookups for direct interpreter names.
     for name in ("python3.12", "python3.13", "python3", "python"):
