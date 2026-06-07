@@ -108,7 +108,10 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None) -> None
         for c in comps:
             regions[c].connect(er, f"ev:{ename}<-{c}")
 
-    menu.connect(regions[g["start_comp"]], "Menu->start")
+    start_comp = getattr(world, "_start_comp", None)
+    if start_comp is None:
+        start_comp = g["start_comp"]
+    menu.connect(regions[start_comp], "Menu->start")
 
     indirect: list = []
     for i, (csrc, cdst, ast) in enumerate(g["entrances"]):

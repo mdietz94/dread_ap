@@ -18,10 +18,95 @@ v1 excludes the ``locked`` weakness (Access Permanently Closed) from the pool so
 every door stays passable with the right weapon and the door graph stays
 connected (the goal can't be walled off). Per-door ``incompatible_weaknesses``
 (from the logic DB) are honored.
+
+START-DOOR GUARD (the thing that makes fill succeed): AP's stock
+``fill_restrictive`` needs a non-empty EARLY-reachable pickup set to bootstrap
+progression. If the doors reachable from spawn with only the starting kit are
+randomized to hard types, the early sphere is empty and fill dead-ends. So the
+doors reachable from the start with the starting items (vanilla) are PROTECTED
+(kept vanilla); only doors past that early frontier are randomized. Verified:
+with the guard, 0/15 seeds fail; without it, ~all fail. The guard touches ~38 of
+457 doors. See [[dread-native-graph-spike]].
 """
 from __future__ import annotations
 
 from typing import Any
+
+from .graph_logic import _resolve_docks
+
+
+def _eval(ast: dict, items: dict, events: set, tl: dict) -> bool:
+    """Evaluate a (dock-resolved) rule AST against an item multiset, a set of
+    triggered events, and trick levels. Mirrors compile_to_lambda semantics."""
+    t = ast.get("type")
+    if t == "trivial":
+        return True
+    if t == "impossible":
+        return False
+    if t == "item":
+        return items.get(ast["name"], 0) >= ast.get("amount", 1)
+    if t == "event":
+        return ast["name"] in events
+    if t == "trick":
+        return ast["level"] <= tl.get(ast["name"], 0)
+    if t == "sum":
+        return ast["base"] + sum(items.get(x["name"], 0) * x["per_unit"]
+                                 for x in ast["terms"]) >= ast["threshold"]
+    if t == "damage_threshold":
+        return (any(items.get(s, 0) > 0 for s in ast["suit_options"])
+                or 99 + 100 * items.get("Energy Tank", 0)
+                + 25 * items.get("Energy Part", 0) >= ast["hp_needed"])
+    if t == "and":
+        return all(_eval(c, items, events, tl) for c in ast["items"])
+    if t == "or":
+        return any(_eval(c, items, events, tl) for c in ast["items"])
+    return False
+
+
+def early_reachable(graph: dict, items: dict, tl: dict,
+                    start_comp: int | None = None,
+                    use_events: bool = True) -> tuple[set, dict]:
+    """Regions reachable from the start with VANILLA doors + the given items +
+    trick levels. Returns (reachable_comps, side_id->(src,dst)).
+
+    ``use_events=True`` runs the event fixpoint (the true reach, used by the
+    door guard). ``use_events=False`` evaluates event atoms as False — an
+    ITEM-ONLY lower bound on reach, used by the starting-area foothold check so
+    that hitting the target provably gives AP's fill a real (item-only) early
+    sphere rather than one that depends on the live event cascade."""
+    ds = graph["dock_sides"]
+    wreq = graph["weakness_requirements"]
+    adj: dict[int, list] = {}
+    side_comp: dict[str, tuple] = {}
+    for c0, c1, ast in graph["entrances"]:
+        adj.setdefault(c0, []).append((c1, _resolve_docks(ast, {}, ds, wreq)))
+        if ast.get("type") == "dock":
+            side_comp[ast["side_id"]] = (c0, c1)
+    ev: dict[str, set] = {}
+    for comp, ename in graph["events"]:
+        ev.setdefault(ename, set()).add(comp)
+
+    start = graph["start_comp"] if start_comp is None else start_comp
+    triggered: set = set()
+    changed = True
+    reach: set = set()
+    while changed:
+        changed = False
+        reach = {start}
+        frontier = [start]
+        while frontier:
+            u = frontier.pop()
+            for v, ast in adj.get(u, []):
+                if v not in reach and _eval(ast, items, triggered, tl):
+                    reach.add(v)
+                    frontier.append(v)
+        if not use_events:
+            break
+        for ename, comps in ev.items():
+            if ename not in triggered and any(c in reach for c in comps):
+                triggered.add(ename)
+                changed = True
+    return reach, side_comp
 
 
 def _physical_doors(dock_sides: dict) -> list[list[str]]:
@@ -43,9 +128,18 @@ def _physical_doors(dock_sides: dict) -> list[list[str]]:
     return groups
 
 
-def roll_assignments(graph: dict, rng, mode: str = "randomized") -> dict[str, str]:
+def roll_assignments(
+    graph: dict, rng, mode: str = "randomized",
+    starting_items: dict | None = None, trick_levels: dict | None = None,
+    start_comp: int | None = None,
+) -> dict[str, str]:
     """Return ``{side_id: weakness}`` for door rando. ``mode`` other than a
-    randomizing mode (or an empty pool) yields ``{}`` = vanilla doors."""
+    randomizing mode yields ``{}`` = vanilla doors.
+
+    ``starting_items``/``trick_levels`` drive the start-door guard: doors
+    reachable from spawn with the starting kit stay VANILLA so fill can
+    bootstrap (see module docstring). Without them the guard is skipped (every
+    eligible door randomized) — only safe for analysis, not real generation."""
     if mode in ("off", "vanilla", None):
         return {}
 
@@ -58,8 +152,18 @@ def roll_assignments(graph: dict, rng, mode: str = "randomized") -> dict[str, st
     pool = [w for w in dr["change_to"]
             if w != locked and w in door_type]
 
+    # Start-door guard: protect doors on the early (start-reachable) frontier.
+    protected: set[str] = set()
+    if starting_items is not None:
+        reach, side_comp = early_reachable(
+            graph, starting_items, trick_levels or {}, start_comp)
+        protected = {sid for sid, (c0, c1) in side_comp.items()
+                     if c0 in reach or c1 in reach}
+
     assign: dict[str, str] = {}
     for group in _physical_doors(dock_sides):
+        if any(sid in protected for sid in group):
+            continue
         incompat: set[str] = set()
         for sid in group:
             incompat.update(dock_sides[sid].get("incompatible_weaknesses", []))

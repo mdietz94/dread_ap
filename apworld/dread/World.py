@@ -130,17 +130,48 @@ class DreadWorld(World):
     def _use_graph_logic(self) -> bool:
         if int(self.options.door_lock_rando.value) != 0:
             return True
+        if int(self.options.starting_area.value) != 0:
+            return True  # non-Artaria spawn needs per-seed reachability
         return os.environ.get("DREAD_GRAPH_LOGIC") == "1"
 
     def generate_early(self) -> None:
-        # Roll the per-seed door-lock weakness assignment now so create_regions
-        # can resolve dock atoms against it. Empty when door rando is off.
+        # Resolve the spawn and the per-seed door assignment now, so
+        # create_regions/create_items can use them. Both ride the native graph.
         self._dock_assignments: dict[str, str] = {}
-        if int(self.options.door_lock_rando.value) != 0:
+        self._start_comp: int | None = None           # None => graph default (Artaria)
+        self._start_patcher: dict | None = None       # None => STARTING_AREA index 0
+        self._start_extra_items: list[str] = []
+
+        door_on = int(self.options.door_lock_rando.value) != 0
+        area = int(self.options.starting_area.value)
+        if not (door_on or area != 0):
+            return
+
+        from .graph_logic import load_graph
+        from .Tricks import effective_trick_levels
+        from .StartArea import start_node_for, minimal_start_items
+        graph = load_graph()
+        tl = effective_trick_levels(self.options)
+        base_items = {n: 1 for n in self.BASE_STARTING_ITEMS}
+
+        # Spawn point + the minimal extra starting kit that bootstraps it.
+        if area != 0:
+            chosen = start_node_for(graph, area, tl, base_items)
+            if chosen is not None:
+                _key, self._start_comp, self._start_patcher = chosen
+                self._start_extra_items = minimal_start_items(
+                    graph, self._start_comp, base_items, tl)
+                for n in self._start_extra_items:
+                    base_items[n] = 1
+
+        # Door-lock weakness assignment, guarded so the early frontier (from THIS
+        # spawn, with the full starting kit) stays vanilla and fill can bootstrap.
+        if door_on:
             from .DoorRando import roll_assignments
-            from .graph_logic import load_graph
             self._dock_assignments = roll_assignments(
-                load_graph(), self.random, mode="randomized")
+                graph, self.random, mode="randomized",
+                starting_items=base_items, trick_levels=tl,
+                start_comp=self._start_comp)
 
     def create_regions(self) -> None:
         if self._use_graph_logic():
@@ -243,7 +274,12 @@ class DreadWorld(World):
         # selector: when start_with_pulse_radar is off we don't precollect it and
         # it rejoins the findable pool. Solvability is identical either way.
         start_with_radar = bool(o.start_with_pulse_radar.value)
-        forced_starting = list(self.BASE_STARTING_ITEMS) + list(self.EXTRA_STARTING_ITEMS)
+        # Per-spawn bootstrap kit (more-starting-areas): minimal extra unlocks so
+        # a deep spawn has an early sphere for fill. Empty for the Artaria spawn.
+        start_area_items = list(getattr(self, "_start_extra_items", []) or [])
+        forced_starting = (list(self.BASE_STARTING_ITEMS)
+                           + list(self.EXTRA_STARTING_ITEMS)
+                           + start_area_items)
         if not start_with_radar:
             forced_starting = [n for n in forced_starting if n != "Pulse Radar"]
         for name in forced_starting:
@@ -251,7 +287,8 @@ class DreadWorld(World):
         # Starting-only items are removed from the findable pool. Missile Tank
         # is precollected for capacity but stays findable. Pulse Radar is only
         # excluded when it's a starting item.
-        pool_excluded = {"Slide"} | set(self.EXTRA_STARTING_ITEMS)
+        pool_excluded = ({"Slide"} | set(self.EXTRA_STARTING_ITEMS)
+                         | set(start_area_items))
         if start_with_radar:
             pool_excluded.add("Pulse Radar")
 
@@ -647,7 +684,21 @@ class DreadWorld(World):
             # flows that skip pre_output ⇒ patcher falls back to neutral filler.
             "nav_hints": getattr(self, "_nav_hints", []),
             "placements": placements,
+            # Door-lock rando: open-dread-rando door_patches (one per physical
+            # door). Empty when door rando is off.
+            "door_patches": self._door_patches(),
+            # More-starting-areas: resolved spawn {scenario, actor} for a
+            # non-Artaria start, else None (patcher uses the Artaria default).
+            "start_location_override": getattr(self, "_start_patcher", None),
         }
+
+    def _door_patches(self) -> list:
+        assign = getattr(self, "_dock_assignments", None)
+        if not assign:
+            return []
+        from .DoorRando import assignments_to_door_patches
+        from .graph_logic import load_graph
+        return assignments_to_door_patches(assign, load_graph())
 
     def pre_output(self) -> None:
         """Generate the in-game Nav Station hint text.

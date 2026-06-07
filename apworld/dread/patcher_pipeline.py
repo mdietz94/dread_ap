@@ -192,10 +192,16 @@ def placements_to_overrides(
     starting_area_idx = placements.get("starting_area", 0)
     starting_items = placements.get("starting_items", {})
 
-    starting_location = STARTING_AREA_INDEX_TO_LOCATION.get(
-        int(starting_area_idx),
-        STARTING_AREA_INDEX_TO_LOCATION[0],
-    )
+    # A graph-resolved spawn (more-starting-areas) overrides the index table.
+    start_override = placements.get("start_location_override")
+    if start_override:
+        starting_location = {"scenario": start_override["scenario"],
+                             "actor": start_override["actor"]}
+    else:
+        starting_location = STARTING_AREA_INDEX_TO_LOCATION.get(
+            int(starting_area_idx),
+            STARTING_AREA_INDEX_TO_LOCATION[0],
+        )
 
     pickup_resources: dict[str, list] = {}
     pickup_captions: dict[str, str] = {}
@@ -295,6 +301,8 @@ def placements_to_overrides(
         "pickup_captions": pickup_captions,
         "pickup_models": pickup_models,
         "pickup_map_icons": pickup_map_icons,
+        # Door-lock rando: passed straight to open-dread-rando's configuration.
+        "door_patches": placements.get("door_patches", []),
     }
 
 
@@ -399,6 +407,13 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
 
     if "starting_items" in overrides:
         out["starting_items"] = overrides["starting_items"]
+
+    # Door-lock rando: replace the template's door_patches with the AP assignment
+    # (one entry per physical door). Absent/empty ⇒ keep the template's vanilla
+    # door_patches so non-door-rando seeds stay byte-identical.
+    door_patches = overrides.get("door_patches")
+    if door_patches:
+        out["door_patches"] = door_patches
 
     # Cosmetic / combat leaves. Only fields actually supplied are written;
     # an absent key leaves the template default untouched (so a pre-this-change

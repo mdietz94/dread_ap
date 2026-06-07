@@ -14,10 +14,19 @@ from .Tricks import FOLLOW_GLOBAL, VISIBLE_TRICKS
 
 
 class StartingArea(Choice):
-    """Which Dread area Samus spawns in. v0.1 only supports Artaria
-    (the vanilla start location); future versions will randomize."""
+    """Which Dread region Samus spawns in. 'artaria' is the vanilla start;
+    every other region spawns at one of its save/navigation stations. A
+    non-Artaria spawn uses the native region-graph logic and grants the minimal
+    extra starting items needed to bootstrap from that location (mirrors
+    Randovania's per-start starting items)."""
     display_name = "Starting Area"
     option_artaria = 0
+    option_cataris = 1
+    option_dairon = 2
+    option_burenia = 3
+    option_ghavoran = 4
+    option_ferenia = 5
+    option_hanubia = 6
     default = 0
 
 
