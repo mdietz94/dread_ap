@@ -273,6 +273,36 @@ def test_all_ok_aggregator():
     assert prereqs.all_ok(mixed) is False
 
 
+def test_winget_python_dir_key_ranks_312_over_stale_38():
+    """Regression: winget per-user Python dirs must order by parsed version,
+    not lexically. A lexical reverse sort ranks ``Python38-32`` above
+    ``Python312`` (``'8' > '1'`` at the 8th char), which once made the
+    open-dread-rando deps install into a stale 3.8 (deps require >=3.10) and
+    fail. ``winget_python_dir_key`` + reverse=True must put 3.12 first."""
+    names = ["Python38-32", "Python312", "Python310", "Python313", "Python39"]
+    ordered = sorted(
+        names, key=lambda n: prereqs.winget_python_dir_key(Path(n)), reverse=True
+    )
+    # Supported 3.12 wins; the 32-bit 3.8 sinks to last.
+    assert ordered[0] == "Python312"
+    assert ordered[-1] == "Python38-32"
+    # The exact Billy-machine case: only 3.8 + a fresh 3.12 present.
+    billy = sorted(
+        ["Python38-32", "Python312"],
+        key=lambda n: prereqs.winget_python_dir_key(Path(n)), reverse=True,
+    )
+    assert billy[0] == "Python312"
+
+
+def test_winget_python_dir_key_prefers_64bit_on_tie():
+    """64-bit outranks 32-bit for the same version."""
+    ordered = sorted(
+        ["Python312-32", "Python312"],
+        key=lambda n: prereqs.winget_python_dir_key(Path(n)), reverse=True,
+    )
+    assert ordered[0] == "Python312"
+
+
 def test_check_all_accepts_vestigial_overrides(monkeypatch):
     """check_all takes hactool_override / prod_keys_override kwargs purely
     for smo-import-compat; passing them must not raise."""

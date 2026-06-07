@@ -188,6 +188,35 @@ def install_python312(on_line: ProgressFn | None = None) -> InstallResult:
 # open-dread-rando-exlaunch) need installing.
 # ---------------------------------------------------------------------------
 
+# The patcher's runtime deps (mercury-engine-data-structures et al.) all pin
+# Requires-Python >=3.10, so pip into an older interpreter dies with a cryptic
+# "No matching distribution found". candidate_pythons() now ranks the supported
+# 3.12 first, so a target below this floor means NO usable Python exists —
+# refuse with an actionable message instead of letting pip emit the cryptic one.
+_MIN_PATCHER_PYTHON = (3, 10)
+
+
+def _probe_python_version(exe: str) -> tuple[int, int] | None:
+    """Return ``(major, minor)`` for ``exe``, or None if it can't be probed.
+
+    Cheap ``-c`` invocation — used to gate the open-dread-rando pip install on
+    the target interpreter being new enough for the deps' Requires-Python."""
+    try:
+        proc = subprocess.run(
+            [exe, "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],
+            capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        major, minor = proc.stdout.split()[:2]
+        return (int(major), int(minor))
+    except (ValueError, IndexError):
+        return None
+
+
 def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult:
     """``{first_detected_python} -m pip install <runtime-deps>``.
 
@@ -232,6 +261,24 @@ def install_open_dread_rando(on_line: ProgressFn | None = None) -> InstallResult
         return InstallResult(ok=False, returncode=127, log=msg, detail=msg)
 
     target = candidates[0]
+    # Refuse a too-old interpreter up front. With candidate_pythons() ordering
+    # the supported 3.12 first, a sub-3.10 target means the user has no usable
+    # Python — surface that plainly rather than via pip's "No matching
+    # distribution found" (which is what a stale Python 3.8 produced before the
+    # ordering fix — see the wizard.log retro).
+    ver = _probe_python_version(target)
+    if ver is not None and ver < _MIN_PATCHER_PYTHON:
+        min_str = ".".join(str(x) for x in _MIN_PATCHER_PYTHON)
+        msg = (
+            f"the best Python found ({target}) is {ver[0]}.{ver[1]}, but the "
+            f"open-dread-rando patcher deps require Python >={min_str} "
+            f"(3.12 recommended). Install Python 3.12 (auto-install row above), "
+            f"then re-run this install."
+        )
+        if on_line:
+            on_line(msg)
+        return InstallResult(ok=False, returncode=1, log=msg, detail=msg)
+
     cmd = [target, "-m", "pip", "install", "--upgrade", *PATCHER_RUNTIME_DEPS]
     if on_line:
         on_line(f"[install_open_dread_rando] {' '.join(cmd)}")
