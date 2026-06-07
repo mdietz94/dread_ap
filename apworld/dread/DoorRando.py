@@ -65,7 +65,8 @@ def _eval(ast: dict, items: dict, events: set, tl: dict) -> bool:
 
 def early_reachable(graph: dict, items: dict, tl: dict,
                     start_comp: int | None = None,
-                    use_events: bool = True) -> tuple[set, dict]:
+                    use_events: bool = True,
+                    transport_matching: dict | None = None) -> tuple[set, dict]:
     """Regions reachable from the start with VANILLA doors + the given items +
     trick levels. Returns (reachable_comps, side_id->(src,dst)).
 
@@ -82,6 +83,14 @@ def early_reachable(graph: dict, items: dict, tl: dict,
         adj.setdefault(c0, []).append((c1, _resolve_docks(ast, {}, ds, wreq)))
         if ast.get("type") == "dock":
             side_comp[ast["side_id"]] = (c0, c1)
+    # Transport ride edges (elevator/shuttle) per the matching — they're not in
+    # ``entrances``, so add them here or reachability is understated.
+    tr = graph.get("transports", {})
+    for sid, meta in tr.items():
+        dest = (transport_matching or {}).get(sid) or meta["default_dest"]
+        d = tr.get(dest)
+        if d is not None:
+            adj.setdefault(meta["comp"], []).append((d["comp"], {"type": "trivial"}))
     ev: dict[str, set] = {}
     for comp, ename in graph["events"]:
         ev.setdefault(ename, set()).add(comp)
@@ -131,7 +140,7 @@ def _physical_doors(dock_sides: dict) -> list[list[str]]:
 def roll_assignments(
     graph: dict, rng, mode: str = "randomized",
     starting_items: dict | None = None, trick_levels: dict | None = None,
-    start_comp: int | None = None,
+    start_comp: int | None = None, transport_matching: dict | None = None,
 ) -> dict[str, str]:
     """Return ``{side_id: weakness}`` for door rando. ``mode`` other than a
     randomizing mode yields ``{}`` = vanilla doors.
@@ -156,7 +165,8 @@ def roll_assignments(
     protected: set[str] = set()
     if starting_items is not None:
         reach, side_comp = early_reachable(
-            graph, starting_items, trick_levels or {}, start_comp)
+            graph, starting_items, trick_levels or {}, start_comp,
+            transport_matching=transport_matching)
         protected = {sid for sid, (c0, c1) in side_comp.items()
                      if c0 in reach or c1 in reach}
 

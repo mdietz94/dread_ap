@@ -112,6 +112,46 @@ def test_minimal_start_items_bootstraps(graph):
     assert _reach_pickup_count(graph, items, {}, comp) >= _FOOTHOLD_TARGET
 
 
+# ---- transport rando unit tests ------------------------------------------
+
+class _ShuffleRNG:
+    def shuffle(self, x):
+        x.reverse()  # deterministic non-identity permutation
+
+    def choice(self, seq):
+        return seq[0]
+
+
+@graph_required
+def test_transport_matching_two_way_within_type(graph):
+    from dread.TransportRando import roll_matching
+    m = roll_matching(graph, _ShuffleRNG())
+    tr = graph["transports"]
+    for a, b in m.items():
+        assert m[b] == a, "matching must be symmetric (two-way)"
+        assert tr[a]["type"] == tr[b]["type"], "must match within transport type"
+
+
+@graph_required
+def test_connected_matching_keeps_pickups_reachable(graph):
+    from dread.TransportRando import roll_connected_matching, _full_reachable_ok
+    from dread.Tricks import DREAD_TRICKS
+    tl = {t.short_name: 5 for t in DREAD_TRICKS}  # all tricks on (full reach)
+    m = roll_connected_matching(graph, _ShuffleRNG(), tl)
+    assert _full_reachable_ok(graph, m, tl)
+
+
+@graph_required
+def test_matching_to_elevators_shape(graph):
+    from dread.TransportRando import roll_matching, matching_to_elevators
+    m = roll_matching(graph, _ShuffleRNG())
+    elevs = matching_to_elevators(m, graph)
+    for e in elevs:
+        assert set(e) >= {"teleporter", "destination", "connection_name"}
+        assert e["teleporter"]["scenario"] and e["teleporter"]["actor"]
+        assert e["destination"]["scenario"] and e["destination"]["actor"]
+
+
 # ---- gated real-generation -----------------------------------------------
 
 def _ap() -> bool:
@@ -153,3 +193,13 @@ def test_starting_area_generates(area):
 @runtime
 def test_door_rando_plus_start_compose():
     _generate({"door_lock_rando": 1, "starting_area": 2})
+
+
+@runtime
+def test_transport_rando_generates():
+    _generate({"transport_rando": 1})
+
+
+@runtime
+def test_all_rando_compose():
+    _generate({"door_lock_rando": 1, "transport_rando": 1, "starting_area": 2})

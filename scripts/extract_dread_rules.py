@@ -1383,12 +1383,20 @@ def compile_forward(
 # scripts/spike_graph_speed.py and [[dread-native-graph-spike]].
 # ---------------------------------------------------------------------------
 
-GRAPH_SCHEMA_VERSION = 1
+# v2: transports pulled into a shuffle pool (transport rando).
+GRAPH_SCHEMA_VERSION = 2
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
 # (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel
 # / other are structural. v1: doors only.
 RANDOMIZABLE_DOCK_TYPES = {"door"}
+
+# Transport dock types whose DESTINATION can be shuffled (transport rando). Their
+# open requirement is trivial — rando changes which region the ride reaches, not
+# a weapon gate. Teleporters are excluded: open-dread-rando's elevator patcher
+# has a "TODO implement teleporter rando" (only TRANSPORT-type elevators/shuttles
+# get the full minimap/icon treatment), so we keep teleporters vanilla for now.
+TRANSPORT_DOCK_TYPES = {"elevator", "shuttle"}
 
 
 def _trivial_scc(nodes: dict, conn_edges: list) -> dict:
@@ -1478,9 +1486,12 @@ def emit_graph(
                                        translate_requirement(req, header)))
 
     # Dock edges + per-side metadata. Rando-eligible doors emit a symbolic atom;
-    # everything else bakes its vanilla open requirement.
+    # transports (elevator/shuttle) are pulled out into a shuffle pool (their
+    # edge is added by the apworld per the per-seed matching); everything else
+    # bakes its vanilla open requirement.
     dock_edges: list = []           # (u, v, ast)
     dock_sides: dict = {}
+    transport_raw: dict = {}        # side_id -> endpoint meta (comp filled below)
     for key, n in nodes.items():
         if n.get("node_type") != "dock":
             continue
@@ -1493,6 +1504,20 @@ def emit_graph(
         far = (dc["region"], dc["area"], dc["node"])
         side_id = "::".join(key)
         override = n.get("override_default_open_requirement")
+
+        # Transport endpoint: collect for the shuffle pool, don't bake an edge.
+        if dock_type in TRANSPORT_DOCK_TYPES:
+            ex = n.get("extra", {})
+            transport_raw[side_id] = {
+                "key": key,
+                "far": "::".join(far),
+                "type": dock_type,
+                "scenario": scenario_of.get(region),
+                "actor": ex.get("actor_name"),
+                "target_spawn_point": ex.get("target_spawn_point"),
+                "transporter_name": ex.get("transporter_name", ""),
+            }
+            continue
         # Eligible per Randovania's door dock_rando: the door's CURRENT weakness
         # must be in change_from (only those get reassigned), not per-node
         # excluded, and not carrying a bespoke open override.
@@ -1527,6 +1552,20 @@ def emit_graph(
         if v in nodes and comp[u] != comp[v]:
             entrances.append([comp[u], comp[v], ast])
 
+    # Transport endpoints (elevator/shuttle), with comps resolved. The apworld
+    # adds the ride edges from the per-seed matching (default = vanilla pairing).
+    transports: dict = {}
+    for side_id, meta in transport_raw.items():
+        transports[side_id] = {
+            "comp": comp[meta["key"]],
+            "type": meta["type"],
+            "default_dest": meta["far"],
+            "scenario": meta["scenario"],
+            "actor": meta["actor"],
+            "target_spawn_point": meta["target_spawn_point"],
+            "transporter_name": meta["transporter_name"],
+        }
+
     pickups: list = []              # [comp, ap_location_name]
     events: list = []               # [comp, event_name]
     start_comps: dict = {}          # "region::area::node" -> comp (valid starts)
@@ -1558,6 +1597,7 @@ def emit_graph(
         "start_comps": start_comps,
         "entrances": entrances,
         "dock_sides": dock_sides,
+        "transports": transports,
         "weakness_requirements": weakness_requirements,
         "door_rando": {
             "change_from": sorted(door_change_from),

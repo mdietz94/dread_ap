@@ -36,7 +36,7 @@ from ._data_loader import load_json
 from .Rules import compile_to_lambda
 from .Tricks import effective_trick_levels
 
-EXPECTED_GRAPH_SCHEMA = 1
+EXPECTED_GRAPH_SCHEMA = 2
 
 
 def load_graph() -> dict:
@@ -68,11 +68,30 @@ def _resolve_docks(ast: dict, assign: dict, dock_sides: dict, wreq: dict) -> dic
     return ast
 
 
-def build_regions(world, dock_assignments: dict[str, str] | None = None) -> None:
+def transport_pairs(graph: dict, matching: dict[str, str] | None) -> list:
+    """Resolve the transport endpoint matching into directed (src_comp, dst_comp)
+    ride edges. ``matching`` maps side_id -> destination side_id; None uses the
+    vanilla ``default_dest`` pairing. Taking the transport at S lands you at the
+    node of its destination D, so edge S.comp -> D.comp."""
+    tr = graph.get("transports", {})
+    edges = []
+    for sid, meta in tr.items():
+        dest = (matching or {}).get(sid) or meta["default_dest"]
+        d = tr.get(dest)
+        if d is not None:
+            edges.append((meta["comp"], d["comp"]))
+    return edges
+
+
+def build_regions(world, dock_assignments: dict[str, str] | None = None,
+                  transport_matching: dict[str, str] | None = None) -> None:
     """Build the native region graph on ``world``'s multiworld.
 
     ``dock_assignments`` maps dock ``side_id`` -> weakness name (door rando);
     None / missing entries fall back to the vanilla ``default_weakness``.
+    ``transport_matching`` maps a transport ``side_id`` -> its destination
+    side_id (transport rando); None uses the vanilla pairing. Transport ride
+    edges are added here (they're NOT in ``entrances``).
     Stashes ``world._graph_indirect`` = [(event_region, entrance), ...] for
     explicit-indirect-condition registration in ``set_graph_rules``.
     Stashes ``world._graph_victory`` = the item-only victory AST.
@@ -128,6 +147,10 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None) -> None
         for en in _event_atoms(resolved):
             if en in ev_region:
                 indirect.append((ev_region[en], ent))
+
+    # Transport ride edges (elevator/shuttle), per the matching (vanilla default).
+    for ti, (src, dst) in enumerate(transport_pairs(g, transport_matching)):
+        regions[src].connect(regions[dst], f"t{ti}")
 
     for comp, ap_name in g["pickups"]:
         loc = DreadLocation(player, ap_name, location_name_to_id[ap_name],

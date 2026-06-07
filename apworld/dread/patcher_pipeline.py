@@ -303,6 +303,8 @@ def placements_to_overrides(
         "pickup_map_icons": pickup_map_icons,
         # Door-lock rando: passed straight to open-dread-rando's configuration.
         "door_patches": placements.get("door_patches", []),
+        # Transport rando: open-dread-rando elevators config.
+        "elevators": placements.get("elevators", []),
     }
 
 
@@ -414,6 +416,12 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
     door_patches = overrides.get("door_patches")
     if door_patches:
         out["door_patches"] = door_patches
+
+    # Transport rando: open-dread-rando elevators config (source actor ->
+    # destination scenario + spawn). Empty ⇒ keep the template (vanilla).
+    elevators = overrides.get("elevators")
+    if elevators:
+        out["elevators"] = elevators
 
     # Cosmetic / combat leaves. Only fields actually supplied are written;
     # an absent key leaves the template default untouched (so a pre-this-change

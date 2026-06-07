@@ -43,6 +43,18 @@ class DoorLockRando(Choice):
     default = 0
 
 
+class TransportRando(Choice):
+    """Randomize where elevators and shuttles go (Randovania-style). 'off' keeps
+    vanilla transports. 'randomized' shuffles destinations as a two-way matching
+    within type (elevator<->elevator, shuttle<->shuttle); teleporters stay
+    vanilla. The access logic accounts for the new connections. Uses the native
+    region-graph logic model."""
+    display_name = "Transport Randomizer"
+    option_off = 0
+    option_randomized = 1
+    default = 0
+
+
 class IncludeBossPickups(Toggle):
     """Whether boss defeats (Corpius, Kraid, Drogyga, Experiment, Escue,
     Golzuna) and EMMI defeats grant AP items. ON by default — matches
@@ -405,6 +417,7 @@ class SpeedBoosterUpgradeAmount(Range):
 class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
     door_lock_rando: DoorLockRando
+    transport_rando: TransportRando
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
     death_link: DeathLink

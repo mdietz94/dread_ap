@@ -130,21 +130,25 @@ class DreadWorld(World):
     def _use_graph_logic(self) -> bool:
         if int(self.options.door_lock_rando.value) != 0:
             return True
+        if int(self.options.transport_rando.value) != 0:
+            return True
         if int(self.options.starting_area.value) != 0:
             return True  # non-Artaria spawn needs per-seed reachability
         return os.environ.get("DREAD_GRAPH_LOGIC") == "1"
 
     def generate_early(self) -> None:
-        # Resolve the spawn and the per-seed door assignment now, so
-        # create_regions/create_items can use them. Both ride the native graph.
+        # Resolve transports, spawn, and door assignment now, so
+        # create_regions/create_items can use them. All ride the native graph.
         self._dock_assignments: dict[str, str] = {}
+        self._transport_matching: dict[str, str] = {}
         self._start_comp: int | None = None           # None => graph default (Artaria)
         self._start_patcher: dict | None = None       # None => STARTING_AREA index 0
         self._start_extra_items: list[str] = []
 
         door_on = int(self.options.door_lock_rando.value) != 0
+        transport_on = int(self.options.transport_rando.value) != 0
         area = int(self.options.starting_area.value)
-        if not (door_on or area != 0):
+        if not (door_on or transport_on or area != 0):
             return
 
         from .graph_logic import load_graph
@@ -154,13 +158,20 @@ class DreadWorld(World):
         tl = effective_trick_levels(self.options)
         base_items = {n: 1 for n in self.BASE_STARTING_ITEMS}
 
+        # Transport matching FIRST — every reachability check below depends on it.
+        if transport_on:
+            from .TransportRando import roll_connected_matching
+            self._transport_matching = roll_connected_matching(
+                graph, self.random, tl, mode="randomized")
+        tm = self._transport_matching
+
         # Spawn point + the minimal extra starting kit that bootstraps it.
         if area != 0:
-            chosen = start_node_for(graph, area, tl, base_items)
+            chosen = start_node_for(graph, area, tl, base_items, tm)
             if chosen is not None:
                 _key, self._start_comp, self._start_patcher = chosen
                 self._start_extra_items = minimal_start_items(
-                    graph, self._start_comp, base_items, tl)
+                    graph, self._start_comp, base_items, tl, transport_matching=tm)
                 for n in self._start_extra_items:
                     base_items[n] = 1
 
@@ -171,7 +182,7 @@ class DreadWorld(World):
             self._dock_assignments = roll_assignments(
                 graph, self.random, mode="randomized",
                 starting_items=base_items, trick_levels=tl,
-                start_comp=self._start_comp)
+                start_comp=self._start_comp, transport_matching=tm)
 
     def create_regions(self) -> None:
         if self._use_graph_logic():
@@ -179,7 +190,8 @@ class DreadWorld(World):
             # entrances when an event region becomes reachable.
             type(self).explicit_indirect_conditions = True
             from .graph_logic import build_regions
-            build_regions(self, getattr(self, "_dock_assignments", None))
+            build_regions(self, getattr(self, "_dock_assignments", None),
+                          getattr(self, "_transport_matching", None))
         else:
             create_regions(self)
 
@@ -687,6 +699,8 @@ class DreadWorld(World):
             # Door-lock rando: open-dread-rando door_patches (one per physical
             # door). Empty when door rando is off.
             "door_patches": self._door_patches(),
+            # Transport rando: open-dread-rando elevators config. Empty when off.
+            "elevators": self._elevators(),
             # More-starting-areas: resolved spawn {scenario, actor} for a
             # non-Artaria start, else None (patcher uses the Artaria default).
             "start_location_override": getattr(self, "_start_patcher", None),
@@ -699,6 +713,14 @@ class DreadWorld(World):
         from .DoorRando import assignments_to_door_patches
         from .graph_logic import load_graph
         return assignments_to_door_patches(assign, load_graph())
+
+    def _elevators(self) -> list:
+        matching = getattr(self, "_transport_matching", None)
+        if not matching:
+            return []
+        from .TransportRando import matching_to_elevators
+        from .graph_logic import load_graph
+        return matching_to_elevators(matching, load_graph())
 
     def pre_output(self) -> None:
         """Generate the in-game Nav Station hint text.

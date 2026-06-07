@@ -47,15 +47,16 @@ def _start_node_keys(graph: dict, region: str) -> list[str]:
     return sorted(k for k in graph["start_comps"] if k.split("::")[0] == region)
 
 
-def _reach_pickup_count(graph, items, tl, start_comp) -> int:
+def _reach_pickup_count(graph, items, tl, start_comp, transport_matching=None) -> int:
     # Item-only (events off): a conservative lower bound on AP's live reach, so a
     # met foothold target is a real early sphere fill can use.
-    reach, _ = early_reachable(graph, items, tl, start_comp, use_events=False)
+    reach, _ = early_reachable(graph, items, tl, start_comp, use_events=False,
+                               transport_matching=transport_matching)
     return sum(1 for comp, _name in graph["pickups"] if comp in reach)
 
 
 def start_node_for(graph: dict, option_value: int, tl: dict | None = None,
-                   base_items: dict | None = None):
+                   base_items: dict | None = None, transport_matching=None):
     """Return ``(start_key, comp, patcher)`` for the chosen StartingArea, or
     ``None`` for the vanilla Artaria spawn. Among the region's save/navigation
     stations, pick the BEST-CONNECTED one (most early-reachable pickups with a
@@ -73,20 +74,21 @@ def start_node_for(graph: dict, option_value: int, tl: dict | None = None,
     # Max probe-kit reach; tie-break on key for stability.
     key = max(with_actor,
               key=lambda k: (_reach_pickup_count(
-                  graph, probe, tl, graph["start_comps"][k]["comp"]), k))
+                  graph, probe, tl, graph["start_comps"][k]["comp"],
+                  transport_matching), k))
     meta = graph["start_comps"][key]
     return key, meta["comp"], meta["patcher"]
 
 
 def minimal_start_items(graph, start_comp, base_items, tl,
-                        target=_FOOTHOLD_TARGET) -> list[str]:
+                        target=_FOOTHOLD_TARGET, transport_matching=None) -> list[str]:
     """Greedily pick the fewest extra starting items (beyond ``base_items``) that
     give the spawn at least ``target`` early-reachable pickups. Handles combo
     gates (e.g. Morph + Bomb, where neither alone helps) by speculatively adding
     the next priority unlock when no single item improves reach."""
     items = dict(base_items)
     added: list[str] = []
-    cur = _reach_pickup_count(graph, items, tl, start_comp)
+    cur = _reach_pickup_count(graph, items, tl, start_comp, transport_matching)
     while cur < target and len(added) < _MAX_START_ITEMS:
         best = None
         best_gain = 0
@@ -94,7 +96,8 @@ def minimal_start_items(graph, start_comp, base_items, tl,
             if items.get(cand, 0) >= 1:
                 continue
             items[cand] = 1
-            gain = _reach_pickup_count(graph, items, tl, start_comp) - cur
+            gain = _reach_pickup_count(
+                graph, items, tl, start_comp, transport_matching) - cur
             del items[cand]
             if gain > best_gain:
                 best_gain = gain
@@ -109,5 +112,5 @@ def minimal_start_items(graph, start_comp, base_items, tl,
                 break
         items[best] = 1
         added.append(best)
-        cur = _reach_pickup_count(graph, items, tl, start_comp)
+        cur = _reach_pickup_count(graph, items, tl, start_comp, transport_matching)
     return added
