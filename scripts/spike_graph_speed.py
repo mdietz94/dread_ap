@@ -168,24 +168,89 @@ def build_graph():
 
 
 GRAPH = None  # cached across worlds
+CF_VICTORY = {"type": "trivial"}  # closed-form item-only victory (loaded in main)
+
+
+def _load_cf_victory():
+    """Closed-form item-only victory_condition. In the spike it's read from the
+    primary checkout's baked artifact; production will emit it from the graph
+    build. Falls back to trivial if absent."""
+    for cand in (
+        REPO / "apworld" / "dread" / "data" / "compiled_rules.json",
+        Path(r"C:\Users\maxwe\Documents\dread_ap\apworld\dread\data\compiled_rules.json"),
+    ):
+        if cand.exists():
+            return json.loads(cand.read_text()).get("victory_condition",
+                                                     {"type": "trivial"})
+    return {"type": "trivial"}
 
 
 # ---------------------------------------------------------------------------
-# Event model (the design that works): events are EVENT-ITEMS collected at one
-# locked EVENT-LOCATION per event NAME, hosted in an "Event:<name>" region that
-# is reachable from ANY of the event's node-components (trivial in-edges => OR
-# reachability). Edge rules consult `state.has("Event: <name>")` via the real
-# Rules.compile_to_lambda. This is monotonic (fill-friendly) AND keeps the event
-# locations reachable under accessibility:full — verified: with a full loadout
-# every event is reachable at every trick level, so the full/items access check
-# passes. Door rando recomputes event reachability for free (graph is live).
+# Event model (the design that works): events are pure-logic REGIONS — NO AP
+# locations, NO items — hosted as "Event:<name>" regions reachable from ANY of
+# the event's node-components (trivial in-edges => OR reachability). An `event`
+# atom in an edge rule resolves to a LIVE `state.can_reach_region(...)`. Because
+# events are not locations, they never enter `fulfills_accessibility`, so
+# accessibility:full only requires the 149 pickups (matching the closed-form,
+# which inlines events away). Indirect conditions retry event-gated entrances
+# when an event-region becomes reachable. The VICTORY condition uses the
+# closed-form's item-only `victory_condition` (no event atoms) so the goal stays
+# satisfiable without depending on the final-escape node's live reachability.
 # ---------------------------------------------------------------------------
+
+def _const_true(_s):
+    return True
+
+
+def _const_false(_s):
+    return False
+
+
+def compile_edge(ast, player, tl):
+    t = ast.get("type")
+    if t == "trivial":
+        return _const_true
+    if t == "impossible":
+        return _const_false
+    if t == "item":
+        name = ast["name"]; amt = ast.get("amount", 1)
+        return lambda s: s.has(name, player, amt)
+    if t == "event":
+        rn = f"Event:{ast['name']}"
+        return lambda s: s.can_reach_region(rn, player)
+    if t == "trick":
+        return _const_true if ast["level"] <= tl.get(ast["name"], 0) else _const_false
+    if t == "sum":
+        terms = [(x["name"], x["per_unit"]) for x in ast["terms"]]
+        base = ast["base"]; thr = ast["threshold"]
+        return lambda s: base + sum(s.count(n, player) * u for n, u in terms) >= thr
+    if t == "damage_threshold":
+        suits = ast["suit_options"]; hp = ast["hp_needed"]
+        return lambda s: (any(s.has(su, player) for su in suits) or
+                          99 + 100 * s.count("Energy Tank", player)
+                          + 25 * s.count("Energy Part", player) >= hp)
+    if t == "and":
+        subs = [compile_edge(c, player, tl) for c in ast["items"]]
+        return lambda s: all(f(s) for f in subs)
+    if t == "or":
+        subs = [compile_edge(c, player, tl) for c in ast["items"]]
+        return lambda s: any(f(s) for f in subs)
+    raise ValueError(f"bad ast {t}")
+
+
+def _event_atoms(ast, out):
+    t = ast.get("type")
+    if t == "event":
+        out.add(ast["name"])
+    elif t in ("and", "or"):
+        for c in ast["items"]:
+            _event_atoms(c, out)
+
 
 def patched_create_regions(self):
-    from BaseClasses import Region, Item, ItemClassification, Location
+    from BaseClasses import Region
     from collections import defaultdict
     from dread.Locations import DreadLocation, location_name_to_id
-    from dread.Rules import compile_to_lambda
     from dread.Tricks import effective_trick_levels
 
     g = GRAPH
@@ -201,42 +266,54 @@ def patched_create_regions(self):
         regions[rid] = r
         mw.regions.append(r)
 
+    # Event regions (no locations/items) reachable from any node-component.
+    ev_comps = defaultdict(set)
+    for rid, ename, uid in g["events"]:
+        ev_comps[ename].add(rid)
+    ev_region = {}
+    for ename, comps in ev_comps.items():
+        er = Region(f"Event:{ename}", player, mw)
+        ev_region[ename] = er
+        mw.regions.append(er)
+        for c in comps:
+            regions[c].connect(er, f"ev:{ename}<-{c}")
+
     menu.connect(regions[g["start_comp"]], "Menu->start")
 
+    self._indirect = []
     for i, (csrc, cdst, ast) in enumerate(g["entrances"]):
         if ast.get("type") == "impossible":
             continue
         if ast.get("type") == "trivial":
             regions[csrc].connect(regions[cdst], f"e{i}")
-        else:
-            regions[csrc].connect(regions[cdst], f"e{i}",
-                                  rule=compile_to_lambda(ast, player, tl))
+            continue
+        ent = regions[csrc].connect(regions[cdst], f"e{i}",
+                                    rule=compile_edge(ast, player, tl))
+        evs = set()
+        _event_atoms(ast, evs)
+        for en in evs:
+            self._indirect.append((ev_region[en], ent))
 
     for rid, ap_name in g["pickups"]:
         loc = DreadLocation(player, ap_name, location_name_to_id[ap_name], regions[rid])
         regions[rid].locations.append(loc)
 
-    # One event-region + one locked event-item location per unique event name.
-    ev_comps = defaultdict(set)
-    for rid, ename, uid in g["events"]:
-        ev_comps[ename].add(rid)
-    for ename, comps in ev_comps.items():
-        er = Region(f"Event:{ename}", player, mw)
-        mw.regions.append(er)
-        for c in comps:
-            regions[c].connect(er, f"ev:{ename}<-{c}")
-        loc = Location(player, f"EventLoc: {ename}", None, er)
-        loc.place_locked_item(
-            Item(f"Event: {ename}", ItemClassification.progression, None, player))
-        er.locations.append(loc)
-
 
 def patched_set_rules(self):
+    from dread.Rules import compile_to_lambda
+    from dread.Tricks import effective_trick_levels
     player = self.player
     n_dna = int(self.options.required_artifacts.value)
+    tl = effective_trick_levels(self.options)
 
-    def victory(state, p=player):
-        return state.has("Event: Ship", p)
+    # Register event indirect conditions (explicit mode).
+    if self.multiworld.worlds[player].explicit_indirect_conditions:
+        for ev_region, ent in getattr(self, "_indirect", []):
+            self.multiworld.register_indirect_condition(ev_region, ent)
+
+    # Victory uses the closed-form item-only victory_condition (no event atoms),
+    # so the goal is satisfiable without the live final-escape node.
+    victory = compile_to_lambda(CF_VICTORY, player, tl)
 
     if n_dna > 0:
         dna = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))
@@ -333,9 +410,12 @@ _VERBOSE = False
 
 
 def main():
-    global GRAPH, _VERBOSE
+    global GRAPH, _VERBOSE, CF_VICTORY
     if "-v" in sys.argv:
         _VERBOSE = True
+    CF_VICTORY = _load_cf_victory()
+    print("victory mode:", "item-only(closed-form)" if CF_VICTORY.get("type") != "trivial"
+          else "TRIVIAL (no compiled_rules.json found!)")
     t = time.perf_counter()
     GRAPH = build_graph()
     print(f"graph built in {time.perf_counter()-t:.2f}s: "
@@ -346,14 +426,20 @@ def main():
     for explicit in (True, False):
         tag = "explicit" if explicit else "auto"
         print(f"=== indirect={tag} ===")
-        _bench("solo accessibility=full (default)", explicit)
+        _bench("solo accessibility=full (default)", explicit, n_seeds=40)
         _bench("solo accessibility=items", explicit,
-               options={"accessibility": "items"})
+               options={"accessibility": "items"}, n_seeds=40)
         _bench("solo accessibility=minimal", explicit,
                options={"accessibility": "minimal"})
-        _bench("solo full + trick_level=mastery", explicit,
-               options={"trick_level": 5})
-        _bench("2-slot full", explicit, n_slots=2, n_seeds=10)
+        for lvl in (1, 2, 3, 4, 5):
+            _bench(f"solo full trick_level={lvl}", explicit,
+                   options={"trick_level": lvl})
+        _bench("solo DNA=12 prefer_bosses", explicit,
+               options={"required_artifacts": 12})
+        _bench("solo progressive_* on", explicit, options={
+            "progressive_suit": 1, "progressive_beam": 1, "progressive_missile": 1,
+            "progressive_bomb": 1, "progressive_spin": 1, "progressive_charge_beam": 1})
+        _bench("2-slot full", explicit, n_slots=2, n_seeds=15)
         print()
 
 
