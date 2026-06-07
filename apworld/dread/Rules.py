@@ -57,7 +57,8 @@ def _const_false(_: Any) -> bool:
 
 
 def compile_to_lambda(
-    ast: dict, player: int, trick_levels: dict[str, int] | None = None
+    ast: dict, player: int, trick_levels: dict[str, int] | None = None,
+    graph_mode: bool = False,
 ) -> Predicate:
     """Translate a compiled rule AST into a Predicate.
 
@@ -65,6 +66,13 @@ def compile_to_lambda(
     (``Tricks.effective_trick_levels``); a ``trick`` atom of level N is assumed
     iff ``N <= trick_levels[name]``. A trick missing from the map (or no map at
     all) resolves to level 0 = disabled, the conservative fallback.
+
+    ``graph_mode`` selects the native-graph event model (see graph_logic.py):
+    an ``event`` atom compiles to ``state.can_reach_region("Event:<name>")``
+    instead of ``state.has("Event: <name>")``. Events are then pure-logic
+    REGIONS (no AP item/location), which keeps them out of accessibility checks.
+    In graph mode, ``dock`` atoms must be pre-substituted by the caller (the
+    closed-form path never produces either).
 
     Closure-capture care: every list-comprehension binds locals (`name`,
     `amount`, etc.) eagerly so the resulting lambda isn't bitten by
@@ -85,10 +93,12 @@ def compile_to_lambda(
         return lambda state, n=name, a=amount: state.has(n, player, a)
 
     if t == "event":
-        # M2: each event is an AP item locked to its event location.
-        # The event item's name is "Event: <name>" — see Items.py /
-        # locations.json synthetic event entries.
         name = ast["name"]
+        if graph_mode:
+            # Native-graph model: event is a logic REGION; reach it live.
+            rn = f"Event:{name}"
+            return lambda state, r=rn: state.can_reach_region(r, player)
+        # Closed-form model: each event is an AP item locked to its location.
         return lambda state, n=f"Event: {name}": state.has(n, player)
 
     if t == "trick":
@@ -126,7 +136,8 @@ def compile_to_lambda(
         return _dthr_pred
 
     if t == "and":
-        children = [compile_to_lambda(c, player, trick_levels) for c in ast["items"]]
+        children = [compile_to_lambda(c, player, trick_levels, graph_mode)
+                    for c in ast["items"]]
         if not children:
             return _const_true
         if len(children) == 1:
@@ -134,7 +145,8 @@ def compile_to_lambda(
         return lambda state, cs=children: all(c(state) for c in cs)
 
     if t == "or":
-        children = [compile_to_lambda(c, player, trick_levels) for c in ast["items"]]
+        children = [compile_to_lambda(c, player, trick_levels, graph_mode)
+                    for c in ast["items"]]
         if not children:
             return _const_false
         if len(children) == 1:

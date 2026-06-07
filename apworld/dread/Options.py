@@ -14,10 +14,44 @@ from .Tricks import FOLLOW_GLOBAL, VISIBLE_TRICKS
 
 
 class StartingArea(Choice):
-    """Which Dread area Samus spawns in. v0.1 only supports Artaria
-    (the vanilla start location); future versions will randomize."""
+    """Which Dread region Samus spawns in. 'artaria' is the vanilla start;
+    every other region spawns at one of its save/navigation stations. A
+    non-Artaria spawn uses the native region-graph logic and grants the minimal
+    extra starting items needed to bootstrap from that location (mirrors
+    Randovania's per-start starting items)."""
     display_name = "Starting Area"
     option_artaria = 0
+    option_cataris = 1
+    option_dairon = 2
+    option_burenia = 3
+    option_ghavoran = 4
+    option_ferenia = 5
+    option_hanubia = 6
+    default = 0
+
+
+class DoorLockRando(Choice):
+    """Randomize the weapon/tool needed to open each door (Randovania-style).
+    'off' keeps vanilla doors. 'randomized' reassigns every eligible door a
+    random weapon type — both sides of a door always match. The access logic
+    accounts for the new requirements (a door may now demand e.g. Wave Beam or
+    Power Bombs), and items are placed so the seed stays solvable. Enabling this
+    uses the native region-graph logic model."""
+    display_name = "Door Lock Randomizer"
+    option_off = 0
+    option_randomized = 1
+    default = 0
+
+
+class TransportRando(Choice):
+    """Randomize where elevators and shuttles go (Randovania-style). 'off' keeps
+    vanilla transports. 'randomized' shuffles destinations as a two-way matching
+    within type (elevator<->elevator, shuttle<->shuttle); teleporters stay
+    vanilla. The access logic accounts for the new connections. Uses the native
+    region-graph logic model."""
+    display_name = "Transport Randomizer"
+    option_off = 0
+    option_randomized = 1
     default = 0
 
 
@@ -382,6 +416,8 @@ class SpeedBoosterUpgradeAmount(Range):
 @dataclass
 class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
+    door_lock_rando: DoorLockRando
+    transport_rando: TransportRando
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
     death_link: DeathLink

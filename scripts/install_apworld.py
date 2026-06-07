@@ -103,15 +103,22 @@ def _ensure_compiled_rules() -> None:
                       pinned.stat().st_mtime if pinned.exists() else 0)
 
     # Single compiled file (v3): tricks are kept symbolic and resolved per-trick
-    # at AP-generation time, so there is no longer a per-trick-level bake.
+    # at AP-generation time. ``--graph`` also emits logic_graph.json (the native
+    # region-graph model — the default logic path, see graph_logic.py) in the
+    # same bake, reusing the item-only victory.
     target = data_dir / "compiled_rules.json"
-    if target.exists() and target.stat().st_mtime >= input_mtime:
+    graph_target = data_dir / "logic_graph.json"
+    if (target.exists() and graph_target.exists()
+            and target.stat().st_mtime >= input_mtime
+            and graph_target.stat().st_mtime >= input_mtime):
         return
 
-    print("regenerating compiled_rules.json (~10 minutes; two-pass resolver)...")
+    print("regenerating compiled_rules.json + logic_graph.json "
+          "(~10 minutes; two-pass resolver)...")
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.Popen(
-        [sys.executable, str(extract), "--all", "--out", str(target)],
+        [sys.executable, str(extract), "--all", "--graph",
+         "--out", str(target), "--graph-out", str(graph_target)],
         cwd=str(REPO), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, err = proc.communicate()

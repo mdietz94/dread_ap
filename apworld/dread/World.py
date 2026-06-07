@@ -41,6 +41,7 @@ Skipped for now (later phases):
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -122,8 +123,81 @@ class DreadWorld(World):
             self.get_filler_item_name(), classification=ItemClassification.filler
         )
 
+    # Native region-graph logic is the DEFAULT (fast per-seed reachability +
+    # door/transport/start rando). The closed-form compiled_rules.json path is
+    # the fallback — used only when logic_graph.json is absent (e.g. a partial
+    # dev tree) or when DREAD_CLOSED_FORM=1 forces it. Door/transport/non-Artaria
+    # options REQUIRE the graph and override the opt-out. See graph_logic.py /
+    # [[dread-native-graph-spike]].
+    def _use_graph_logic(self) -> bool:
+        forced = (int(self.options.door_lock_rando.value) != 0
+                  or int(self.options.transport_rando.value) != 0
+                  or int(self.options.starting_area.value) != 0)
+        if forced:
+            return True
+        if os.environ.get("DREAD_CLOSED_FORM") == "1":
+            return False
+        from ._data_loader import data_exists
+        return data_exists("logic_graph.json")
+
+    def generate_early(self) -> None:
+        # Resolve transports, spawn, and door assignment now, so
+        # create_regions/create_items can use them. All ride the native graph.
+        self._dock_assignments: dict[str, str] = {}
+        self._transport_matching: dict[str, str] = {}
+        self._start_comp: int | None = None           # None => graph default (Artaria)
+        self._start_patcher: dict | None = None       # None => STARTING_AREA index 0
+        self._start_extra_items: list[str] = []
+
+        door_on = int(self.options.door_lock_rando.value) != 0
+        transport_on = int(self.options.transport_rando.value) != 0
+        area = int(self.options.starting_area.value)
+        if not (door_on or transport_on or area != 0):
+            return
+
+        from .graph_logic import load_graph
+        from .Tricks import effective_trick_levels
+        from .StartArea import start_node_for, minimal_start_items
+        graph = load_graph()
+        tl = effective_trick_levels(self.options)
+        base_items = {n: 1 for n in self.BASE_STARTING_ITEMS}
+
+        # Transport matching FIRST — every reachability check below depends on it.
+        if transport_on:
+            from .TransportRando import roll_connected_matching
+            self._transport_matching = roll_connected_matching(
+                graph, self.random, tl, mode="randomized")
+        tm = self._transport_matching
+
+        # Spawn point + the minimal extra starting kit that bootstraps it.
+        if area != 0:
+            chosen = start_node_for(graph, area, tl, base_items, tm)
+            if chosen is not None:
+                _key, self._start_comp, self._start_patcher = chosen
+                self._start_extra_items = minimal_start_items(
+                    graph, self._start_comp, base_items, tl, transport_matching=tm)
+                for n in self._start_extra_items:
+                    base_items[n] = 1
+
+        # Door-lock weakness assignment, guarded so the early frontier (from THIS
+        # spawn, with the full starting kit) stays vanilla and fill can bootstrap.
+        if door_on:
+            from .DoorRando import roll_assignments
+            self._dock_assignments = roll_assignments(
+                graph, self.random, mode="randomized",
+                starting_items=base_items, trick_levels=tl,
+                start_comp=self._start_comp, transport_matching=tm)
+
     def create_regions(self) -> None:
-        create_regions(self)
+        if self._use_graph_logic():
+            # Events are graph regions; AP's BFS must re-derive event-gated
+            # entrances when an event region becomes reachable.
+            type(self).explicit_indirect_conditions = True
+            from .graph_logic import build_regions
+            build_regions(self, getattr(self, "_dock_assignments", None),
+                          getattr(self, "_transport_matching", None))
+        else:
+            create_regions(self)
 
     def create_items(self) -> None:
         # Pool layout (post-M2 + Dreadvania options):
@@ -216,7 +290,12 @@ class DreadWorld(World):
         # selector: when start_with_pulse_radar is off we don't precollect it and
         # it rejoins the findable pool. Solvability is identical either way.
         start_with_radar = bool(o.start_with_pulse_radar.value)
-        forced_starting = list(self.BASE_STARTING_ITEMS) + list(self.EXTRA_STARTING_ITEMS)
+        # Per-spawn bootstrap kit (more-starting-areas): minimal extra unlocks so
+        # a deep spawn has an early sphere for fill. Empty for the Artaria spawn.
+        start_area_items = list(getattr(self, "_start_extra_items", []) or [])
+        forced_starting = (list(self.BASE_STARTING_ITEMS)
+                           + list(self.EXTRA_STARTING_ITEMS)
+                           + start_area_items)
         if not start_with_radar:
             forced_starting = [n for n in forced_starting if n != "Pulse Radar"]
         for name in forced_starting:
@@ -224,7 +303,8 @@ class DreadWorld(World):
         # Starting-only items are removed from the findable pool. Missile Tank
         # is precollected for capacity but stays findable. Pulse Radar is only
         # excluded when it's a starting item.
-        pool_excluded = {"Slide"} | set(self.EXTRA_STARTING_ITEMS)
+        pool_excluded = ({"Slide"} | set(self.EXTRA_STARTING_ITEMS)
+                         | set(start_area_items))
         if start_with_radar:
             pool_excluded.add("Pulse Radar")
 
@@ -331,7 +411,11 @@ class DreadWorld(World):
         # Rules.py wires it via compile_to_lambda(victory_condition),
         # which currently resolves to ``state.has("Event: Ship", player)``.
         # A post-set_rules override here would silently break that.
-        set_rules(self)
+        if self._use_graph_logic():
+            from .graph_logic import set_graph_rules
+            set_graph_rules(self)
+        else:
+            set_rules(self)
 
     # Progressive-item logic translation. The compiled access rules reference
     # the individual tier items by name (e.g. state.has("Wave Beam")), but when
@@ -616,7 +700,31 @@ class DreadWorld(World):
             # flows that skip pre_output ⇒ patcher falls back to neutral filler.
             "nav_hints": getattr(self, "_nav_hints", []),
             "placements": placements,
+            # Door-lock rando: open-dread-rando door_patches (one per physical
+            # door). Empty when door rando is off.
+            "door_patches": self._door_patches(),
+            # Transport rando: open-dread-rando elevators config. Empty when off.
+            "elevators": self._elevators(),
+            # More-starting-areas: resolved spawn {scenario, actor} for a
+            # non-Artaria start, else None (patcher uses the Artaria default).
+            "start_location_override": getattr(self, "_start_patcher", None),
         }
+
+    def _door_patches(self) -> list:
+        assign = getattr(self, "_dock_assignments", None)
+        if not assign:
+            return []
+        from .DoorRando import assignments_to_door_patches
+        from .graph_logic import load_graph
+        return assignments_to_door_patches(assign, load_graph())
+
+    def _elevators(self) -> list:
+        matching = getattr(self, "_transport_matching", None)
+        if not matching:
+            return []
+        from .TransportRando import matching_to_elevators
+        from .graph_logic import load_graph
+        return matching_to_elevators(matching, load_graph())
 
     def pre_output(self) -> None:
         """Generate the in-game Nav Station hint text.
