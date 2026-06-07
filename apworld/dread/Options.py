@@ -21,6 +21,19 @@ class StartingArea(Choice):
     default = 0
 
 
+class DoorLockRando(Choice):
+    """Randomize the weapon/tool needed to open each door (Randovania-style).
+    'off' keeps vanilla doors. 'randomized' reassigns every eligible door a
+    random weapon type — both sides of a door always match. The access logic
+    accounts for the new requirements (a door may now demand e.g. Wave Beam or
+    Power Bombs), and items are placed so the seed stays solvable. Enabling this
+    uses the native region-graph logic model."""
+    display_name = "Door Lock Randomizer"
+    option_off = 0
+    option_randomized = 1
+    default = 0
+
+
 class IncludeBossPickups(Toggle):
     """Whether boss defeats (Corpius, Kraid, Drogyga, Experiment, Escue,
     Golzuna) and EMMI defeats grant AP items. ON by default — matches
@@ -382,6 +395,7 @@ class SpeedBoosterUpgradeAmount(Range):
 @dataclass
 class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
+    door_lock_rando: DoorLockRando
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
     death_link: DeathLink

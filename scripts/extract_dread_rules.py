@@ -286,6 +286,9 @@ class Header:
     templates: dict[str, dict]          # template_name -> requirement tree
     dock_weakness: dict[str, dict]      # (dock_type, weakness_name) -> {open, lock}
     starting_location: dict
+    # dock_type -> {change_from, change_to, ...}. Defaulted so older callers /
+    # fixtures that don't supply it still construct.
+    dock_rando: dict[str, dict] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, hdr: dict) -> "Header":
@@ -297,10 +300,13 @@ class Header:
         templates = rdb.get("requirement_template", {})
 
         dock_weakness = {}
+        dock_rando = {}
         dw_root = hdr["dock_weakness_database"]["types"]
         for dock_type, td in dw_root.items():
             for wname, w in td.get("items", {}).items():
                 dock_weakness[(dock_type, wname)] = w
+            if "dock_rando" in td:
+                dock_rando[dock_type] = td["dock_rando"]
         return cls(
             items_by_short=items_by_short,
             events_by_name=events_by_name,
@@ -309,6 +315,7 @@ class Header:
             templates=templates,
             dock_weakness=dock_weakness,
             starting_location=hdr["starting_location"],
+            dock_rando=dock_rando,
         )
 
 
@@ -1441,11 +1448,20 @@ def emit_graph(
 ) -> dict:
     """Build the native logic graph artifact (see module header)."""
     # Per-(dock_type,weakness) open-requirement table the apworld resolves dock
-    # atoms against.
+    # atoms against. Also map each weakness to its patcher door_type (extra.type)
+    # for door_patches emission.
     weakness_requirements: dict[str, dict] = {}
-    for (dock_type, wname) in header.dock_weakness:
+    weakness_door_type: dict[str, str] = {}
+    for (dock_type, wname), w in header.dock_weakness.items():
         weakness_requirements[f"{dock_type}::{wname}"] = dock_open_requirement(
             header, dock_type, wname)
+        dt = (w.get("extra") or {}).get("type")
+        if dock_type == "door" and dt:
+            weakness_door_type[wname] = dt
+
+    # Door-lock rando config (which door weaknesses may change, and into what).
+    door_dr = header.dock_rando.get("door", {})
+    door_change_from = set(door_dr.get("change_from", []))
 
     scenario_of = {region: ad["extra"].get("scenario_id")
                    for region, ad in areas.items()}
@@ -1477,11 +1493,14 @@ def emit_graph(
         far = (dc["region"], dc["area"], dc["node"])
         side_id = "::".join(key)
         override = n.get("override_default_open_requirement")
+        # Eligible per Randovania's door dock_rando: the door's CURRENT weakness
+        # must be in change_from (only those get reassigned), not per-node
+        # excluded, and not carrying a bespoke open override.
         rando_eligible = (
             dock_type in RANDOMIZABLE_DOCK_TYPES
+            and weakness in door_change_from
             and not n.get("exclude_from_dock_rando")
             and override is None
-            and (dock_type, weakness) in header.dock_weakness
         )
         if rando_eligible:
             ast = {"type": "dock", "side_id": side_id}
@@ -1540,6 +1559,13 @@ def emit_graph(
         "entrances": entrances,
         "dock_sides": dock_sides,
         "weakness_requirements": weakness_requirements,
+        "door_rando": {
+            "change_from": sorted(door_change_from),
+            "change_to": door_dr.get("change_to", []),
+            "weakness_door_type": weakness_door_type,
+            "locked_weakness": door_dr.get("locked"),
+            "unlocked_weakness": door_dr.get("unlocked"),
+        },
         "pickups": pickups,
         "events": events,
         "victory_condition": victory_item_only,

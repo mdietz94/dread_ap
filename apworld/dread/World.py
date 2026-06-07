@@ -124,11 +124,23 @@ class DreadWorld(World):
         )
 
     # Native region-graph logic (door/transport rando + fast per-seed
-    # reachability). Opt-in via DREAD_GRAPH_LOGIC=1 while it's validated against
-    # the closed-form path; will become the default once the graph migration
-    # lands. See graph_logic.py / [[dread-native-graph-spike]].
+    # reachability). Used automatically when an option needs it (door rando), and
+    # otherwise opt-in via DREAD_GRAPH_LOGIC=1 while it's validated against the
+    # closed-form path. See graph_logic.py / [[dread-native-graph-spike]].
     def _use_graph_logic(self) -> bool:
+        if int(self.options.door_lock_rando.value) != 0:
+            return True
         return os.environ.get("DREAD_GRAPH_LOGIC") == "1"
+
+    def generate_early(self) -> None:
+        # Roll the per-seed door-lock weakness assignment now so create_regions
+        # can resolve dock atoms against it. Empty when door rando is off.
+        self._dock_assignments: dict[str, str] = {}
+        if int(self.options.door_lock_rando.value) != 0:
+            from .DoorRando import roll_assignments
+            from .graph_logic import load_graph
+            self._dock_assignments = roll_assignments(
+                load_graph(), self.random, mode="randomized")
 
     def create_regions(self) -> None:
         if self._use_graph_logic():
@@ -136,7 +148,7 @@ class DreadWorld(World):
             # entrances when an event region becomes reachable.
             type(self).explicit_indirect_conditions = True
             from .graph_logic import build_regions
-            build_regions(self)
+            build_regions(self, getattr(self, "_dock_assignments", None))
         else:
             create_regions(self)
 
