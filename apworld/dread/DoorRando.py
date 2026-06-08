@@ -198,6 +198,8 @@ def assignments_to_door_patches(
     for sid, weakness in assign.items():
         meta = dock_sides[sid]
         p = meta["patcher"]
+        if not p.get("actor"):
+            continue  # no physical door actor to patch (shouldn't be eligible)
         key = (p["scenario"], p["actor"])
         if key in seen:
             continue

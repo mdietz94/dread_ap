@@ -1520,12 +1520,16 @@ def emit_graph(
             continue
         # Eligible per Randovania's door dock_rando: the door's CURRENT weakness
         # must be in change_from (only those get reassigned), not per-node
-        # excluded, and not carrying a bespoke open override.
+        # excluded, not carrying a bespoke open override, AND have a physical door
+        # actor the patcher can rewrite (some "Access Open" doorways — e.g. the
+        # EMMI Central Unit access — have no actor and aren't patchable).
+        door_actor = n.get("extra", {}).get("actor_name")
         rando_eligible = (
             dock_type in RANDOMIZABLE_DOCK_TYPES
             and weakness in door_change_from
             and not n.get("exclude_from_dock_rando")
             and override is None
+            and bool(door_actor)
         )
         if rando_eligible:
             ast = {"type": "dock", "side_id": side_id}
