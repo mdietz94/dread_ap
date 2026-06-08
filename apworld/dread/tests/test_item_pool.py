@@ -89,8 +89,8 @@ def test_default_pickup_quantities_match_randovania(items):
 
 def test_unique_progression_items_have_pool_count_one(items):
     """Every progression item that isn't a tank/expansion/upgrade should
-    have pool_count=1 (one copy in the pool by default). The two upgrade
-    items have pool_count=2 — covered by test_upgrade_pool_count_is_two."""
+    have pool_count=1 (one copy in the pool by default). The two chain-upgrade
+    items have pool_count=0 — covered by test_upgrade_pool_count_is_zero."""
     multi_copy = set(_VANILLA_POOL_COUNTS) | {
         "Flash Shift Upgrade", "Speed Booster Upgrade",
     }
@@ -356,6 +356,11 @@ def test_item_amounts_reflect_options_in_slot_data():
         "Power Bomb Tank": 3,
         "Flash Shift Upgrade": 2,
         "Speed Booster Upgrade": 4,
+        # "from main" chains/charges default to 3 (vanilla); baked into the
+        # main pickup via pickup_resource_stage on both the seed-baked and wire
+        # delivery paths.
+        "Flash Shift": 3,
+        "Speed Booster": 3,
     }
 
 
@@ -371,6 +376,8 @@ def test_item_amounts_default_to_randovania_values():
         "Power Bomb Tank": 1,
         "Flash Shift Upgrade": 1,
         "Speed Booster Upgrade": 1,
+        "Flash Shift": 3,
+        "Speed Booster": 3,
     }
 
 
@@ -481,58 +488,77 @@ def test_missile_plus_tank_first_is_progression_rest_useful():
     )
 
 
-def test_upgrade_pool_count_is_two(items):
-    """Flash Shift Upgrade and Speed Booster Upgrade have pool_count=2 —
-    matches the count of pickups vanilla Dread ships and the maximum
-    amount referenced by compiled rules (amount=2 for both)."""
+def test_upgrade_pool_count_is_zero(items):
+    """Flash Shift Upgrade and Speed Booster Upgrade have pool_count=0 —
+    Randovania doesn't shuffle them by default; the chains/charges are baked
+    into the main pickup instead (FlashShiftChainsFromMain, default 3). The
+    *_upgrade_count options shuffle them in when raised."""
     by_name = {it["name"]: it for it in items}
-    assert by_name["Flash Shift Upgrade"]["pool_count"] == 2
-    assert by_name["Speed Booster Upgrade"]["pool_count"] == 2
+    assert by_name["Flash Shift Upgrade"]["pool_count"] == 0
+    assert by_name["Speed Booster Upgrade"]["pool_count"] == 0
 
 
 @pytestmark_runtime
-def test_flash_shift_upgrade_first_is_progression_rest_useful():
-    """Compiled rules reference Flash Shift Upgrade up to amount=2, but
-    every amount=2 rule lives in a disjunct with other paths — so only the
-    first copy is logic-gating; the second is QoL routing."""
-    from BaseClasses import ItemClassification
+@pytest.mark.parametrize("name", ["Flash Shift Upgrade", "Speed Booster Upgrade"])
+def test_chain_upgrades_absent_from_default_pool(name):
+    """Default seed shuffles zero chain upgrades — the main pickup carries the
+    vanilla chains, so none are findable."""
     world, mw = _build_world()
     world.create_items()
-    fsu = [it for it in mw.itempool if it.name == "Flash Shift Upgrade"]
-    progression_n = sum(
-        1 for it in fsu if it.classification == ItemClassification.progression
-    )
-    useful_n = sum(
-        1 for it in fsu if it.classification == ItemClassification.useful
-    )
-    assert len(fsu) == 2, f"Flash Shift Upgrade: expected 2 in pool, got {len(fsu)}"
-    assert progression_n == 1, (
-        f"Flash Shift Upgrade: expected 1 progression copy, got {progression_n}"
-    )
-    assert useful_n == 1, (
-        f"Flash Shift Upgrade: expected 1 useful copy, got {useful_n}"
-    )
+    assert [it for it in mw.itempool if it.name == name] == []
 
 
 @pytestmark_runtime
-def test_speed_booster_upgrade_first_is_progression_rest_useful():
-    """Same shape as Flash Shift Upgrade — 2 in pool, 1 progression + 1 useful."""
-    from BaseClasses import ItemClassification
-    world, mw = _build_world()
+@pytest.mark.parametrize(
+    "name, count_opt, main_opt",
+    [
+        ("Flash Shift Upgrade", "flash_shift_upgrade_count",
+         "flash_shift_chains_from_main"),
+        ("Speed Booster Upgrade", "speed_booster_upgrade_count",
+         "speed_booster_charges_from_main"),
+    ],
+)
+def test_chain_upgrade_count_drives_pool(name, count_opt, main_opt):
+    """Raising the count option shuffles that many copies into the pool."""
+    world, mw = _build_world(**{count_opt: 4})
     world.create_items()
-    sbu = [it for it in mw.itempool if it.name == "Speed Booster Upgrade"]
+    assert len([it for it in mw.itempool if it.name == name]) == 4
+
+
+@pytestmark_runtime
+@pytest.mark.parametrize(
+    "name, count_opt, main_opt",
+    [
+        ("Flash Shift Upgrade", "flash_shift_upgrade_count",
+         "flash_shift_chains_from_main"),
+        ("Speed Booster Upgrade", "speed_booster_upgrade_count",
+         "speed_booster_charges_from_main"),
+    ],
+)
+def test_chain_upgrade_progression_split_tracks_from_main(
+        name, count_opt, main_opt):
+    """When the main grants the full chain cap (default 3), shuffled copies are
+    pure QoL (`useful`). Lowering the "from main" value to 1 makes the first
+    MAX_CHAIN_REQ-1 = 2 copies logic-relevant (`progression`); the rest are
+    `useful`."""
+    from BaseClasses import ItemClassification
+    # from_main at the cap → every shuffled copy is useful.
+    world, mw = _build_world(**{count_opt: 3})
+    world.create_items()
+    copies = [it for it in mw.itempool if it.name == name]
+    assert len(copies) == 3
+    assert all(c.classification == ItemClassification.useful for c in copies)
+
+    # from_main below the cap → first (cap - from_main) copies are progression.
+    world, mw = _build_world(**{count_opt: 3, main_opt: 1})
+    world.create_items()
+    copies = [it for it in mw.itempool if it.name == name]
     progression_n = sum(
-        1 for it in sbu if it.classification == ItemClassification.progression
+        1 for c in copies if c.classification == ItemClassification.progression
     )
-    useful_n = sum(
-        1 for it in sbu if it.classification == ItemClassification.useful
-    )
-    assert len(sbu) == 2, f"Speed Booster Upgrade: expected 2 in pool, got {len(sbu)}"
-    assert progression_n == 1, (
-        f"Speed Booster Upgrade: expected 1 progression copy, got {progression_n}"
-    )
-    assert useful_n == 1, (
-        f"Speed Booster Upgrade: expected 1 useful copy, got {useful_n}"
+    assert progression_n == 2, (
+        f"{name}: expected 2 progression copies with from_main=1, got "
+        f"{progression_n}"
     )
 
 
@@ -700,3 +726,42 @@ def test_progressive_collect_remove_round_trips():
     for tier in reversed(order):
         world.remove(state, beam)
         assert not state.has(tier, p)
+
+
+@pytestmark_runtime
+@pytest.mark.parametrize(
+    "main_name, chain_item, main_opt, default_n",
+    [
+        ("Flash Shift", "Flash Shift Upgrade", "flash_shift_chains_from_main", 3),
+        ("Speed Booster", "Speed Booster Upgrade",
+         "speed_booster_charges_from_main", 3),
+    ],
+)
+def test_main_pickup_credits_chains_in_logic(
+        main_name, chain_item, main_opt, default_n):
+    """Collecting the main Flash Shift / Speed Booster credits its "from main"
+    chains onto the chain-upgrade item in state, so the access-logic chain gates
+    (state.has("Flash Shift Upgrade", N)) clear with no upgrades shuffled.
+    remove is the exact inverse so collect/remove round-trip during fill."""
+    world, _ = _build_world()  # defaults: from_main == 3
+    p = world.player
+    main = world.create_item(main_name)
+    state = _MiniState()
+
+    # No credit before the main is collected.
+    assert not state.has(chain_item, p, 1)
+    assert world.collect(state, main) is True
+    # The full default chain count is credited — clears every gate up to the cap.
+    assert state.count(chain_item, p) == default_n
+    assert state.has(chain_item, p, default_n)
+
+    # Exact inverse on remove.
+    world.remove(state, main)
+    assert state.count(chain_item, p) == 0
+
+    # A lower "from main" credits fewer.
+    world, _ = _build_world(**{main_opt: 1})
+    main = world.create_item(main_name)
+    state = _MiniState()
+    world.collect(state, main)
+    assert state.count(chain_item, world.player) == 1

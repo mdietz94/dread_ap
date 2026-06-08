@@ -413,6 +413,67 @@ class SpeedBoosterUpgradeAmount(Range):
     default = 1
 
 
+# ---------------------------------------------------------------------------
+# Flash Shift / Speed Booster chain upgrades. Neither the Flash Shift Upgrade
+# nor the Speed Booster Upgrade is a base-game item — Randovania adds them as
+# custom pickups and, by default, does NOT shuffle any of them (count 0).
+# Instead the chains/charges are baked into the MAIN Flash Shift / Speed Booster
+# pickup ("…FromMain", default 3 = vanilla). These two knobs are coupled: the
+# access logic gates some routes on up to 3 chain upgrades, and a default-3
+# "from main" satisfies every such gate even with 0 shuffled (collecting the
+# main credits the chains in logic — see World.collect). Lower the "from main"
+# value and raise the count to make the extra chains findable instead.
+# ---------------------------------------------------------------------------
+
+class FlashShiftUpgradeCount(Range):
+    """How many Flash Shift Upgrade pickups to shuffle into the item pool. Each
+    grants extra chained dashes (see Flash Shift Upgrade Amount). Randovania does
+    NOT shuffle these by default — default 0. With 0 shuffled, the main Flash
+    Shift still grants 'Flash Shift Chains From Main' chains (default 3 =
+    vanilla), so chain-gated checks stay reachable."""
+    display_name = "Flash Shift Upgrade Count"
+    range_start = 0
+    range_end = 16
+    default = 0
+
+
+class SpeedBoosterUpgradeCount(Range):
+    """How many Speed Booster Upgrade pickups to shuffle into the item pool.
+    Each grants an extra Speed Booster charge upgrade. Randovania does NOT
+    shuffle these by default — default 0. With 0 shuffled, the main Speed Booster
+    still grants 'Speed Booster Charges From Main' charges (default 3)."""
+    display_name = "Speed Booster Upgrade Count"
+    range_start = 0
+    range_end = 16
+    default = 0
+
+
+class FlashShiftChainsFromMain(Range):
+    """How many Flash Shift chained dashes the MAIN Flash Shift pickup grants on
+    its own (Randovania's 'included' amount). Vanilla Dread chains 3 dashes, so
+    the default is 3 — enough to satisfy the access-logic chain gates (which top
+    out at 3) even when no Flash Shift Upgrades are shuffled. Lower this and
+    raise Flash Shift Upgrade Count to make the extra chains findable; if the
+    main plus the shuffled upgrades can't reach a route's required chain count,
+    that route drops out of logic."""
+    display_name = "Flash Shift Chains From Main"
+    range_start = 0
+    range_end = 9
+    default = 3
+
+
+class SpeedBoosterChargesFromMain(Range):
+    """How many Speed Booster charge upgrades the MAIN Speed Booster pickup
+    grants on its own. Default 3 satisfies the access-logic speed-charge gates
+    (which top out at 3) even when no Speed Booster Upgrades are shuffled. Lower
+    this and raise Speed Booster Upgrade Count to make the extra charges
+    findable."""
+    display_name = "Speed Booster Charges From Main"
+    range_start = 0
+    range_end = 9
+    default = 3
+
+
 @dataclass
 class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
@@ -452,6 +513,10 @@ class _DreadOptionsBase(PerGameCommonOptions):
     power_bomb_tank_ammo: PowerBombTankAmmo
     flash_shift_upgrade_amount: FlashShiftUpgradeAmount
     speed_booster_upgrade_amount: SpeedBoosterUpgradeAmount
+    flash_shift_upgrade_count: FlashShiftUpgradeCount
+    speed_booster_upgrade_count: SpeedBoosterUpgradeCount
+    flash_shift_chains_from_main: FlashShiftChainsFromMain
+    speed_booster_charges_from_main: SpeedBoosterChargesFromMain
 
 
 # Final options dataclass = the explicit base above + one generated field per

@@ -65,6 +65,14 @@ from .Rules import set_rules
 
 GAME_NAME = "Metroid Dread"
 
+# Highest chain-upgrade amount the access logic ever asks for: Randovania's
+# FlashUpgrade / SpeedBoostUpgrade requirements top out at 3 (verified against
+# the upstream logic snapshot). When the main pickup grants at least this many
+# "from main" (the default), every chain gate clears with no upgrades shuffled
+# and the upgrade items are pure QoL. See create_items (chain_progression_n)
+# and collect/remove (the in-logic credit).
+MAX_CHAIN_REQ = 3
+
 # Number of in-game Nav Station hint plaques baked into the starter template.
 # _generate_nav_hints fills up to this many with real AP placement hints;
 # patcher_pipeline._apply_nav_hints maps them onto the template plaques and
@@ -225,12 +233,33 @@ class DreadWorld(World):
             )
 
         # Option-driven counts override items.json pool_count for tanks.
+        # Flash Shift / Speed Booster Upgrade default to 0 (Randovania doesn't
+        # shuffle them); the chains/charges are baked into the main pickup
+        # instead (see flash_shift_chains_from_main / collect below).
         pool_overrides = {
             "Energy Tank":     int(o.energy_tank_count.value),
             "Energy Part":     int(o.energy_part_count.value),
             "Missile Tank":    int(o.missile_tank_count.value),
             "Missile+ Tank":   int(o.missile_plus_tank_count.value),
             "Power Bomb Tank": int(o.power_bomb_tank_count.value),
+            "Flash Shift Upgrade":   int(o.flash_shift_upgrade_count.value),
+            "Speed Booster Upgrade": int(o.speed_booster_upgrade_count.value),
+        }
+
+        # Chain-upgrade progression classification (dynamic, unlike the static
+        # MIXED_CLASSIFICATION_FIRST_N below). The access logic gates some routes
+        # on Flash Shift / Speed Booster chain upgrades up to MAX_CHAIN_REQ; the
+        # main pickup credits `…_from_main` of them in logic (see collect), so
+        # only the first `MAX_CHAIN_REQ - from_main` *shuffled* copies are
+        # logic-relevant → progression. At the default (from_main=3 = the cap)
+        # this is 0, so any shuffled copies are pure QoL (`useful`). If the main
+        # plus the shuffled copies still can't reach a route's requirement, that
+        # route simply drops out of logic (AP's accessibility sweep stays sound).
+        chain_progression_n = {
+            "Flash Shift Upgrade": max(
+                0, MAX_CHAIN_REQ - int(o.flash_shift_chains_from_main.value)),
+            "Speed Booster Upgrade": max(
+                0, MAX_CHAIN_REQ - int(o.speed_booster_charges_from_main.value)),
         }
 
         # For items where the pool has more copies than compiled rules need
@@ -239,11 +268,9 @@ class DreadWorld(World):
         # reachable spots where possible).
         #   - Missile+ Tank: 336 amount=1 refs, NOT precollected. The first
         #     copy is logic-gating; the other 11 are ammo capacity.
-        #   - Flash Shift Upgrade / Speed Booster Upgrade: rules reference
-        #     each up to amount=2 (max amount seen). Real Dread ships 2 of
-        #     each, so pool_count=2 matches the game; the FIRST copy is
-        #     logic-gating (any rule disjunct needing the upgrade is
-        #     satisfiable with just one), the second is QoL routing.
+        #   - Flash Shift Upgrade / Speed Booster Upgrade: default to 0 in the
+        #     pool (the chains are baked into the main pickup); when shuffled
+        #     their progression count is dynamic — see chain_progression_n.
         #   - Missile Tank: all its logic atoms are amount=1, satisfied by the
         #     PRECOLLECTED copy (BASE_STARTING_ITEMS), which is advancement
         #     because create_item reads items.json's class, NOT this cap. Its
@@ -262,8 +289,6 @@ class DreadWorld(World):
         #     test_missile_tank_classification.
         MIXED_CLASSIFICATION_FIRST_N = {
             "Missile+ Tank": 1,
-            "Flash Shift Upgrade": 1,
-            "Speed Booster Upgrade": 1,
             "Missile Tank": 3,
             # Region floors (Hanubia at trick levels 1/2) gate Menu→Region on
             # `state.has("Energy Tank", 3)`; the first 3 copies are
@@ -347,10 +372,15 @@ class DreadWorld(World):
             if it.name == "Pulse Radar":
                 default_cls = ItemClassification.useful
             # If this item has a "first N progression" override, the rest of
-            # the copies fall back to useful (e.g. Missile+ Tank). For items
-            # without an override, n_special == count → every copy uses the
-            # row's classification (the legacy behavior).
-            n_special = MIXED_CLASSIFICATION_FIRST_N.get(it.name, count)
+            # the copies fall back to useful (e.g. Missile+ Tank). The chain
+            # upgrades use the dynamic count (depends on the "from main"
+            # option); everything else uses the static table, and items absent
+            # from both get n_special == count → every copy uses the row's
+            # classification (the legacy behavior).
+            if it.name in chain_progression_n:
+                n_special = chain_progression_n[it.name]
+            else:
+                n_special = MIXED_CLASSIFICATION_FIRST_N.get(it.name, count)
             for i in range(count):
                 cls = default_cls if i < n_special else ItemClassification.useful
                 pool.append(self.create_item(it.name, classification=cls))
@@ -426,6 +456,19 @@ class DreadWorld(World):
     # `remove` is the exact inverse so collect/remove round-trip during fill.
     # (Standard AP progressive idiom; see [[ap-nonadvancement-invisible-to-state]]
     # — the progressive items are `progression`, so AP's sweep calls collect.)
+    # Main ability → (chain-upgrade item, "from main" option attr). Collecting
+    # the main Flash Shift / Speed Booster credits its baked-in chains/charges in
+    # ACCESS LOGIC — exactly mirroring the patcher bundling them into the main
+    # pickup (see pickup_resource_stage / ammo_amount_override). So
+    # state.has("Flash Shift Upgrade", N) clears once the main is reachable, even
+    # with no upgrades shuffled. The credited count is the option value (one
+    # "Flash Shift Upgrade" per chain, matching the logic atom's unit); remove is
+    # the exact inverse so collect/remove round-trip during fill.
+    MAIN_CHAIN_CREDIT: dict[str, tuple[str, str]] = {
+        "Flash Shift": ("Flash Shift Upgrade", "flash_shift_chains_from_main"),
+        "Speed Booster": ("Speed Booster Upgrade", "speed_booster_charges_from_main"),
+    }
+
     def collect(self, state, item) -> bool:
         change = super().collect(state, item)
         if change:
@@ -436,6 +479,11 @@ class DreadWorld(World):
                 n = state.prog_items[self.player][item.name]
                 if n <= len(tiers):
                     state.add_item(tiers[n - 1], self.player)
+            credit = self.MAIN_CHAIN_CREDIT.get(item.name)
+            if credit:
+                chain_item, opt_attr = credit
+                for _ in range(int(getattr(self.options, opt_attr).value)):
+                    state.add_item(chain_item, self.player)
         return change
 
     def remove(self, state, item) -> bool:
@@ -448,6 +496,11 @@ class DreadWorld(World):
                 n = state.prog_items[self.player][item.name]
                 if n < len(tiers):
                     state.remove_item(tiers[n], self.player)
+            credit = self.MAIN_CHAIN_CREDIT.get(item.name)
+            if credit:
+                chain_item, opt_attr = credit
+                for _ in range(int(getattr(self.options, opt_attr).value)):
+                    state.remove_item(chain_item, self.player)
         return change
 
     # Baseline starting inventory — matches Randovania's starter preset.
@@ -525,6 +578,14 @@ class DreadWorld(World):
             "Power Bomb Tank":       int(o.power_bomb_tank_ammo.value),
             "Flash Shift Upgrade":   int(o.flash_shift_upgrade_amount.value),
             "Speed Booster Upgrade": int(o.speed_booster_upgrade_amount.value),
+            # The MAIN Flash Shift / Speed Booster bake their "from main" chain /
+            # charge upgrades into the pickup (pickup_resource_stage expands
+            # ITEM_GHOST_AURA / ITEM_SPEED_BOOSTER into unlock + N capacity). The
+            # value is the chain/charge count, not a copy count. This flows to
+            # both the seed-baked placement quantity AND slot_data item_amounts,
+            # so own and wire-delivered mains grant the same chains.
+            "Flash Shift":           int(o.flash_shift_chains_from_main.value),
+            "Speed Booster":         int(o.speed_booster_charges_from_main.value),
         }
         placements: list[dict[str, Any]] = []
         for loc in self.multiworld.get_locations(self.player):

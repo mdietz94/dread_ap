@@ -459,6 +459,44 @@ effective-level map + symbolic-atom resolution + artifact carries trick atoms),
 levels 4–5 (Expert/Mastery) are now reachable, which the old 1–3 file system
 could not express.
 
+Flash Shift / Speed Booster chain upgrades: SHIPPED. Neither the Flash Shift
+Upgrade nor the Speed Booster Upgrade is a base-game item — Randovania adds them
+as custom pickups and, by default, shuffles NONE of them. So both now have
+`pool_count: 0` in items.json, and two new count options
+(`flash_shift_upgrade_count` / `speed_booster_upgrade_count`, default 0, the
+single override consulted in `World.create_items` `pool_overrides`) shuffle them
+in when raised. The chains/charges are instead baked into the MAIN pickup via two
+`…_from_main` options (`flash_shift_chains_from_main` /
+`speed_booster_charges_from_main`, both default 3 = vanilla). This is the key
+faithfulness point: the access logic gates some routes on `Flash AND
+FlashUpgrade>=N` / `Speed AND SpeedBoostUpgrade>=N` (N up to 3, verified against
+the upstream snapshot), and in vanilla the main grants the chains that satisfy
+them. So "from main" is NOT cosmetic — it feeds logic. Three coupled mechanisms:
+(1) `protocol.pickup_resource_stage` expands `ITEM_GHOST_AURA` / `ITEM_SPEED_BOOSTER`
+into `[{unlock:1},{chain/charge:N}]` (same paired-resource pattern as the main
+Power Bomb), where N is the `…_from_main` value — this rides each main's
+placement `quantity` (set via `ammo_amount_override["Flash Shift"]` / `["Speed
+Booster"]`) so BOTH the seed-baked patcher path AND the wire `RL.ReceivePickup`
+path (slot_data `item_amounts`) bundle the chains into the main's first/only
+pickup; the unlock-flag class (RandomizerFlashShift / RandomizerSpeedBooster)
+grants both because the "already has Flash Shift" zero-out branch never fires for
+the main's own grant. (2) `World.collect`/`remove` credit `…_from_main` copies of
+the chain-upgrade item onto `state` when the MAIN is collected (the established
+progressive-collect idiom; backend-agnostic — both the closed-form and native
+graph read `state.has`), so `state.has("Flash Shift Upgrade", 3)` clears once the
+main is reachable with 0 upgrades shuffled. (3) classification is dynamic: any
+shuffled copies are progression only for the first `max(0, MAX_CHAIN_REQ -
+from_main)` (= 0 at the default `from_main=3`), else `useful` — `MAX_CHAIN_REQ=3`.
+If the main plus shuffled copies can't reach a route's requirement that route
+drops out of logic (AP accessibility stays sound; no silent over-reach). The two
+upgrades are no longer in `MIXED_CLASSIFICATION_FIRST_N`. Tests:
+`test_item_pool` (pool_count=0, default-absent, count-drives-pool, dynamic
+progression split, collect/remove chain credit round-trip), `test_protocol`
+(pickup_resource_stage GHOST_AURA / SPEED_BOOSTER baking). NOTE: the existing
+`flash_shift_upgrade_amount` / `speed_booster_upgrade_amount` options (per-pickup
+grant) are unchanged and stay logic-inert (each shuffled upgrade still credits 1
+in logic, conservatively).
+
 Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
 collapse ammo to >=1 and damage to suit ownership); door/elevator randomization.
 Real-hardware (or Ryujinx)

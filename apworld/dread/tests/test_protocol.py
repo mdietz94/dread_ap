@@ -257,3 +257,30 @@ def test_pickup_resource_stage_passthrough_for_ordinary_items():
     assert pickup_resource_stage("ITEM_WEAPON_MISSILE_MAX", 10) == [
         {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 10},
     ]
+
+
+def test_pickup_resource_stage_main_flash_shift_bakes_chains():
+    """The main Flash Shift grants the ability flag plus the "from main" chained
+    dashes (quantity = chain count) in one stage, so the main alone satisfies
+    the access-logic chain gates. Quantity 0 → ability only."""
+    from dread.client.protocol import pickup_resource_stage
+    assert pickup_resource_stage("ITEM_GHOST_AURA", 3) == [
+        {"item_id": "ITEM_GHOST_AURA", "quantity": 1},
+        {"item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", "quantity": 3},
+    ]
+    assert pickup_resource_stage("ITEM_GHOST_AURA", 0) == [
+        {"item_id": "ITEM_GHOST_AURA", "quantity": 1},
+    ]
+
+
+def test_pickup_resource_stage_main_speed_booster_bakes_charges():
+    """The main Speed Booster grants the ability flag plus the "from main" charge
+    upgrades (quantity = charge count) in one stage."""
+    from dread.client.protocol import pickup_resource_stage
+    assert pickup_resource_stage("ITEM_SPEED_BOOSTER", 3) == [
+        {"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1},
+        {"item_id": "ITEM_UPGRADE_SPEED_BOOST_CHARGE", "quantity": 3},
+    ]
+    assert pickup_resource_stage("ITEM_SPEED_BOOSTER", 0) == [
+        {"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1},
+    ]
