@@ -375,6 +375,27 @@ def test_item_amounts_default_to_randovania_values():
 
 
 @pytestmark_runtime
+def test_trick_levels_in_slot_data():
+    """Per-trick effective levels must ride slot_data so external trackers (e.g.
+    PopTracker) can pre-populate their difficulty dials to match the seed."""
+    from dread.Tricks import DREAD_TRICKS, effective_trick_levels
+
+    # Global baseline Intermediate (2), with IBJ pinned to Mastery (5).
+    world, _ = _build_world(trick_level=2, trick_infinite_bomb_jump=5)
+    payload = world.fill_slot_data()
+    levels = payload["trick_levels"]
+
+    # Every Randovania trick is present, keyed by its short_name.
+    assert set(levels) == {t.short_name for t in DREAD_TRICKS}
+    assert levels == effective_trick_levels(world.options)
+    # The per-trick override wins; a follow-global trick takes the baseline; the
+    # hidden Suitless trick always follows global.
+    assert levels["IBJ"] == 5
+    assert levels["Knowledge"] == 2
+    assert levels["Suitless"] == 2
+
+
+@pytestmark_runtime
 def test_default_pool_has_randovania_counts():
     world, mw = _build_world()
     world.create_items()
