@@ -41,6 +41,26 @@ class _RNG:
 
 # ---- door rando unit tests -----------------------------------------------
 
+def test_assignments_to_door_patches_skips_null_actor():
+    """Dock sides whose patcher actor is None must be silently skipped."""
+    from dread.DoorRando import assignments_to_door_patches
+    graph = {
+        "dock_sides": {
+            "A": {"patcher": {"scenario": "s010_cave", "actor": "Door001"},
+                  "dock_type": "door", "default_weakness": "Power Beam Door"},
+            "B": {"patcher": {"scenario": "s010_cave", "actor": None},
+                  "dock_type": "door", "default_weakness": "Power Beam Door"},
+        },
+        "door_rando": {
+            "weakness_door_type": {"Wave Beam Door": "doorWave"},
+        },
+    }
+    assign = {"A": "Wave Beam Door", "B": "Wave Beam Door"}
+    patches = assignments_to_door_patches(assign, graph)
+    assert len(patches) == 1
+    assert patches[0]["actor"]["actor"] == "Door001"
+
+
 @graph_required
 def test_roll_assignments_two_sided(graph):
     """Paired door sides always receive the same weakness."""

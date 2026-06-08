@@ -1526,6 +1526,7 @@ def emit_graph(
             and weakness in door_change_from
             and not n.get("exclude_from_dock_rando")
             and override is None
+            and bool(n.get("extra", {}).get("actor_name"))
         )
         if rando_eligible:
             ast = {"type": "dock", "side_id": side_id}

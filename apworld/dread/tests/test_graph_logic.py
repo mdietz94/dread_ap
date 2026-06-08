@@ -96,6 +96,7 @@ def test_dock_sides_are_two_sided(graph):
     for sid, meta in sides.items():
         assert meta["paired_side_id"], f"{sid} missing paired side"
         assert meta["patcher"]["scenario"], f"{sid} missing patcher scenario"
+        assert meta["patcher"]["actor"], f"{sid} missing patcher actor"
 
 
 def test_resolve_docks_substitutes_assignment():
