@@ -40,6 +40,7 @@ from .protocol import (
     CollectedLocationEvent,
     build_receive_pickup_lua,
     build_kill_player_lua,
+    build_lights_out_lua,
     build_read_death_count_lua,
     build_read_inventory_amounts_lua,
     build_read_received_pickups_lua,
@@ -411,6 +412,9 @@ class DreadContext(CommonContext):
         self._bootstrapped = True
         log.info("Switch %s bootstrapped; starting poll loop", info.device_id)
         self._poll_task = asyncio.create_task(self._poll_loop(), name="dread-poll")
+        # Re-assert Lights Out for this freshly-bootstrapped Switch. Covers the
+        # AP-connected-before-Switch ordering; _on_connected covers the reverse.
+        await self._apply_lights_out()
         # If AP items were already received before bootstrap finished, drive
         # delivery now so we catch up without waiting one full poll.
         await self._attempt_delivery()
@@ -489,6 +493,11 @@ class DreadContext(CommonContext):
         # ConnectUpdate (we're already Connected here), which is the supported
         # way to toggle the tag post-connect.
         await self.update_death_link(bool(self.slot_data.get("death_link")))
+        # Push "Lights Out" to the Switch now that slot_data is known. Covers the
+        # Switch-connected-before-AP ordering; _on_switch_ready covers the
+        # reverse. No-op if the Switch isn't bootstrapped yet (the later
+        # _on_switch_ready call delivers it then).
+        await self._apply_lights_out()
         asyncio.ensure_future(self._maybe_auto_patch())
         loc_ids = self.datapackage.all_location_ids()
         if loc_ids:
@@ -634,6 +643,31 @@ class DreadContext(CommonContext):
             log.warning("DeathLink kill send failed: %s", exc)
             # Couldn't kill ⇒ no self-death will follow, so clear the guard.
             self._suppress_death_until = 0.0
+
+    # ---- Lights Out ---------------------------------------------------
+
+    async def _apply_lights_out(self) -> None:
+        """Enable "Lights Out" race mode on the Switch when the seed asks for it.
+
+        Sends ``RL.LightsOut=true`` + an immediate apply (see
+        ``build_lights_out_lua``). Idempotent and safe to call repeatedly: it is
+        invoked from BOTH ``_on_connected`` (AP slot_data arrives) and
+        ``_on_switch_ready`` (Switch bootstraps), so whichever happens second
+        actually delivers it regardless of connection order. A no-op when the
+        seed leaves Lights Out off, or before the Switch is bootstrapped.
+
+        Called from the AP-message / connect tasks, never from a Switch push
+        handler, so awaiting the run_lua reply is safe (the read loop that
+        delivers it is separate — see the no-run_lua-in-push-handler rule)."""
+        if not self.slot_data.get("lights_out"):
+            return
+        if self._bridge is None or not self._bridge.is_connected() or not self._bootstrapped:
+            return
+        try:
+            await self._bridge.run_lua(build_lights_out_lua())
+            log.info("Lights Out enabled on Switch")
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
+            log.warning("Lights Out activation send failed: %s", exc)
 
     async def _maybe_report_death(self, count: int) -> None:
         """Edge-detect the game's death counter and broadcast to AP.

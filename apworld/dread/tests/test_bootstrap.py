@@ -56,6 +56,24 @@ def test_killplayer_defined_before_bootstrap_flag(real_rows):
     assert kill_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
 
 
+def test_lights_out_defined_before_bootstrap_flag(real_rows):
+    """Our non-vendored Lights Out hook ships in the bootstrap (after the
+    vendored parts, before the done flag). It only installs the per-scenario
+    InitGui wrap + RL.ApplyLightsOut; activation is client-gated by RL.LightsOut,
+    so it must NOT pre-set the flag here."""
+    items, locations = real_rows
+    blocks = bs.build_bootstrap_code(items, locations)
+    joined = "\n".join(blocks)
+    assert "function RL.ApplyLightsOut" in joined
+    assert "Scenario.InitGui" in joined
+    # Inert by default: the bootstrap installs the hook but never enables it.
+    assert "RL.LightsOut=true" not in joined
+    assert "RL.LightsOut = true" not in joined
+    lo_idx = next(i for i, b in enumerate(blocks)
+                  if "function RL.ApplyLightsOut" in b)
+    assert lo_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
+
+
 def test_warp_guard_defined_before_bootstrap_flag(real_rows):
     """Our non-vendored warp guard ships in the bootstrap (after the vendored
     parts, before the done flag), with its boss + nav-room tables filled."""

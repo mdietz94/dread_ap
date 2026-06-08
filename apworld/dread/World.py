@@ -685,6 +685,11 @@ class DreadWorld(World):
             # Client-only: drives whether DreadContext enables the DeathLink tag
             # and the death-detection poll. Not consumed by the patcher.
             "death_link": bool(o.death_link.value),
+            # Client-only "Lights Out" race mode: the client reads this from
+            # slot_data at connect and, when true, sets RL.LightsOut on the
+            # Switch so lua/lights_out.lua hides the in-game map. Not consumed by
+            # the patcher (open-dread-rando has no map-hide leaf).
+            "lights_out": bool(o.lights_out.value),
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,

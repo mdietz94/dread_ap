@@ -150,6 +150,10 @@ class FakeDreadGame:
         # Full RL.ReceivePickup(...) source strings, in arrival order — lets
         # tests assert the burst popup/reschedule overrides the client sends.
         self.receive_srcs: list[str] = []
+        # Models RL.LightsOut — flipped true when the client sends the "Lights
+        # Out" activation (build_lights_out_lua). The real ROM's lights_out.lua
+        # hook then hides the map; here we just record that activation arrived.
+        self.lights_out_enabled: bool = False
         self.bootstrap_chunks: list[str] = []
         self.bootstrapped: bool = False
         self.hello_ack: Optional[W.HelloAck] = None
@@ -468,6 +472,14 @@ class FakeDreadGame:
         if "ProgressStat_PlayerDeaths" in src:
             await self._send(W.LuaExecReply(
                 seq=seq, ok=True, result=str(self.death_count)))
+            return
+
+        if "RL.LightsOut=true" in src:
+            # build_lights_out_lua: the "Lights Out" race-mode activation. On the
+            # real ROM this sets the flag the per-scenario hook reads to hide the
+            # map; here we just record that the client sent it.
+            self.lights_out_enabled = True
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
             return
 
         # Anything else (Game.AddSF arming, pokes, etc.) → ack.

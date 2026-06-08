@@ -776,3 +776,34 @@ async def test_deathlink_off_does_not_poll_or_broadcast():
         assert _bounces(ctx) == []
     finally:
         await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_lights_out_enabled_reaches_switch():
+    """With ``lights_out`` set in slot_data, the client pushes the activation to
+    a bootstrapped Switch so the in-game map-hide hook turns on."""
+    ctx, dp, fake = await _setup()
+    try:
+        # Mirror _on_connected populating slot_data, then re-apply (the bootstrap
+        # already ran with empty slot_data, so this is the delivering call).
+        ctx.slot_data = {"lights_out": True}
+        await ctx._apply_lights_out()
+        assert await _await_until(lambda: fake.lights_out_enabled), (
+            "Lights Out activation never reached the Switch")
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_lights_out_off_does_not_activate():
+    """With Lights Out off (default slot_data), the client must NOT send the
+    activation — the map stays visible and existing seeds are unaffected."""
+    ctx, dp, fake = await _setup()
+    try:
+        assert not ctx.slot_data.get("lights_out")
+        await ctx._apply_lights_out()
+        # Give any erroneous send a chance to land before asserting absence.
+        await asyncio.sleep(0.05)
+        assert fake.lights_out_enabled is False
+    finally:
+        await _teardown(ctx, fake)
