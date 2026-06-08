@@ -513,6 +513,8 @@ class DreadWorld(World):
         slot_name = self.multiworld.get_player_name(self.player)
         seed_id = str(self.multiworld.seed_name)
 
+        from .Tricks import effective_trick_levels
+
         o = self.options
         # AP item name → per-pickup grant amount (mirrors Randovania's
         # `ammo_count`). Shared by the placement loop (own seed-baked grants)
@@ -693,6 +695,13 @@ class DreadWorld(World):
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,
+            # Per-trick effective difficulty levels ({short_name: level}, 0..5),
+            # resolved from the global Trick Level baseline + any per-trick
+            # overrides (Tricks.effective_trick_levels). Client-only: lets
+            # external trackers (e.g. PopTracker) pre-populate their per-trick
+            # difficulty dials from slot_data so reachability matches the seed.
+            # Not consumed by the patcher.
+            "trick_levels": effective_trick_levels(o),
             # Per-pickup grant amounts (AP item name → capacity). The client
             # reads this from slot_data so wire-delivered (multiworld) copies
             # grant the seed's configured amount instead of the items.json
