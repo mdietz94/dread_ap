@@ -613,8 +613,17 @@ class DreadWorld(World):
         for k in range(n_dna + 1, 13):
             starting_items[f"ITEM_RANDO_ARTIFACT_{k}"] = 1
         # The forced bottleneck starting items must ALSO be granted in-game, or
-        # the player would have them in AP logic but not on the Switch.
-        for name in self.EXTRA_STARTING_ITEMS:
+        # the player would have them in AP logic but not on the Switch. This
+        # covers BOTH the static EXTRA_STARTING_ITEMS (currently empty) AND the
+        # per-spawn bootstrap kit (_start_extra_items) that more-starting-areas
+        # computes per seed: a non-Artaria spawn precollects that kit into AP
+        # logic and drops it from the findable pool (see create_items), so the
+        # ROM must grant the same items or the player spawns in a deep region
+        # without the unlocks logic assumed and is stuck in the opening rooms.
+        forced_start_abilities = (list(self.EXTRA_STARTING_ITEMS)
+                                  + list(getattr(self, "_start_extra_items", [])
+                                         or []))
+        for name in forced_start_abilities:
             data = item_name_to_item.get(name)
             if data and data.patcher_item_id:
                 starting_items[data.patcher_item_id] = max(1, int(data.quantity))
