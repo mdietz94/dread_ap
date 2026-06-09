@@ -237,6 +237,31 @@ def test_matching_to_elevators_shape(graph):
         assert e["destination"]["scenario"] and e["destination"]["actor"]
 
 
+@graph_required
+def test_matching_to_elevators_lands_at_dest_room(graph):
+    """Regression: a shuffled ride must land at the DESTINATION endpoint's own
+    landing platform (``start_point``), which physically lives in the destination
+    scenario. The old code emitted the destination's ``target_spawn_point`` — an
+    actor in the destination's *vanilla*-destination scenario — so the engine
+    loaded the right room but couldn't find the spawn and crashed on the ride."""
+    from dread.TransportRando import roll_matching, matching_to_elevators
+    tr = graph["transports"]
+    m = roll_matching(graph, _ShuffleRNG())
+    # Map each emitted entry (keyed by source actor) back to its src side, so we
+    # can identify the destination side via the matching and check the spawn.
+    by_actor = {(meta["scenario"], meta["actor"]): sid for sid, meta in tr.items()}
+    changed = 0
+    for e in matching_to_elevators(m, graph):
+        src_sid = by_actor[(e["teleporter"]["scenario"], e["teleporter"]["actor"])]
+        dest_sid = m[src_sid]
+        dmeta = tr[dest_sid]
+        # Land in the destination endpoint's room, at that room's own platform.
+        assert e["destination"]["scenario"] == dmeta["scenario"]
+        assert e["destination"]["actor"] == dmeta["start_point"]
+        changed += 1
+    assert changed, "shuffle should have produced at least one changed ride"
+
+
 # ---- gated real-generation -----------------------------------------------
 
 def _ap() -> bool:
