@@ -571,7 +571,13 @@ class DreadContext(CommonContext):
                      dread_item.ap_item_name, cls, inv_idx)
         else:
             self._delivery_attempts += 1
-            if self._delivery_attempts in (3, 10, 30):
+            # Thresholds in poll ticks (~POLL_INTERVAL_SECONDS each). A pending
+            # ReceivePickup is deferred by design through cutscenes / scene loads
+            # (Scenario.IsUserInteractionEnabled), and those routinely exceed a
+            # few seconds — so the first warning sits at ~20s, well past any
+            # normal deferral. A genuine head-of-line stall is permanent, so
+            # waiting longer to cry wolf costs nothing.
+            if self._delivery_attempts in (10, 30, 60):
                 log.warning(
                     "delivery of #%d %s has not landed after %d attempts "
                     "(game ReceivedPickups stuck at %d, inv_idx=%d) — "
@@ -991,6 +997,20 @@ class DreadContext(CommonContext):
                         item=dread_item, sender=sender, inventory_index=idx))
             log.debug("game ReceivedPickups advanced %d -> %d", previous, count)
         self.state.set_game_received_pickups(count)
+        if count != previous:
+            # The game's delivery cursor moved: an advance confirms the pending
+            # item landed; a revert (save-reload / warp) rewinds it. Either way
+            # the stall tracking for the OLD cursor is now stale — a fresh
+            # attempt cycle begins here. Reset it so the "has not landed after N
+            # attempts" warning counts only CONSECUTIVE no-progress sends of one
+            # index, and never SUMS across separate (successful) re-deliveries of
+            # the same index after a save-reload. Without this, three successful
+            # Morph-Ball deliveries (one original + two re-deliveries the player
+            # triggered by reloading a pre-pickup save) accumulated into a "not
+            # landed after 3 attempts" false alarm on the third send — which
+            # itself landed normally.
+            self._delivery_attempts = 0
+            self._delivery_index = -1
         # The cursor moved — drive the next delivery from here, not just the 2s
         # poll. Either way it must run OFF the read loop, since _attempt_delivery
         # awaits a run_lua reply only this loop can read (awaiting here deadlocks).
