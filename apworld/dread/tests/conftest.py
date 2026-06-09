@@ -11,11 +11,10 @@ to import, without pulling in the full AP repo. Tests that exercise
 behavior beyond that surface should monkey-patch ``send_msgs``/``send_connect``
 on the constructed context as needed.
 
-Regenerates the compiled rule artifacts at session start if they are
-missing or older than the compiler / its input cache. The artifacts are
-gitignored (each is 150-240k lines), so a fresh checkout has nothing on
-disk; this ensures tests can still load them via ``_data_loader`` without
-the contributor running the regen command manually.
+Materialises ``logic_graph.json`` at session start if it is missing or
+older than the compiler / its input cache. The artifact is gitignored, so
+a fresh checkout has nothing on disk; this ensures tests can load it via
+``_data_loader`` without the contributor running the regen command manually.
 """
 from __future__ import annotations
 
@@ -32,81 +31,29 @@ if str(ROOT.parent) not in sys.path:
     sys.path.insert(0, str(ROOT.parent))
 
 
-def _ensure_compiled_rules() -> None:
-    """Run ``scripts/extract_dread_rules.py`` if the on-disk artifact is missing
-    or stale.
-
-    Stale = older than the compiler script itself, or older than the pinned
-    Randovania logic cache (``PINNED_COMMIT.txt``). Either signal means
-    something upstream changed and the on-disk JSON no longer matches.
-
-    Since v3 there is a SINGLE artifact: tricks are kept symbolic and resolved
-    per-trick at generation time, so there is no longer a file per trick level.
-    The bake runs the forward resolver twice (symbolic + a level>=2-stripped
-    recovery pass that are OR-ed; see extract_dread_rules.compile_forward), so it
-    is ~10 min; only pays it when the artifact actually needs updating, so warm
-    runs are free."""
+def _ensure_logic_graph() -> None:
+    """Materialise ``logic_graph.json`` if missing or older than the extract
+    script or the pinned Randovania logic cache (``PINNED_COMMIT.txt``).
+    Skips silently if the cache is not available (CI fetches it first)."""
     repo_root = ROOT.parent.parent
     data_dir = ROOT / "data"
     extract = repo_root / "scripts" / "extract_dread_rules.py"
     cache = repo_root / ".dread-cache" / "randovania-logic"
     pinned = cache / "PINNED_COMMIT.txt"
+    target = data_dir / "logic_graph.json"
 
-    if not extract.exists():
-        return  # not in the dev tree (e.g. running from an installed apworld)
-
-    if not cache.exists():
-        # Without the cache we cannot regen; let the individual tests fail with
-        # a clear FileNotFoundError pointing at the missing artifact.
+    if not extract.exists() or not cache.exists():
         return
 
-    # Newest input mtime — if the output is older than this, regen.
     input_mtime = max(extract.stat().st_mtime,
                       pinned.stat().st_mtime if pinned.exists() else 0)
-
-    target = data_dir / "compiled_rules.json"
     if target.exists() and target.stat().st_mtime >= input_mtime:
         return
 
-    sys.stderr.write(
-        "\n[conftest] regenerating compiled_rules.json "
-        "(~10 minutes; cached afterward)...\n"
-    )
+    sys.stderr.write("\n[conftest] regenerating logic_graph.json...\n")
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.Popen(
         [sys.executable, str(extract), "--all", "--out", str(target)],
-        cwd=str(repo_root), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, err = proc.communicate()
-    if proc.returncode != 0:
-        sys.stderr.write(
-            f"\n[conftest] regen of compiled_rules.json failed:\n"
-            f"{err.decode('utf-8', errors='replace')}\n")
-        # Don't raise — let the individual tests fail loudly with their own
-        # assertion (focused error vs. bare CalledProcessError).
-
-
-def _ensure_logic_graph() -> None:
-    """Materialize ``logic_graph.json`` (native-graph model) if missing or older
-    than the extract script. Fast (~1s): reuses the item-only victory from
-    ``compiled_rules.json`` via ``--graph-only`` (no forward resolver). Skips
-    silently if the cache or the closed-form artifact aren't available."""
-    repo_root = ROOT.parent.parent
-    data_dir = ROOT / "data"
-    extract = repo_root / "scripts" / "extract_dread_rules.py"
-    cache = repo_root / ".dread-cache" / "randovania-logic"
-    compiled = data_dir / "compiled_rules.json"
-    target = data_dir / "logic_graph.json"
-
-    if not extract.exists() or not cache.exists() or not compiled.exists():
-        return
-    if target.exists() and target.stat().st_mtime >= extract.stat().st_mtime:
-        return
-
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    proc = subprocess.Popen(
-        [sys.executable, str(extract), "--all", "--graph-only",
-         "--out", str(compiled), "--graph-out", str(target)],
         cwd=str(repo_root), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, err = proc.communicate()
@@ -116,7 +63,6 @@ def _ensure_logic_graph() -> None:
             f"{err.decode('utf-8', errors='replace')}\n")
 
 
-_ensure_compiled_rules()
 _ensure_logic_graph()
 
 

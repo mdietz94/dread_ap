@@ -75,13 +75,12 @@ def _iter_vendored_patcher() -> list[tuple[Path, Path]]:
     return out
 
 
-def _ensure_compiled_rules() -> None:
-    """Regenerate the compiled rule artifacts if missing or stale.
+def _ensure_logic_graph() -> None:
+    """Regenerate logic_graph.json if missing or stale.
 
-    The JSONs are gitignored (each is 150-240k lines), so a fresh checkout
-    has nothing on disk. Both folder and zip installs need them at the
-    destination, so we regen before copying. Total cost is ~10s on a cold
-    cache; warm runs (everything up-to-date) are a no-op via the mtime check.
+    The JSON is gitignored, so a fresh checkout has nothing on disk. Both
+    folder and zip installs need it at the destination, so we regen before
+    copying. Warm runs (up-to-date) are a no-op via the mtime check.
     """
     data_dir = SRC / "data"
     extract = REPO / "scripts" / "extract_dread_rules.py"
@@ -94,7 +93,7 @@ def _ensure_compiled_rules() -> None:
     if not cache.exists():
         sys.stderr.write(
             "\n.dread-cache/randovania-logic/ is missing — install_apworld "
-            "cannot regenerate compiled rules. Populate the cache first "
+            "cannot regenerate logic_graph.json. Populate the cache first "
             "(see docs/randovania-logic-port.md for the fetch step).\n"
         )
         return
@@ -102,23 +101,14 @@ def _ensure_compiled_rules() -> None:
     input_mtime = max(extract.stat().st_mtime,
                       pinned.stat().st_mtime if pinned.exists() else 0)
 
-    # Single compiled file (v3): tricks are kept symbolic and resolved per-trick
-    # at AP-generation time. ``--graph`` also emits logic_graph.json (the native
-    # region-graph model — the default logic path, see graph_logic.py) in the
-    # same bake, reusing the item-only victory.
-    target = data_dir / "compiled_rules.json"
-    graph_target = data_dir / "logic_graph.json"
-    if (target.exists() and graph_target.exists()
-            and target.stat().st_mtime >= input_mtime
-            and graph_target.stat().st_mtime >= input_mtime):
+    target = data_dir / "logic_graph.json"
+    if target.exists() and target.stat().st_mtime >= input_mtime:
         return
 
-    print("regenerating compiled_rules.json + logic_graph.json "
-          "(~10 minutes; two-pass resolver)...")
+    print("regenerating logic_graph.json...")
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.Popen(
-        [sys.executable, str(extract), "--all", "--graph",
-         "--out", str(target), "--graph-out", str(graph_target)],
+        [sys.executable, str(extract), "--all", "--out", str(target)],
         cwd=str(REPO), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, err = proc.communicate()
@@ -224,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    _ensure_compiled_rules()
+    _ensure_logic_graph()
 
     if args.output is not None:
         if args.mode != "apworld":
