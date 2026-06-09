@@ -48,8 +48,8 @@ def test_graph_schema_and_shape(graph):
     assert graph["n_regions"] > 0
     assert len(graph["pickups"]) == 149
     assert graph["entrances"]
-    assert graph["victory_condition"]["type"] != "event", \
-        "victory must be item-only (no live event atom)"
+    # Victory may reference event atoms (compiled in graph_mode to
+    # can_reach_region("Event:X")) — no item-only constraint needed here.
 
 
 @graph_required
