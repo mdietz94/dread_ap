@@ -1384,7 +1384,7 @@ def compile_forward(
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
-GRAPH_SCHEMA_VERSION = 2
+GRAPH_SCHEMA_VERSION = 3
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
 # (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel
@@ -1591,6 +1591,30 @@ def emit_graph(
     start = header.starting_location
     start_key = (start["region"], start["area"], start["node"])
 
+    # Vanilla shield baseline per scenario. open-dread-rando renames every
+    # existing shielded door's shields into the SAME 100-id pool the rando
+    # shields draw from (door_locks/door_patcher.py), so DoorRando must seed its
+    # per-scenario shield budget with this baseline or a roll can exhaust the
+    # pool. Count unique door actors whose vanilla weakness needs a shield.
+    # (SHIELDED set mirrors DoorRando.SHIELDED_DOOR_TYPES — kept inline to avoid
+    # an apworld import from this build script.)
+    _SHIELDED = {"wide_beam", "plasma_beam", "wave_beam", "missile",
+                 "super_missile", "ice_missile", "diffusion_beam",
+                 "storm_missile", "bomb", "cross_bomb", "power_bomb", "closed"}
+    vanilla_shield_ids: dict[str, int] = {}
+    _seen_shield_actor: set = set()
+    for key, n in nodes.items():
+        if n.get("node_type") != "dock" or n.get("dock_type") != "door":
+            continue
+        if weakness_door_type.get(n.get("default_dock_weakness")) not in _SHIELDED:
+            continue
+        actor = (n.get("extra") or {}).get("actor_name")
+        scn = scenario_of.get(key[0])
+        if not actor or not scn or (scn, actor) in _seen_shield_actor:
+            continue
+        _seen_shield_actor.add((scn, actor))
+        vanilla_shield_ids[scn] = vanilla_shield_ids.get(scn, 0) + 1
+
     return {
         "graph_schema_version": GRAPH_SCHEMA_VERSION,
         "n_regions": n_regions,
@@ -1606,6 +1630,7 @@ def emit_graph(
             "weakness_door_type": weakness_door_type,
             "locked_weakness": door_dr.get("locked"),
             "unlocked_weakness": door_dr.get("unlocked"),
+            "vanilla_shield_ids": vanilla_shield_ids,
         },
         "pickups": pickups,
         "events": events,

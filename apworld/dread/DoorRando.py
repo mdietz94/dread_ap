@@ -19,6 +19,23 @@ every door stays passable with the right weapon and the door graph stays
 connected (the goal can't be walled off). Per-door ``incompatible_weaknesses``
 (from the logic DB) are honored.
 
+TWO SAFETY BOUNDS on the pool (both learned from a hardware crash — a guest-side
+null deref in the game when *traversing* a randomized door):
+
+  * **Type restriction** — only the "basic" door types open-dread-rando renders
+    robustly (``BASIC_DOOR_TYPES``, the set its own everything-patched fixture
+    exercises) are eligible. The exotic shields it offers but never stress-tests
+    (bomb / cross-bomb / power-bomb, ice / storm missile, diffusion) are dropped:
+    they pull multiple shield-asset folders into a scenario, and a missing asset
+    loads a null shield actor that the game dereferences on the door transition.
+  * **Per-scenario shield budget** — open-dread-rando allots
+    ``SHIELD_IDS_PER_SCENARIO`` shield-actor ids per scenario, *shared* with the
+    vanilla shields it renames into that same pool up front. Each shielded door
+    costs 2 ids; converting too many unshielded doors to shielded types exhausts
+    the pool (``IndexError`` at patch time). The roll seeds each scenario with
+    its baked vanilla baseline (``door_rando.vanilla_shield_ids``) and refuses
+    shielded targets once a scenario nears the cap.
+
 START-DOOR GUARD (the thing that makes fill succeed): AP's stock
 ``fill_restrictive`` needs a non-empty EARLY-reachable pickup set to bootstrap
 progression. If the doors reachable from spawn with only the starting kit are
@@ -33,6 +50,24 @@ from __future__ import annotations
 from typing import Any
 
 from .graph_logic import _resolve_docks
+
+# open-dread-rando door_type strings (door_locks/door_patcher.py ``DoorType.type``).
+# BASIC_DOOR_TYPES is the set its everything-patched fixture exercises and the
+# game renders without the exotic-shield asset hazards; the rando pool is
+# restricted to these. SHIELDED_DOOR_TYPES are the types that spawn a shield
+# actor (``need_shield=True`` upstream) and therefore draw from the per-scenario
+# shield-id pool. See module docstring.
+BASIC_DOOR_TYPES = frozenset({
+    "power_beam", "charge_beam", "grapple_beam",
+    "wide_beam", "wave_beam", "plasma_beam", "missile", "super_missile",
+})
+SHIELDED_DOOR_TYPES = frozenset({
+    "wide_beam", "plasma_beam", "wave_beam", "missile", "super_missile",
+    "ice_missile", "diffusion_beam", "storm_missile", "bomb", "cross_bomb",
+    "power_bomb", "closed",
+})
+SHIELD_IDS_PER_SCENARIO = 100  # open-dread-rando's per-scenario shield-id pool
+SHIELD_BUDGET_MARGIN = 10      # headroom kept below the hard cap
 
 
 def _eval(ast: dict, items: dict, events: set, tl: dict) -> bool:
@@ -156,10 +191,12 @@ def roll_assignments(
     dock_sides = graph["dock_sides"]
     locked = dr.get("locked_weakness")
     # Assignable pool: change_to minus the locking weakness (v1 keeps every door
-    # passable). Only weaknesses we can render to a patcher door_type qualify.
+    # passable), restricted to BASIC_DOOR_TYPES (the exotic shields are dropped —
+    # see module docstring) and to weaknesses we can render to a patcher
+    # door_type at all.
     door_type = dr["weakness_door_type"]
     pool = [w for w in dr["change_to"]
-            if w != locked and w in door_type]
+            if w != locked and door_type.get(w) in BASIC_DOOR_TYPES]
 
     # Start-door guard: protect doors on the early (start-reachable) frontier.
     protected: set[str] = set()
@@ -170,6 +207,17 @@ def roll_assignments(
         protected = {sid for sid, (c0, c1) in side_comp.items()
                      if c0 in reach or c1 in reach}
 
+    # Per-scenario shield-id budget (see module docstring). Seed each scenario
+    # with its baked vanilla baseline (2 ids per vanilla shielded door) so the
+    # roll can't push a scenario past the cap and exhaust the pool at patch time.
+    shield_used: dict[str, int] = {
+        s: 2 * n for s, n in dr.get("vanilla_shield_ids", {}).items()
+    }
+    cap = SHIELD_IDS_PER_SCENARIO - SHIELD_BUDGET_MARGIN
+
+    def _shielded(weakness: str) -> bool:
+        return door_type.get(weakness) in SHIELDED_DOOR_TYPES
+
     assign: dict[str, str] = {}
     for group in _physical_doors(dock_sides):
         if any(sid in protected for sid in group):
@@ -178,9 +226,20 @@ def roll_assignments(
         for sid in group:
             incompat.update(dock_sides[sid].get("incompatible_weaknesses", []))
         choices = [w for w in pool if w not in incompat]
+        scenario = dock_sides[group[0]]["patcher"]["scenario"]
+        src_shielded = _shielded(dock_sides[group[0]]["default_weakness"])
+        # A target that ADDS a shield (unshielded door -> shielded type) costs 2
+        # ids. If this scenario can't afford it, drop shielded targets so the
+        # door stays cheap (or vanilla, if nothing's left).
+        if not src_shielded and shield_used.get(scenario, 0) + 2 > cap:
+            choices = [w for w in choices if not _shielded(w)]
         if not choices:
             continue
         weakness = rng.choice(choices)
+        if _shielded(weakness) and not src_shielded:
+            shield_used[scenario] = shield_used.get(scenario, 0) + 2
+        elif src_shielded and not _shielded(weakness):
+            shield_used[scenario] = max(0, shield_used.get(scenario, 0) - 2)
         for sid in group:
             assign[sid] = weakness
     return assign
