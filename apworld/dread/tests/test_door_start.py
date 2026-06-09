@@ -288,3 +288,27 @@ def test_transport_rando_generates():
 @runtime
 def test_all_rando_compose():
     _generate({"door_lock_rando": 1, "transport_rando": 1, "starting_area": 2})
+
+
+@runtime
+@pytest.mark.parametrize("area", [1, 2, 3, 4, 5, 6])  # all non-Artaria spawns
+def test_start_kit_baked_into_patcher(area):
+    """The per-spawn bootstrap kit precollected into AP logic MUST also be
+    granted by the ROM. A non-Artaria spawn opens different opening rooms, so
+    minimal_start_items grants different unlocks per spawn; if those don't reach
+    the patcher's starting_items the player spawns deep without the items logic
+    assumed and is stuck. Regression for the kit being precollected but never
+    baked (only the empty EXTRA_STARTING_ITEMS was)."""
+    from test.general import setup_multiworld, gen_steps
+    from dread.World import DreadWorld, item_name_to_item
+    mw = setup_multiworld(DreadWorld, gen_steps, seed=2,
+                          options={"starting_area": area})
+    world = mw.worlds[1]
+    kit = list(world._start_extra_items)
+    assert kit, f"area {area} should compute a non-empty bootstrap kit"
+    starting_items = world._build_placements_payload()["starting_items"]
+    for name in kit:
+        pid = item_name_to_item[name].patcher_item_id
+        assert pid in starting_items, (
+            f"area {area}: kit item {name!r} ({pid}) precollected into logic "
+            f"but missing from patcher starting_items")
