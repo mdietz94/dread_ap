@@ -97,8 +97,14 @@ def matching_to_elevators(matching: dict[str, str], graph: dict) -> list[dict[st
             continue  # unchanged
         out.append({
             "teleporter": {"scenario": src["scenario"], "actor": src["actor"]},
+            # Land at the DESTINATION endpoint's own landing platform
+            # (``start_point`` = Randovania's ``start_point_actor_name``), which
+            # physically lives in ``dmeta["scenario"]``. Using ``target_spawn_point``
+            # here was a bug: that actor belongs to the destination's VANILLA
+            # destination scenario, so the engine loaded the right room but
+            # couldn't find the spawn → crash on the ride.
             "destination": {"scenario": dmeta["scenario"],
-                            "actor": dmeta["target_spawn_point"]},
+                            "actor": dmeta["start_point"]},
             "connection_name": dmeta.get("transporter_name", ""),
         })
     return out

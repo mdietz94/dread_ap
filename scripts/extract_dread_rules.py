@@ -1129,13 +1129,22 @@ def emit_graph(
         # Transport endpoint: collect for the shuffle pool, don't bake an edge.
         if dock_type in TRANSPORT_DOCK_TYPES:
             ex = n.get("extra", {})
+            # ``start_point_actor_name`` is the spawn actor PHYSICALLY in THIS
+            # endpoint's room — where Samus lands when a ride arrives here. That
+            # is exactly what the patcher must point a shuffled ride at (mirrors
+            # Randovania's ``_start_point_ref_for`` reading the DESTINATION node's
+            # ``start_point_actor_name``). Do NOT use ``target_spawn_point``: it
+            # is this endpoint's VANILLA-destination landing platform (it lives in
+            # a different scenario), so feeding it as a shuffled destination spawn
+            # makes the engine load the right scenario but fail to find the spawn
+            # actor → in-game crash on the ride.
             transport_raw[side_id] = {
                 "key": key,
                 "far": "::".join(far),
                 "type": dock_type,
                 "scenario": scenario_of.get(region),
                 "actor": ex.get("actor_name"),
-                "target_spawn_point": ex.get("target_spawn_point"),
+                "start_point": ex.get("start_point_actor_name"),
                 "transporter_name": ex.get("transporter_name", ""),
             }
             continue
@@ -1184,7 +1193,7 @@ def emit_graph(
             "default_dest": meta["far"],
             "scenario": meta["scenario"],
             "actor": meta["actor"],
-            "target_spawn_point": meta["target_spawn_point"],
+            "start_point": meta["start_point"],
             "transporter_name": meta["transporter_name"],
         }
 
