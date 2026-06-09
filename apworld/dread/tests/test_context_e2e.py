@@ -150,3 +150,79 @@ async def test_received_pickups_push_advances_cursor(ctx):
     await ctx._on_switch_push(W.ReceivedPickups(count=5))
     assert ctx.state.game_received_pickups() == 5
     ctx.send_msgs.assert_not_called()
+
+
+def _quiet_connect_deps(ctx, monkeypatch):
+    """Neutralise the side effects _on_connected fires besides the collected-
+    location reconciliation we're testing (scout request, death-link tag,
+    auto-patch), so send_msgs only captures the re-sync we assert on."""
+    import dread.client.context as ctxmod
+    monkeypatch.setattr(ctxmod, "request_scout", unittest.mock.AsyncMock())
+    ctx.update_death_link = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+    ctx._maybe_auto_patch = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+
+
+@pytest.mark.asyncio
+async def test_seed_change_resets_collected_mirror(ctx, monkeypatch):
+    """Regression: a regenerated seed in the same client process must drop the
+    collected-location mirror. pickup_index is seed-independent, so a location
+    collected under the old seed would otherwise dedupe-suppress the SAME
+    position (a different player's item now) under the new seed — silently
+    losing that outgoing check. (This is exactly how an outgoing Morph Ball got
+    dropped: collected under one seed, then re-collected under a regenerated
+    seed where it held the co-op partner's Morph Ball, but never re-forwarded.)
+    """
+    _quiet_connect_deps(ctx, monkeypatch)
+
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([5])))
+    loc5 = ctx.datapackage.pickup_index_to_location_id(5)
+    assert ctx.state.all_collected_ids() == {loc5}
+
+    # Regenerate → connect to a DIFFERENT seed. Mirror must reset.
+    await ctx._on_connected({"seed_name": "AP-bbbb", "slot_data": {}})
+    assert ctx.state.all_collected_ids() == set()
+
+    # Re-collecting the same position now forwards again (the new seed's check).
+    ctx.send_msgs.reset_mock()
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([5])))
+    ctx.send_msgs.assert_awaited_once()
+    args, _ = ctx.send_msgs.await_args
+    assert args[0][0]["cmd"] == "LocationChecks"
+    assert args[0][0]["locations"] == [loc5]
+
+
+@pytest.mark.asyncio
+async def test_same_seed_reconnect_resyncs_collected(ctx, monkeypatch):
+    """A reconnect to the SAME seed must re-assert every known-collected
+    location. A LocationCheck emitted while the socket was down (a pickup
+    grabbed during an AP disconnect) is otherwise lost for good — the dedupe
+    cache suppresses the re-forward on the next bitfield push."""
+    _quiet_connect_deps(ctx, monkeypatch)
+
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    await ctx._on_switch_push(W.Collected(hex=_hex_for([0, 5])))
+    ids = sorted({ctx.datapackage.pickup_index_to_location_id(i) for i in (0, 5)})
+
+    ctx.send_msgs.reset_mock()
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    ctx.send_msgs.assert_awaited_once()
+    args, _ = ctx.send_msgs.await_args
+    assert args[0][0]["cmd"] == "LocationChecks"
+    assert sorted(args[0][0]["locations"]) == ids
+    # Same-seed reconnect does NOT wipe the mirror.
+    assert ctx.state.all_collected_ids() == set(ids)
+
+
+@pytest.mark.asyncio
+async def test_first_connect_records_seed_without_resync(ctx, monkeypatch):
+    """The first connect just baselines the seed — nothing collected yet, so no
+    LocationChecks should be emitted by the connect itself."""
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    assert ctx._synced_seed == "AP-aaaa"
+    location_checks = [
+        m for call in ctx.send_msgs.await_args_list for m in call.args[0]
+        if m.get("cmd") == "LocationChecks"
+    ]
+    assert location_checks == []
