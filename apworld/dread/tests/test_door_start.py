@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -59,6 +60,70 @@ def test_assignments_to_door_patches_skips_null_actor():
     patches = assignments_to_door_patches(assign, graph)
     assert len(patches) == 1
     assert patches[0]["actor"]["actor"] == "Door001"
+
+
+def test_roll_assignments_drops_exotic_door_types():
+    """The pool is restricted to BASIC_DOOR_TYPES; exotic shields never roll."""
+    from dread.DoorRando import roll_assignments, BASIC_DOOR_TYPES
+    wdt = {"Wave Beam Door": "wave_beam",      # basic (shielded)
+           "Power Beam Door": "power_beam",    # basic (unshielded)
+           "Bomb Door": "bomb",                # exotic — must be excluded
+           "Power Bomb Door": "power_bomb"}    # exotic — must be excluded
+    graph = {
+        "dock_sides": {
+            "A": {"patcher": {"scenario": "s010_cave", "actor": "Door001"},
+                  "dock_type": "door", "default_weakness": "Power Beam Door",
+                  "paired_side_id": "B"},
+            "B": {"patcher": {"scenario": "s010_cave", "actor": "Door001"},
+                  "dock_type": "door", "default_weakness": "Power Beam Door",
+                  "paired_side_id": "A"},
+        },
+        "door_rando": {
+            "change_to": list(wdt),
+            "weakness_door_type": wdt,
+            "locked_weakness": "Access Permanently Closed",
+            "vanilla_shield_ids": {},
+        },
+    }
+    for seed in range(20):
+        assign = roll_assignments(graph, random.Random(seed), mode="randomized")
+        for w in assign.values():
+            assert wdt[w] in BASIC_DOOR_TYPES, f"exotic type leaked: {w}"
+
+
+class _FirstRNG:
+    """choice() always returns the first option — surfaces a filtering failure
+    (a shielded target placed first would be picked if the budget didn't drop it)."""
+    def choice(self, seq):
+        return seq[0]
+
+
+def test_roll_assignments_respects_shield_budget():
+    """A scenario whose vanilla shield baseline sits at the cap gets only
+    unshielded targets for its unshielded doors (never a new shield)."""
+    from dread.DoorRando import (roll_assignments, SHIELD_IDS_PER_SCENARIO,
+                                 SHIELD_BUDGET_MARGIN)
+    wdt = {"Wave Beam Door": "wave_beam",    # shielded (first in change_to)
+           "Power Beam Door": "power_beam"}  # unshielded fallback
+    cap_doors = (SHIELD_IDS_PER_SCENARIO - SHIELD_BUDGET_MARGIN) // 2  # baseline at cap
+    graph = {
+        "dock_sides": {
+            "A": {"patcher": {"scenario": "s010_cave", "actor": "Door001"},
+                  "dock_type": "door", "default_weakness": "Power Beam Door",
+                  "paired_side_id": "B"},
+            "B": {"patcher": {"scenario": "s010_cave", "actor": "Door001"},
+                  "dock_type": "door", "default_weakness": "Power Beam Door",
+                  "paired_side_id": "A"},
+        },
+        "door_rando": {
+            "change_to": list(wdt),
+            "weakness_door_type": wdt,
+            "locked_weakness": "Access Permanently Closed",
+            "vanilla_shield_ids": {"s010_cave": cap_doors},
+        },
+    }
+    assign = roll_assignments(graph, _FirstRNG(), mode="randomized")
+    assert assign["A"] == "Power Beam Door", "budget should refuse a new shield"
 
 
 @graph_required
