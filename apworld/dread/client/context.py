@@ -289,6 +289,14 @@ class DreadContext(CommonContext):
 
         self._goal_reported = False
         self._ap_items: list[Any] = []
+        # The AP seed_name we last reconciled the collected-location mirror
+        # against. The Switch reports collected pickups by positional
+        # pickup_index, which is seed-INDEPENDENT; if the multiworld is
+        # regenerated (new seed) while this process keeps running, a stale
+        # mirror from the old seed would dedupe-suppress the new seed's
+        # same-positioned checks. Tracked so _on_connected can detect the change
+        # and drop the mirror. "" until the first Connected.
+        self._synced_seed: str = ""
         # Delivery diagnostics: the received index we last attempted to deliver
         # and how many polls we've re-sent it without the game's ReceivedPickups
         # advancing past it (a head-of-line stall — RL.ReceivePickup silently
@@ -471,9 +479,40 @@ class DreadContext(CommonContext):
     async def _on_connected(self, args: dict) -> None:
         self.state.set_ap_conn("connected")
         self.state.slot = self.username or ""
+        # seed_name rides on RoomInfo (already absorbed into state.seed by
+        # on_package) and not on Connected, so fall back to the stored value.
         self.state.seed = args.get("seed_name", self.state.seed)
+        new_seed = self.state.seed or ""
         self._goal_reported = False
         self._ap_items = []
+        # Reconcile the collected-location mirror against this connection's seed.
+        if new_seed and new_seed != self._synced_seed:
+            # A different multiworld generation (or the first connect). The
+            # Switch keys collected pickups by positional pickup_index, which is
+            # seed-INDEPENDENT, so any location left in the mirror from a prior
+            # seed would dedupe-suppress the SAME-positioned (but now
+            # different-item) location here — silently dropping this seed's
+            # outgoing check. Drop the mirror; the next bitfield push re-derives
+            # this seed's collected set from scratch and forwards each anew.
+            if self._synced_seed:
+                log.info("AP seed changed (%r -> %r); resetting collected-"
+                         "location mirror so prior-seed collections don't "
+                         "suppress this seed's checks", self._synced_seed, new_seed)
+            self.state.clear_received()
+            self._synced_seed = new_seed
+        else:
+            # Same multiworld, fresh socket: re-assert everything we believe is
+            # collected. A LocationCheck emitted while the socket was down (a
+            # pickup grabbed during an AP disconnect) is otherwise lost for good
+            # — the dedupe cache suppresses the re-forward on the next bitfield
+            # push. AP ignores already-checked locations, so this is a safe
+            # idempotent catch-up.
+            collected = sorted(self.state.all_collected_ids())
+            if collected:
+                log.info("re-syncing %d collected location(s) after reconnect",
+                         len(collected))
+                await self.send_msgs([{"cmd": "LocationChecks",
+                                       "locations": collected}])
         # New connection ⇒ re-baseline death detection on the next poll so a
         # historical death count from a prior session isn't reported now.
         self._last_death_count = None
