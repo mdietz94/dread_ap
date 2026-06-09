@@ -1,34 +1,23 @@
-"""Compile Randovania Dread logic JSON → AP-shaped compiled_rules.json.
+"""Extract Randovania Dread logic → native AP region graph (logic_graph.json).
 
-Reads ``.dread-cache/randovania-logic/{header,Elun,...}.json`` and emits
-two artifacts the apworld consumes:
+Reads ``.dread-cache/randovania-logic/{header,Elun,...}.json`` and emits:
 
-  apworld/dread/data/compiled_rules.json   per-location rule AST
-  apworld/dread/data/events.json           event-item pool entries
+  apworld/dread/data/logic_graph.json   native AP region-graph artifact
 
-The serialized AST is intentionally simple — no Python objects, no
-lambdas — so the apworld can re-compile against the live ``player``
-index at world-creation time without importing this script.
+AST vocabulary (symbolic; compiled to lambdas at AP-generation time):
 
-AST shape:
-
-    {"type": "and",  "items": [...]}     all children must hold
-    {"type": "or",   "items": [...]}     at least one child must hold
+    {"type": "and",  "items": [...]}
+    {"type": "or",   "items": [...]}
     {"type": "item", "name": "...", "amount": 1}
-    {"type": "event", "name": "..."}
-    {"type": "trick", "name": "...", "level": 1}   v0.1: always False
+    {"type": "event", "name": "..."}          graph_mode → can_reach_region
+    {"type": "trick", "name": "...", "level": N}   resolved per-trick at gen time
     {"type": "sum", "terms": [{"name", "per_unit"}, ...],
                     "base": int, "threshold": int}
-                                         base + Σ count(name) * per_unit ≥ threshold
     {"type": "damage_threshold",
         "suit_options": [...], "hp_needed": int}
-                                         any suit OR 99+100·ETank+25·EPart ≥ hp
-    {"type": "trivial"}                  always True
-    {"type": "impossible"}               always False
-
-The schema version is written to compiled artifacts as ``schema_version``;
-the loader (apworld/dread/Rules.py::load_compiled_rules) refuses mismatched
-versions so a stale artifact never silently passes.
+    {"type": "dock", "side_id": "..."}        substituted by the apworld per-seed
+    {"type": "trivial"}
+    {"type": "impossible"}
 """
 from __future__ import annotations
 
@@ -56,15 +45,6 @@ if not CACHE_DIR.exists():
         if _candidate.exists():
             CACHE_DIR = _candidate
             break
-
-# Bumped whenever the AST vocabulary changes. The loader refuses anything
-# that doesn't match — we never want a stale artifact silently passing.
-# v1: pre-v0.3 (no sum / damage_threshold)
-# v2: sum + damage_threshold nodes (v0.3, ammo + HP-budget gating)
-# v3: tricks kept SYMBOLIC ({"type":"trick","name","level"}) instead of
-#     collapsed at compile time; one file, no per-level bake. Per-trick
-#     levels are resolved at AP-generation time (apworld/dread/Tricks.py).
-SCHEMA_VERSION = 3
 
 ALL_AREAS = [
     "Artaria", "Burenia", "Cataris", "Dairon", "Elun",
@@ -1011,376 +991,17 @@ def load_ap_locations() -> tuple[dict[tuple[str, str], dict], dict[str, str]]:
 GlobalKey = tuple                  # (region, sub_area, node)
 
 
-def build_global_graph(
-    areas: dict[str, dict],
-    header: Header,
-) -> tuple[dict, dict]:
-    """Merge every area into one graph with region-qualified node keys and
-    real (not sentinel) cross-region dock edges."""
-    nodes: dict = {}
-    edges: dict = {}
-
-    for region, area_data in areas.items():
-        for sub_name, sub in area_data["areas"].items():
-            for n_name, n in sub["nodes"].items():
-                key = (region, sub_name, n_name)
-                nodes[key] = n
-                for tgt_name, req in n.get("connections", {}).items():
-                    edges.setdefault(key, []).append(
-                        ((region, sub_name, tgt_name),
-                         translate_requirement(req, header))
-                    )
-
-    # Dock edges connect to the real target node, possibly in another region.
-    for key, n in list(nodes.items()):
-        if n.get("node_type") != "dock":
-            continue
-        dc = n.get("default_connection")
-        if not dc:
-            continue
-        dock_req = dock_open_requirement(
-            header, n.get("dock_type"), n.get("default_dock_weakness")
-        )
-        override_open = n.get("override_default_open_requirement")
-        if override_open is not None:
-            dock_req = translate_requirement(override_open, header)
-        edges.setdefault(key, []).append(
-            ((dc["region"], dc["area"], dc["node"]), dock_req)
-        )
-
-    return edges, nodes
-
-
-def _strip_events(ast: dict) -> dict:
-    """Return the AST with all event requirements treated as satisfied.
-
-    region_access gates Menu→region on the AP side, so it MUST stay
-    bootstrappable from items alone: events are themselves locked progression
-    whose area-relative reach rules assume free area entry, and coupling region
-    entry to them deadlocks the goal (Ship becomes unreachable). Dropping event
-    atoms keeps the real ITEM gating (e.g. Cataris needs Charge + Cross Bomb)
-    while staying over-permissive about event-gated traversal — the safe
-    direction (never makes a region falsely unreachable)."""
-    t = ast.get("type")
-    if t == "event":
-        return TRIVIAL
-    if t == "and":
-        return mk_and([_strip_events(c) for c in ast["items"]])
-    if t == "or":
-        return mk_or([_strip_events(c) for c in ast["items"]])
-    return ast
-
-
-def _strip_self_event(ast: dict, name: str) -> dict:
-    """Remove self-references from an event's own reach rule. A disjunct that
-    requires event E in order to reach E is circular (un-bootstrappable in a
-    monotonic solver), so replace the self-reference with Impossible and
-    simplify. If every path self-references, the event is only reachable
-    post-trigger → Impossible (a back-path the area BFS picked up)."""
-    t = ast.get("type")
-    if t == "event" and ast.get("name") == name:
-        return IMPOSSIBLE
-    if t == "and":
-        return mk_and([_strip_self_event(c, name) for c in ast["items"]])
-    if t == "or":
-        return mk_or([_strip_self_event(c, name) for c in ast["items"]])
-    return ast
-
-
-def compute_region_access(
-    areas: dict[str, dict],
-    header: Header,
-    regions: list[str],
-) -> dict[str, dict]:
-    """Global reachability → per-region entry rule AST (item-only), for the
-    given AP region names."""
-    edges, nodes = build_global_graph(areas, header)
-    start = header.starting_location
-    entry = (start["region"], start["area"], start["node"])
-    if entry not in nodes:
-        print(f"  WARN: global start {entry!r} not in node set", file=sys.stderr)
-
-    # Inbound cross-region docks: a dock node in region R whose default
-    # connection leaves R. Reaching one == being able to enter R.
-    inbound_by_region: dict[str, list] = {}
-    targets: set = set()
-    for key, n in nodes.items():
-        if n.get("node_type") != "dock":
-            continue
-        region = key[0]
-        dc = n.get("default_connection") or {}
-        if dc.get("region") and dc["region"] != region:
-            targets.add(key)
-            inbound_by_region.setdefault(region, []).append(key)
-
-    reach = enumerate_paths([entry], edges, targets)
-
-    region_access: dict[str, dict] = {}
-    for R in regions:
-        if R == start["region"]:
-            region_access[R] = TRIVIAL
-            continue
-        rules = [reach.get(k, IMPOSSIBLE) for k in inbound_by_region.get(R, [])]
-        region_access[R] = _strip_events(mk_or(rules)) if rules else IMPOSSIBLE
-    return region_access
-
-
-def _substitute_events(ast: dict, event_cost: dict) -> dict:
-    """Inline each event's ITEM-ONLY reach cost in place of its atom. Events not
-    yet collected (absent from event_cost) → Impossible (their edge is blocked
-    this round). The result is item-only — no event atoms remain — which is what
-    lets AP's monotonic item sweep bootstrap everything (the event-as-locked-
-    item model created item↔event cycles AP couldn't unwind)."""
-    t = ast.get("type")
-    if t == "event":
-        return event_cost.get(ast["name"], IMPOSSIBLE)
-    if t == "and":
-        return mk_and([_substitute_events(c, event_cost) for c in ast["items"]])
-    if t == "or":
-        return mk_or([_substitute_events(c, event_cost) for c in ast["items"]])
-    return ast
-
-
-def _strip_tricks_above(ast: dict, floor: int) -> dict:
-    """Replace every trick atom with level > ``floor`` by IMPOSSIBLE; keep tricks
-    at level <= floor SYMBOLIC (unchanged). Simplifies the surrounding AND/OR.
-
-    Used for compile_forward's recovery pass (see its two-pass union). Keeping
-    tricks symbolic adds a trick atom to every gated disjunct, so the harder
-    (level >= 2) variants crowd the bounded-DNF cap and truncate the long
-    item-only / Beginner-trick detours to deep pickups (marking them unreachable
-    at low trick configs though a path exists). The recovery pass strips just the
-    level > floor edges — removing that crowding — while leaving the floor-level
-    (default Beginner) tricks symbolic, so they're still resolved per-trick at
-    generation time (disable a Beginner trick and the atom goes false). OR-ing
-    this pass into the full symbolic rules restores the low paths with NO false
-    positives: every recovered disjunct is item-only or gated on a still-symbolic
-    floor-level trick."""
-    t = ast.get("type")
-    if t == "trick":
-        return IMPOSSIBLE if int(ast.get("level", 1)) > floor else ast
-    if t == "and":
-        return mk_and([_strip_tricks_above(c, floor) for c in ast["items"]])
-    if t == "or":
-        return mk_or([_strip_tricks_above(c, floor) for c in ast["items"]])
-    return ast
-
-
-def _location_easiest_hp(ast: dict) -> int | float:
-    """For a compiled-rule AST, return the HP needed via the EASIEST
-    surviving disjunct — min over OR-paths of (max no-suit
-    damage_threshold ``hp_needed`` along that path).
-
-    Returns 0 if a disjunct has no no-suit damage gates (player needs no
-    HP for that path); returns ``inf`` if the rule is IMPOSSIBLE. Suit-typed
-    ``damage_threshold`` nodes are treated as 0 (they short-circuit on a
-    suit, which a normal player has by the time they enter that region).
-    """
-    t = ast.get("type")
-    if t == "or":
-        if not ast["items"]:
-            return float("inf")
-        return min(_location_easiest_hp(c) for c in ast["items"])
-    if t == "and":
-        worst = 0
-        for c in ast["items"]:
-            child = _location_easiest_hp(c)
-            if child == float("inf"):
-                return float("inf")
-            if child > worst:
-                worst = child
-        return worst
-    if t == "damage_threshold" and not ast.get("suit_options"):
-        return int(ast["hp_needed"])
-    if t == "impossible":
-        return float("inf")
-    return 0
-
-
-def compute_region_etank_floors(
-    rules_by_loc: dict[str, dict],
-    ap_region_names: list[str],
-) -> dict[str, int]:
-    """Per region, the E-Tank count required to enter — derived from the
-    75th-percentile location HP across the region.
-
-    Each location's easiest_hp = "cheapest reach disjunct's worst hit."
-    For easy locations (the missile tank near the region entry), the rule
-    has a damage-free disjunct gated only on items → easiest_hp=0. For
-    bottleneck locations (Golzuna, Kraid, Hanubia bosses), every disjunct
-    includes a no-suit hit → easiest_hp ≥ 349.
-
-    Using P75 instead of MAX keeps single-outlier regions ungated: Cataris
-    has 24 locations at hp=0 and 1 (Kraid) at hp=349 → P75=0 → no gate.
-    Hanubia has all 4 locations at hp=349 → P75=349 → 3 tanks. This
-    matches "if most-but-not-all locations in R need HP, gate the region;
-    if it's one outlier, leave fill to handle it via item progression."
-
-    Floor = ceil((p75_hp - 99) / 100) since 99 base HP + 100/tank.
-
-    Per-region gating instead of per-location: Randovania's solver
-    pre-orders pickups to accumulate HP; AP's general-purpose fill doesn't.
-    A per-location HP gate generates hundreds of overlapping constraints
-    and deadlocks. One gate per region (≤8) is satisfiable.
-    """
-    per_region: dict[str, list[int]] = {r: [] for r in ap_region_names}
-    for loc_name, rule in rules_by_loc.items():
-        region = loc_name.split(":", 1)[0]
-        if region not in per_region:
-            continue
-        hp = _location_easiest_hp(rule)
-        if hp == float("inf"):
-            continue
-        per_region[region].append(int(hp))
-
-    floors: dict[str, int] = {}
-    for r, hps in per_region.items():
-        if not hps:
-            floors[r] = 0
-            continue
-        hps.sort()
-        # 75th percentile (nearest-rank). For small n, this is close to max.
-        p75 = hps[(3 * len(hps)) // 4] if len(hps) >= 4 else hps[-1]
-        if p75 <= 99:
-            floors[r] = 0
-        else:
-            floors[r] = (p75 - 100) // 100 + 1
-    return floors
-
-
-def _strip_no_suit_damage_thresholds(ast: dict) -> dict:
-    """Replace every ``damage_threshold`` with empty ``suit_options`` with
-    TRIVIAL, simplifying the surrounding AND/OR structure. Suit-typed
-    nodes are preserved (they short-circuit on Varia/Gravity and don't
-    over-constrain fill).
-
-    Called AFTER ``compute_region_etank_floors`` extracts the amounts —
-    once region_access carries the per-region floor, the per-location
-    no-suit HP gates are redundant *and* fill-fatal."""
-    t = ast.get("type")
-    if t == "damage_threshold" and not ast.get("suit_options"):
-        return TRIVIAL
-    if t == "and":
-        return mk_and([_strip_no_suit_damage_thresholds(c) for c in ast["items"]])
-    if t == "or":
-        return mk_or([_strip_no_suit_damage_thresholds(c) for c in ast["items"]])
-    return ast
-
-
-def compile_forward(
-    areas: dict[str, dict],
-    header: Header,
-    ap_loc_by_actor: dict,
-    ap_loc_by_pickup_index: dict,
-    *,
-    max_rounds: int = 40,
-    node_cap: int = 32,
-    edge_cap: int = 32,
-    strip_tricks_above: int | None = None,
-) -> tuple[dict, dict, dict]:
-    """Randovania-style forward resolver over the global graph, emitting
-    ITEM-ONLY rules.
-
-    Collects events in dependency SPHERES: each round, every event atom in an
-    edge is replaced by the ITEM-ONLY reach cost of events collected in EARLIER
-    rounds (uncollected events block that edge), reachability is recomputed, and
-    newly-reachable events record their own item-only cost for the next round.
-
-    Inlining is the crux: the old event-as-locked-item model created item↔event
-    bootstrap cycles (an event needs an item whose location needs that event)
-    that AP's monotonic, precollected-only sweep could not unwind, so
-    accessibility=items/full failed. Folding each event's cost into pure item
-    requirements removes events from the dependency graph entirely, so the rules
-    bootstrap like ordinary AP item logic. Returns
-    (rules_by_loc, event_rule_by_name, event_region_by_name); all rules are
-    item-only and global (region_access becomes a star, boss/EMMI gated
-    directly). Requires translate_requirement's negated temporal → Trivial.
-
-    ``node_cap`` / ``edge_cap`` bound the per-node reach DNF and per-edge
-    requirement DNF respectively (split so a future tweak can raise one without
-    the other — raising edge_cap explodes compile time via AND-expansion).
-
-    ``strip_tricks_above`` runs the resolver with trick edges above that level
-    treated as IMPOSSIBLE (tricks at/below it stay symbolic). main() runs a
-    SECOND pass with floor=1 and OR-s it into the symbolic per-pickup rules:
-    keeping ALL tricks symbolic adds disjuncts that crowd the bounded-DNF cap and
-    truncate the long item-only / Beginner-trick detours to deep pickups, so this
-    recovery pass — with the level>=2 competition removed — restores them. The
-    union is sound (every recovered disjunct is item-only or gated on a
-    still-symbolic Beginner trick, so it is resolved per-trick at generation time
-    with no false positive) and the full symbolic pass still supplies the
-    higher-level trick shortcuts."""
-    edges, nodes = build_global_graph(areas, header)
-    start = header.starting_location
-    entry = (start["region"], start["area"], start["node"])
-    ev_name_by_node = {k: n.get("event_name") for k, n in nodes.items()
-                       if n.get("node_type") == "event"}
-    ev_nodes_by_name: dict[str, list] = {}
-    for k, nm in ev_name_by_node.items():
-        ev_nodes_by_name.setdefault(nm, []).append(k)
-
-    # event_cost[E] = item-only reach DNF, captured the round E is collected
-    # (so it references only earlier events' costs → already inlined → acyclic).
-    event_cost: dict[str, dict] = {}
-    node_reach: dict = {}
-    for _ in range(max_rounds):
-        round_edges = {
-            u: [(v, _substitute_events(
-                    _strip_tricks_above(req, strip_tricks_above)
-                    if strip_tricks_above is not None else req, event_cost))
-                for v, req in adj]
-            for u, adj in edges.items()
-        }
-        node_reach = enumerate_paths(
-            [entry], round_edges, set(nodes.keys()),
-            max_disjuncts_per_node=node_cap, max_disjuncts_per_edge=edge_cap,
-        )
-        newly = {nm for k, nm in ev_name_by_node.items()
-                 if nm not in event_cost
-                 and node_reach.get(k, IMPOSSIBLE).get("type") != "impossible"}
-        if not newly:
-            break
-        for nm in newly:
-            event_cost[nm] = mk_or([node_reach.get(k, IMPOSSIBLE)
-                                    for k in ev_nodes_by_name[nm]])
-    event_rule_by_name = event_cost
-
-    # Map pickup nodes (actor + boss/EMMI/cutscene) to AP locations.
-    rules_by_loc: dict[str, dict] = {}
-    for key, n in nodes.items():
-        if n.get("node_type") != "pickup":
-            continue
-        region = key[0]
-        ast = node_reach.get(key, IMPOSSIBLE)
-        actor_name = (n.get("extra") or {}).get("actor_name")
-        loc_name = None
-        if actor_name and (region, actor_name) in ap_loc_by_actor:
-            loc_name = ap_loc_by_actor[(region, actor_name)]
-        elif n.get("pickup_index") is not None and n["pickup_index"] in ap_loc_by_pickup_index:
-            loc_name = ap_loc_by_pickup_index[n["pickup_index"]]
-        if loc_name is not None:
-            rules_by_loc[loc_name] = ast
-
-    # event_rule_by_name was captured per-round above (acyclic). Region tag =
-    # first contributing area (deterministic).
-    event_region_by_name: dict[str, str] = {
-        nm: sorted(k[0] for k in ks)[0] for nm, ks in ev_nodes_by_name.items()
-    }
-    return rules_by_loc, event_rule_by_name, event_region_by_name
-
 
 # ---------------------------------------------------------------------------
-# Native-graph emit (logic_graph.json) — the fast per-seed reachability model.
+# Native-graph emit (logic_graph.json)
 #
-# Instead of the closed-form item-only bake, emit the SYMBOLIC graph and let AP's
-# own region sweep solve reachability per seed (O(edges), ~0.1s). Nodes collapse
-# to one Region per trivial-SCC; each cross-region edge becomes an Entrance whose
-# access rule is the symbolic edge AST. Rando-eligible door docks emit a
-# {"type":"dock","side_id":...} atom the apworld resolves per-seed against the
-# door assignment (vanilla default when door rando is off); all other docks bake
-# their requirement. Events are pure-logic regions in the apworld (no locations),
-# so victory uses the item-only `victory_condition` (passed in). See
-# scripts/spike_graph_speed.py and [[dread-native-graph-spike]].
+# Emit the SYMBOLIC graph; AP's own region sweep solves reachability per seed
+# (O(edges), ~0.1s). Nodes collapse to one Region per trivial-SCC; each
+# cross-region edge becomes an Entrance whose access rule is the symbolic edge
+# AST. Rando-eligible door docks emit a {"type":"dock","side_id":...} atom the
+# apworld resolves per-seed against the door assignment. Events are pure-logic
+# regions (no locations); the victory condition references them via event atoms
+# compiled in graph_mode (can_reach_region). See [[dread-native-graph-spike]].
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
@@ -1653,7 +1274,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="compile every area (stress-test the pipeline)",
+        help="compile every area",
     )
     parser.add_argument(
         "--strict",
@@ -1663,28 +1284,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out",
         type=Path,
-        default=DATA_DIR / "compiled_rules.json",
-        help="output path for compiled_rules.json",
-    )
-    parser.add_argument(
-        "--graph",
-        action="store_true",
-        help="also emit the native logic_graph.json (fast per-seed reachability "
-             "model — see emit_graph). Reuses the item-only victory computed for "
-             "the closed-form pass.",
-    )
-    parser.add_argument(
-        "--graph-out",
-        type=Path,
         default=DATA_DIR / "logic_graph.json",
-        help="output path for logic_graph.json (with --graph)",
-    )
-    parser.add_argument(
-        "--graph-only",
-        action="store_true",
-        help="emit ONLY logic_graph.json, reusing the item-only victory from an "
-             "existing compiled_rules.json (--out). Fast (~1s); skips the forward "
-             "resolver. For conftest/CI graph materialization.",
+        help="output path for logic_graph.json",
     )
     args = parser.parse_args(argv)
 
@@ -1700,7 +1301,6 @@ def main(argv: list[str] | None = None) -> int:
     header = Header.from_json(header_data)
 
     ap_loc_by_key, ap_region_scenario = load_ap_locations()
-    ap_items = json.loads((DATA_DIR / "items.json").read_text())
     ap_locations = json.loads((DATA_DIR / "locations.json").read_text())
 
     # AP location maps: actor pickups by (region, actor); non-actor
@@ -1725,134 +1325,19 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         all_area_data[area_name] = json.loads(p.read_text())
 
-    # Fast path: emit ONLY logic_graph.json, sourcing the item-only victory from
-    # an existing compiled_rules.json (skips the ~10-min forward resolver). Used
-    # by conftest/CI to materialize the graph artifact quickly.
-    if args.graph_only:
-        cf = json.loads(args.out.read_text())
-        victory_ast = cf["victory_condition"]
-        graph = emit_graph(all_area_data, header,
-                           ap_loc_by_actor, ap_loc_by_pickup_index, victory_ast)
-        graph["pinned_commit"] = pinned
-        args.graph_out.parent.mkdir(parents=True, exist_ok=True)
-        args.graph_out.write_text(json.dumps(graph, indent=2))
-        print(f"wrote {args.graph_out} (graph-only) — {graph['n_regions']} "
-              f"regions, {len(graph['entrances'])} entrances, "
-              f"{len(graph['dock_sides'])} rando-eligible doors")
-        return 0
+    # Victory condition: translate the raw RDV goal into our AST with event atoms
+    # intact. The graph model handles them natively via can_reach_region("Event:X").
+    victory_ast = translate_requirement(header_data["victory_condition"], header)
 
-    print("running forward resolver (item-only inlining) over all areas ...")
-    out_rules, event_rule_by_name, event_region_by_name = compile_forward(
-        all_area_data, header, ap_loc_by_actor, ap_loc_by_pickup_index)
-
-    # Recovery pass with level>=2 trick edges stripped (Beginner tricks kept
-    # symbolic). The full symbolic pass's harder-trick disjuncts crowd the
-    # bounded-DNF cap and truncate the long item-only / Beginner-trick detours to
-    # deep pickups (marking them unreachable at low trick configs though a path
-    # exists); this pass — without that crowding — keeps them. OR-ing it in
-    # restores those paths with NO false positives: every recovered disjunct is
-    # item-only or gated on a still-symbolic Beginner trick (resolved per-trick at
-    # generation time). The full symbolic pass still supplies level>=2 shortcuts.
-    print("running recovery pass (level>=2 tricks stripped) for union ...")
-    item_rules, item_event_rules, _ = compile_forward(
-        all_area_data, header, ap_loc_by_actor, ap_loc_by_pickup_index,
-        strip_tricks_above=1)
-    out_rules = {
-        loc: mk_or([item_rules.get(loc, IMPOSSIBLE), ast])
-        for loc, ast in out_rules.items()
-    }
-
-    # Victory: inline the goal event's item-only cost (no event atoms remain).
-    # Union the symbolic and recovery goal costs for the same reason.
-    victory_translated = translate_requirement(
-        header_data["victory_condition"], header)
-    victory_ast = mk_or([
-        _substitute_events(
-            _strip_tricks_above(victory_translated, 1), item_event_rules),
-        _substitute_events(victory_translated, event_rule_by_name),
-    ])
-
-    # ---- Build the events list ------------------------------------------------
-    # Events are inlined into the per-pickup rules and the victory_condition,
-    # so they are not AP items / locations. The events array is retained as a
-    # diagnostic / test surface — it documents which events the forward
-    # resolver inlined and at what item-only cost — but carries no AP IDs.
-    event_names = sorted(event_region_by_name.keys())
-
-    events_out: list[dict] = []
-    for ename in event_names:
-        events_out.append({
-            "name": ename,
-            "region": event_region_by_name.get(ename, ""),
-            "rule": event_rule_by_name.get(ename, IMPOSSIBLE),
-        })
-
-    # ---- Per-region E-Tank floor + no-suit damage_threshold strip -------------
-    # While compile_forward was running, generic Damage emitted
-    # damage_threshold(no_suit) carrying the original HP amount. Now:
-    #   1. Derive per-region E-Tank floors from those amounts (the "easiest
-    #      surviving path to any pickup in the region" metric).
-    #   2. Strip the no-suit nodes from per-location rules (TRIVIAL them) so
-    #      AP's fill isn't deadlocked by per-location HP gates. Per-region
-    #      gating via region_access is the substitute — coarse but
-    #      fill-solvable, and matches the resource-accumulation pattern
-    #      Randovania's solver bakes in by ordering its own placements.
-    ap_region_names = [e["name"] for e in json.loads((DATA_DIR / "regions.json").read_text())]
-    region_etank_floors = compute_region_etank_floors(out_rules, ap_region_names)
-
-    out_rules = {ln: _strip_no_suit_damage_thresholds(r) for ln, r in out_rules.items()}
-    victory_ast = _strip_no_suit_damage_thresholds(victory_ast)
-    for ev in events_out:
-        ev["rule"] = _strip_no_suit_damage_thresholds(ev["rule"])
-
-    # NOTE: softlock prevention is intentionally NOT modeled. AP logic gates
-    # only entry to a pickup, not the ability to leave it; a one-way room can
-    # therefore be assigned any item by fill. Runtime recovery is the client's
-    # ``/warp`` command (warp to the starting save station). The old escape /
-    # reverse-reachability pass (and its fill-fragile strip + softlock_locks
-    # pins) was removed — see CLAUDE.md.
-
-    region_access: dict[str, dict] = {}
-    for r in ap_region_names:
-        floor = region_etank_floors.get(r, 0)
-        if floor > 0:
-            region_access[r] = {"type": "item", "name": "Energy Tank",
-                                "amount": floor}
-        else:
-            region_access[r] = dict(TRIVIAL)
-    print("region E-Tank floors:", {r: f for r, f in region_etank_floors.items() if f})
-
-    output = {
-        "schema_version": SCHEMA_VERSION,
-        "pinned_commit": pinned,
-        "areas_compiled": sorted(all_area_data.keys()),
-        "victory_condition": victory_ast,
-        "region_access": region_access,
-        "events": events_out,
-        "rules": out_rules,
-    }
+    graph = emit_graph(all_area_data, header,
+                       ap_loc_by_actor, ap_loc_by_pickup_index, victory_ast)
+    graph["pinned_commit"] = pinned
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(output, indent=2))
-    print(f"wrote {args.out} — {len(out_rules)} rules, {len(events_out)} events")
-
-    # events.json kept as a back-compat view: bare name list only.
-    events_path = DATA_DIR / "events.json"
-    events_path.write_text(json.dumps({
-        "pinned_commit": pinned,
-        "events": [e["name"] for e in events_out],
-    }, indent=2))
-    print(f"wrote {events_path} — {len(events_out)} events")
-
-    if args.graph:
-        graph = emit_graph(all_area_data, header,
-                           ap_loc_by_actor, ap_loc_by_pickup_index, victory_ast)
-        graph["pinned_commit"] = pinned
-        args.graph_out.parent.mkdir(parents=True, exist_ok=True)
-        args.graph_out.write_text(json.dumps(graph, indent=2))
-        print(f"wrote {args.graph_out} — {graph['n_regions']} regions, "
-              f"{len(graph['entrances'])} entrances, {len(graph['pickups'])} "
-              f"pickups, {len(graph['events'])} event nodes, "
-              f"{len(graph['dock_sides'])} rando-eligible doors")
+    args.out.write_text(json.dumps(graph, indent=2))
+    print(f"wrote {args.out} — {graph['n_regions']} regions, "
+          f"{len(graph['entrances'])} entrances, {len(graph['pickups'])} "
+          f"pickups, {len(graph['events'])} event nodes, "
+          f"{len(graph['dock_sides'])} rando-eligible doors")
 
     return 0
 

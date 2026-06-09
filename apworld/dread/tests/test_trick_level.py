@@ -20,11 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
 from dread import Tricks  # noqa: E402
-from dread.Rules import (  # noqa: E402
-    EXPECTED_SCHEMA_VERSION,
-    compile_to_lambda,
-    load_compiled_rules,
-)
+from dread.Rules import compile_to_lambda  # noqa: E402
 
 DATA = ROOT / "data"
 
@@ -123,23 +119,15 @@ def test_trick_inside_or_opens_alternate_path():
 
 
 # --------------------------------------------------------------------------- #
-# Compiled artifact shape
+# Graph artifact shape
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture(scope="module")
-def compiled():
-    path = DATA / "compiled_rules.json"
+def graph():
+    path = DATA / "logic_graph.json"
     if not path.exists():
-        pytest.skip("compiled_rules.json not baked (run extract_dread_rules.py)")
+        pytest.skip("logic_graph.json not yet generated (run extract_dread_rules.py)")
     return json.loads(path.read_text())
-
-
-def test_single_file_schema_and_no_trick_level_key(compiled):
-    assert compiled["schema_version"] == EXPECTED_SCHEMA_VERSION == 3
-    # The per-level baking knob is gone.
-    assert "trick_level" not in compiled
-    for key in ("rules", "events", "region_access", "victory_condition"):
-        assert key in compiled
 
 
 def _iter_atoms(ast):
@@ -148,21 +136,14 @@ def _iter_atoms(ast):
         yield from _iter_atoms(child)
 
 
-def test_compiled_rules_carry_symbolic_trick_atoms(compiled):
-    """The whole point of v3: trick requirements survive into the artifact
-    instead of being collapsed to trivial/impossible."""
+def test_graph_carries_symbolic_trick_atoms(graph):
+    """Trick requirements survive into the graph artifact as symbolic atoms."""
     seen_tricks = set()
-    for rule in compiled["rules"].values():
+    for _csrc, _cdst, rule in graph.get("entrances", []):
         for node in _iter_atoms(rule):
             if node.get("type") == "trick":
                 seen_tricks.add(node["name"])
                 assert isinstance(node["level"], int)
-    assert seen_tricks, "no symbolic trick atoms found in compiled rules"
-    # Every referenced trick is a known short_name.
+    assert seen_tricks, "no symbolic trick atoms found in graph entrances"
     known = {t.short_name for t in Tricks.DREAD_TRICKS}
     assert seen_tricks <= known, f"unknown tricks: {seen_tricks - known}"
-
-
-def test_loader_returns_single_file(compiled):
-    loaded = load_compiled_rules()
-    assert loaded["schema_version"] == 3

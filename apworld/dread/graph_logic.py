@@ -1,32 +1,22 @@
-"""Native AP region-graph logic (the fast per-seed reachability model).
+"""Native AP region-graph logic.
 
 Consumes ``data/logic_graph.json`` (emitted by
-``scripts/extract_dread_rules.py --graph``) and builds a real Archipelago region
+``scripts/extract_dread_rules.py``) and builds an Archipelago region
 graph: one Region per trivial-SCC of Randovania nodes, one Entrance per
 cross-region edge with the symbolic edge rule compiled live, events as pure-logic
-regions (no AP locations/items), and the item-only victory condition.
+regions (no AP locations/items), and a victory condition that can reference event
+regions via ``state.can_reach_region``.
 
-Why this exists (see [[dread-native-graph-spike]] and
-``scripts/spike_graph_speed.py``): the closed-form ``compiled_rules.json`` bakes
-each dock's vanilla weakness into item-only per-pickup rules, so door-lock /
-transport randomization (which change per-seed reachability combinatorially)
-cannot be expressed. The native graph re-derives reachability per seed via AP's
-own O(edges) sweep (~0.1s solo) — fast enough that a per-seed dock assignment is
-just a different Entrance access rule. Verified: 0 unsolved across full/items/
-minimal accessibility, all trick levels, DNA, progressive, solo + 2-slot.
-
-Event model: an ``event`` atom compiles (graph_mode) to
-``state.can_reach_region("Event:<name>")``; the ``Event:<name>`` region is
-reachable from ANY of the event's node-components (OR). Because events are not
-locations they never enter ``fulfills_accessibility`` — matching the closed-form,
-which inlines events away. Victory uses the item-only ``victory_condition`` so the
-final-escape node's live non-convergence is irrelevant (it gates nothing).
+The graph re-derives reachability per seed via AP's own O(edges) sweep (~0.1s
+solo), making door/transport/start randomization expressible as per-seed Entrance
+access rules. Verified: 0 unsolved across full/items/minimal accessibility, all
+trick levels, DNA, progressive, solo + 2-slot.
 
 Door rando (DoorRando.py) supplies ``dock_assignments`` {side_id -> weakness};
-when absent, every dock resolves to its vanilla ``default_weakness`` (identical to
-the closed-form). Each dock atom is substituted with that weakness's open
-requirement from the emitted ``weakness_requirements`` table BEFORE compilation,
-so ``compile_to_lambda`` never sees a ``dock`` node.
+when absent, every dock resolves to its vanilla ``default_weakness``. Each dock
+atom is substituted with that weakness's open requirement from
+``weakness_requirements`` BEFORE compilation, so ``compile_to_lambda`` never
+sees a ``dock`` node.
 """
 from __future__ import annotations
 

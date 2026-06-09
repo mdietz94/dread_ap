@@ -4,44 +4,26 @@ Registers items / locations / regions, creates one ``DreadItem`` per
 item-pool entry, and writes a small slot_data so the client can derive
 its mapping at connect time.
 
-Logic status (see docs/randovania-logic-port-notes.md):
-  * Forward resolver: a whole-game sphere expansion (scripts/extract_dread_
-    rules.py::compile_forward) emits ITEM-ONLY rules — events are INLINED
-    (each event atom replaced by its item-only reach cost), so they are no
-    longer AP items/locations (we skip them in create_items / create_regions /
-    set_rules; the data tables keep them only for AP-ID stability).
-    region_access is a plain star — cross-region cost is inlined per rule.
-  * accessibility=items/full WORK: item-only rules bootstrap in AP's monotonic
-    sweep. This needed classifying logic-required items as progression
-    (Missile Tank etc.). An earlier crutch — forcing Charge Beam as a starting
-    item (EXTRA_STARTING_ITEMS) to clear an early-prerequisite fill bottleneck —
-    is no longer required: once Missile Tank became advancement the early
-    reachable set opened up, and Charge Beam places normally as a findable item
-    (verified: 146 generations across solo/multiworld × all trick levels ×
-    minimal/items/full, 0 fill failures). EXTRA_STARTING_ITEMS is now empty.
-  * Trick Level option (3 pre-baked rule files); DNA-collection goal
-    (RequiredArtifacts 0-12 + ArtifactPlacement; goal = reach-ship AND N DNA).
+Logic uses the native AP region-graph (``graph_logic.py`` +
+``data/logic_graph.json``): one Region per trivial-SCC of Randovania
+nodes, events as pure-logic regions, per-seed dock/transport assignment.
+See ``graph_logic.py`` and ``scripts/extract_dread_rules.py``.
 
 Progressive items (Randovania's Progressive Suit/Spin/Charge Beam/Beam/Missile/
 Bomb) are exposed as six opt-out-by-default toggles. When a group is enabled its
 tier items leave the findable pool and one "Progressive X" item (one copy per
 tier) takes their place; collect/remove credit the k-th copy onto the k-th tier
-in state, so the compiled rules (which reference the tier names) are unchanged.
+in state so ``state.has("Wave Beam")`` etc. still works.
 Delivery sends the full multi-stage progression with the first tier's class and
 the game grants the next missing tier (see client/protocol.py + Options.py).
 
 Skipped for now (later phases):
-  * Per-area starting-location randomization; hint distribution; per-trick-
-    category granularity; door/elevator randomization.
-  * Ammo / damage / E-tank counting (v0.3) — rules collapse ammo to >=1 and
-    damage to suit ownership (over/under-permissive, not blocking).
-  * Cutscene-safe item delivery — see client/protocol.py + the risk note in
-    CLAUDE.md. Needs idempotent (ReceivedPickups-gated) delivery first.
+  * Hint distribution; door/elevator randomization.
+  * Ammo / damage / E-tank counting (v0.3).
 """
 from __future__ import annotations
 
 import json
-import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -59,8 +41,6 @@ from .Locations import (
     location_name_to_location,
 )
 from .Options import DreadOptions
-from .Regions import create_regions, region_names
-from .Rules import set_rules
 
 
 GAME_NAME = "Metroid Dread"
@@ -131,23 +111,6 @@ class DreadWorld(World):
             self.get_filler_item_name(), classification=ItemClassification.filler
         )
 
-    # Native region-graph logic is the DEFAULT (fast per-seed reachability +
-    # door/transport/start rando). The closed-form compiled_rules.json path is
-    # the fallback — used only when logic_graph.json is absent (e.g. a partial
-    # dev tree) or when DREAD_CLOSED_FORM=1 forces it. Door/transport/non-Artaria
-    # options REQUIRE the graph and override the opt-out. See graph_logic.py /
-    # [[dread-native-graph-spike]].
-    def _use_graph_logic(self) -> bool:
-        forced = (int(self.options.door_lock_rando.value) != 0
-                  or int(self.options.transport_rando.value) != 0
-                  or int(self.options.starting_area.value) != 0)
-        if forced:
-            return True
-        if os.environ.get("DREAD_CLOSED_FORM") == "1":
-            return False
-        from ._data_loader import data_exists
-        return data_exists("logic_graph.json")
-
     def generate_early(self) -> None:
         # Resolve transports, spawn, and door assignment now, so
         # create_regions/create_items can use them. All ride the native graph.
@@ -197,15 +160,12 @@ class DreadWorld(World):
                 start_comp=self._start_comp, transport_matching=tm)
 
     def create_regions(self) -> None:
-        if self._use_graph_logic():
-            # Events are graph regions; AP's BFS must re-derive event-gated
-            # entrances when an event region becomes reachable.
-            type(self).explicit_indirect_conditions = True
-            from .graph_logic import build_regions
-            build_regions(self, getattr(self, "_dock_assignments", None),
-                          getattr(self, "_transport_matching", None))
-        else:
-            create_regions(self)
+        # Events are graph regions; AP's BFS must re-derive event-gated
+        # entrances when an event region becomes reachable.
+        type(self).explicit_indirect_conditions = True
+        from .graph_logic import build_regions
+        build_regions(self, getattr(self, "_dock_assignments", None),
+                      getattr(self, "_transport_matching", None))
 
     def create_items(self) -> None:
         # Pool layout (post-M2 + Dreadvania options):
@@ -438,16 +398,8 @@ class DreadWorld(World):
             )
 
     def set_rules(self) -> None:
-        # set_rules owns both add_rule application AND the
-        # completion_condition. Don't touch completion_condition here —
-        # Rules.py wires it via compile_to_lambda(victory_condition),
-        # which currently resolves to ``state.has("Event: Ship", player)``.
-        # A post-set_rules override here would silently break that.
-        if self._use_graph_logic():
-            from .graph_logic import set_graph_rules
-            set_graph_rules(self)
-        else:
-            set_rules(self)
+        from .graph_logic import set_graph_rules
+        set_graph_rules(self)
 
     # Progressive-item logic translation. The compiled access rules reference
     # the individual tier items by name (e.g. state.has("Wave Beam")), but when

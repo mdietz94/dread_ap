@@ -76,20 +76,21 @@ def test_item_amount_n():
     assert pred(StubState({"Energy Tank": 7})) is True
 
 
-def test_event_branch_consults_state():
-    """M2 semantics: events resolve via ``state.has('Event: <name>',
-    player)`` against the locked event item. M1 returned _const_true;
-    that behavior is now wrong — under-constraining 62% of compiled
-    rules. This test pins the M2 behavior so a future refactor can't
-    silently undo the wiring."""
+def test_event_graph_mode_uses_can_reach_region():
+    """In graph_mode, an event atom compiles to can_reach_region instead of
+    state.has — events are pure-logic regions in the native graph model."""
     ast = {"type": "event", "name": "ShipPickup"}
-    pred = compile_to_lambda(ast, player=1)
-    assert pred(StubState({})) is False
-    assert pred(StubState({"Event: ShipPickup": 1})) is True
-    # The bare event-name (without the "Event: " prefix) must NOT
-    # satisfy the predicate — that would mean the wrong item is being
-    # consulted.
-    assert pred(StubState({"ShipPickup": 1})) is False
+
+    class RegionState:
+        def __init__(self, reachable):
+            self._reachable = reachable
+
+        def can_reach_region(self, name, player):
+            return name in self._reachable
+
+    pred = compile_to_lambda(ast, player=1, graph_mode=True)
+    assert pred(RegionState(set())) is False
+    assert pred(RegionState({"Event:ShipPickup"})) is True
 
 
 def test_trick_assumed_when_effective_level_meets_requirement():
@@ -189,30 +190,6 @@ def test_loop_late_binding_safety():
     for name, pred in zip(items, preds):
         assert pred(StubState({name: 1})) is True, f"{name} should be True"
         assert pred(StubState({"Unrelated": 1})) is False, f"{name} should be False"
-
-
-# ---- complete-rule sanity: integrates AST building ----
-
-def test_compiled_elun_energy_tank_rule_is_item_gated():
-    """Sanity that the compiled JSON loads and produces an item-only predicate
-    that is gated (not trivial) and satisfied by a full loadout. (The global
-    forward-resolver rule carries the cross-region cost, so the old tight
-    Morph+Plasma-only assertion no longer applies.)"""
-    import json
-    raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
-    rules = raw["rules"]
-    assert "Elun: Ammo Recharge Station" in rules
-    pred = compile_to_lambda(rules["Elun: Ammo Recharge Station"], player=1)
-    assert pred(StubState({})) is False  # gated, not trivial
-    full = {n: 99 for n in (
-        "Morph Ball", "Bomb", "Cross Bomb", "Charge Beam", "Wide Beam",
-        "Plasma Beam", "Wave Beam", "Diffusion Beam", "Grapple Beam",
-        "Spider Magnet", "Speed Booster", "Space Jump", "Spin Boost",
-        "Screw Attack", "Varia Suit", "Gravity Suit", "Flash Shift",
-        "Phantom Cloak", "Power Bomb", "Missile Tank", "Missile+ Tank",
-        "Storm Missile", "Ice Missile", "Super Missile", "Slide", "Pulse Radar",
-        "Flash Shift Upgrade", "Speed Booster Upgrade")}
-    assert pred(StubState(full)) is True
 
 
 # ---- sum (v0.3 ammo counting) ----
@@ -340,11 +317,14 @@ def test_damage_threshold_zero_hp_always_true():
     assert pred(StubState({})) is True
 
 
-def test_damage_threshold_in_real_rules():
-    """Live check: at least one location's compiled rule contains a
-    damage_threshold node — the compiler is actually emitting them."""
+def test_damage_threshold_in_graph():
+    """Live check: logic_graph.json contains damage_threshold and sum nodes —
+    the graph emitter is actually writing them."""
     import json
-    raw = json.loads((ROOT / "data" / "compiled_rules.json").read_text())
-    text = json.dumps(raw)
-    assert '"damage_threshold"' in text, "no damage_threshold nodes in compiled output"
-    assert '"sum"' in text, "no sum nodes in compiled output"
+    path = ROOT / "data" / "logic_graph.json"
+    if not path.exists():
+        import pytest
+        pytest.skip("logic_graph.json not yet generated (run extract_dread_rules.py)")
+    text = path.read_text()
+    assert '"damage_threshold"' in text, "no damage_threshold nodes in graph"
+    assert '"sum"' in text, "no sum nodes in graph"

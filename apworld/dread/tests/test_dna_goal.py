@@ -26,11 +26,6 @@ def items():
     return json.loads((DATA / "items.json").read_text())
 
 
-@pytest.fixture(scope="module")
-def compiled():
-    return json.loads((DATA / "compiled_rules.json").read_text())
-
-
 class State:
     def __init__(self, inventory):
         self.inventory = inventory
@@ -57,10 +52,8 @@ def test_dna_items_map_to_distinct_artifacts(items):
         assert it["quantity"] == 1
 
 
-def test_dna_ids_disjoint_from_base_items(items, compiled):
-    """DNA AP IDs must not collide with base-item AP IDs. Events were inlined
-    (Option A) so they no longer occupy any IDs — the 21554-21737 range they
-    used to live in is now a deliberate gap to preserve DNA ID stability."""
+def test_dna_ids_disjoint_from_base_items(items):
+    """DNA AP IDs must not collide with base-item AP IDs."""
     by_name = {it["name"]: it for it in items}
     dna_ids = {by_name[f"Metroid DNA {k}"]["ap_id"] for k in range(1, 13)}
     base_ids = {it["ap_id"] for it in items
@@ -96,11 +89,3 @@ def test_goal_n0_is_bare_victory():
     assert pred2(State({"Charge Beam": 1})) is True
 
 
-def test_victory_condition_is_item_only(compiled):
-    """Events are inlined, so the goal is an item-only reach rule (no event
-    atoms) — that's what lets AP's item sweep verify the goal."""
-    def has_event(ast):
-        if ast.get("type") == "event":
-            return True
-        return any(has_event(c) for c in ast.get("items", []))
-    assert not has_event(compiled["victory_condition"])
