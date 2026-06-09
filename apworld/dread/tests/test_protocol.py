@@ -257,3 +257,27 @@ def test_pickup_resource_stage_passthrough_for_ordinary_items():
     assert pickup_resource_stage("ITEM_WEAPON_MISSILE_MAX", 10) == [
         {"item_id": "ITEM_WEAPON_MISSILE_MAX", "quantity": 10},
     ]
+
+
+def test_pickup_resource_stage_main_flash_shift_bundles_included_ammo():
+    """The main Flash Shift grants the ability flag plus its bundled
+    `included_ammo` chained dashes (quantity = FlashUpgrade count) in one stage,
+    so the main alone reproduces vanilla chaining. Quantity 0 → ability only."""
+    from dread.client.protocol import pickup_resource_stage
+    assert pickup_resource_stage("ITEM_GHOST_AURA", 2) == [
+        {"item_id": "ITEM_GHOST_AURA", "quantity": 1},
+        {"item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", "quantity": 2},
+    ]
+    assert pickup_resource_stage("ITEM_GHOST_AURA", 0) == [
+        {"item_id": "ITEM_GHOST_AURA", "quantity": 1},
+    ]
+
+
+def test_pickup_resource_stage_main_speed_booster_is_single_resource():
+    """The main Speed Booster grants only the ability flag — Randovania's Speed
+    Booster major includes no charge upgrades (the Speed Booster Upgrade is a
+    standalone standard pickup), so the main stays a single resource."""
+    from dread.client.protocol import pickup_resource_stage
+    assert pickup_resource_stage("ITEM_SPEED_BOOSTER", 1) == [
+        {"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1},
+    ]

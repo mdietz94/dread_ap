@@ -115,21 +115,44 @@ def pickup_resource_stage(patcher_item_id: str, quantity: int) -> list[dict]:
     """Expand one ``(item_id, quantity)`` into the resource stage the game
     grants for that pickup (a list of ``{"item_id", "quantity"}`` dicts).
 
-    Most items are a single resource. The **Main Power Bomb** is the lone
-    exception: it must grant the weapon-unlock flag (``ITEM_WEAPON_POWER_BOMB``)
-    AND the ammo capacity (``ITEM_WEAPON_POWER_BOMB_MAX``) together. Granting
-    only ``ITEM_WEAPON_POWER_BOMB`` unlocks the weapon but leaves the player at
-    0/0 capacity — ``RandomizerPowerup.IncreaseAmmo`` only feeds
-    ``ITEM_WEAPON_POWER_BOMB_CURRENT`` off a ``..._MAX`` grant, never off the
-    bare unlock item — so power bombs are unusable and the HUD/menu shows
-    nothing. This mirrors open-dread-rando's canonical ``schema.json`` example
-    (``{POWER_BOMB:1}`` + ``{POWER_BOMB_MAX:N}``). The pickup's ``quantity`` is
-    the starting capacity ``N``."""
+    Most items are a single resource. Three pickups grant a paired resource:
+
+    * **Main Power Bomb** must grant the weapon-unlock flag
+      (``ITEM_WEAPON_POWER_BOMB``) AND the ammo capacity
+      (``ITEM_WEAPON_POWER_BOMB_MAX``) together. Granting only
+      ``ITEM_WEAPON_POWER_BOMB`` unlocks the weapon but leaves the player at 0/0
+      capacity — ``RandomizerPowerup.IncreaseAmmo`` only feeds
+      ``ITEM_WEAPON_POWER_BOMB_CURRENT`` off a ``..._MAX`` grant, never off the
+      bare unlock item — so power bombs are unusable and the HUD/menu shows
+      nothing. This mirrors open-dread-rando's canonical ``schema.json`` example
+      (``{POWER_BOMB:1}`` + ``{POWER_BOMB_MAX:N}``). The pickup's ``quantity`` is
+      the starting capacity ``N``.
+    * **Main Flash Shift** bundles its `included_ammo` chained dashes into the
+      main pickup (see below). Here ``quantity`` is the FlashUpgrade count."""
     if patcher_item_id == "ITEM_WEAPON_POWER_BOMB":
         return [
             {"item_id": "ITEM_WEAPON_POWER_BOMB", "quantity": 1},
             {"item_id": "ITEM_WEAPON_POWER_BOMB_MAX", "quantity": int(quantity)},
         ]
+    # Main Flash Shift: grant the ability-unlock flag plus the bundled chained
+    # dashes (Randovania's `included_ammo` for the Flash Shift major). Here
+    # ``quantity`` is the FlashUpgrade count — the "Flash Shift Included Ammo"
+    # option (vanilla 2), NOT a copy count — so the main pickup alone reproduces
+    # vanilla chaining with no upgrades shuffled. This mirrors how upstream
+    # bundles the included FlashUpgrade into the main pickup: the unlock-flag
+    # class (RandomizerFlashShift) grants both on its first (only) pickup — the
+    # "already has Flash Shift" branch that zeros chain resources never fires for
+    # the main's own grant. Quantity 0 → ability only (no chains bundled).
+    #
+    # Speed Booster is deliberately NOT handled here: in Randovania the Speed
+    # Booster major includes no charge upgrades (Speed Booster Upgrade is a
+    # standalone standard pickup), so its main stays a single resource.
+    if patcher_item_id == "ITEM_GHOST_AURA":
+        stage = [{"item_id": "ITEM_GHOST_AURA", "quantity": 1}]
+        if int(quantity) > 0:
+            stage.append({"item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN",
+                          "quantity": int(quantity)})
+        return stage
     return [{"item_id": patcher_item_id, "quantity": int(quantity)}]
 
 

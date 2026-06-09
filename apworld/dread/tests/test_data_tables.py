@@ -130,13 +130,19 @@ def test_every_item_has_pool_count(items):
     """pool_count drives the default number of copies World.create_items puts
     in the pool (option-overridable for tank types). DNA items are added
     explicitly by RequiredArtifacts, so pool_count=0 is correct for them.
-    Every other item must have pool_count >= 1 so the loop adds at least
-    one copy."""
+    The Flash Shift / Speed Booster Upgrades also default to 0 — Randovania
+    doesn't shuffle them; their *_upgrade_count options add them when raised
+    (the chains are otherwise baked into the main pickup). Every other item
+    must have pool_count >= 1 so the loop adds at least one copy."""
+    option_driven_zero = {"Flash Shift Upgrade", "Speed Booster Upgrade"}
     for it in items:
         assert "pool_count" in it, f"missing pool_count: {it}"
         assert isinstance(it["pool_count"], int)
         assert it["pool_count"] >= 0, f"negative pool_count: {it}"
         if it["name"].startswith("Metroid DNA"):
+            continue
+        if it["name"] in option_driven_zero:
+            assert it["pool_count"] == 0, f"{it['name']}: expected pool_count=0"
             continue
         assert it["pool_count"] >= 1, f"non-DNA item with pool_count=0: {it}"
 
