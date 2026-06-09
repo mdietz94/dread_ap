@@ -234,8 +234,9 @@ class DreadWorld(World):
 
         # Option-driven counts override items.json pool_count for tanks.
         # Flash Shift / Speed Booster Upgrade default to 0 (Randovania doesn't
-        # shuffle them); the chains/charges are baked into the main pickup
-        # instead (see flash_shift_chains_from_main / collect below).
+        # shuffle them). The Flash Shift main bundles its vanilla chains via
+        # flash_shift_included_ammo (see collect below); the Speed Booster main
+        # includes nothing.
         pool_overrides = {
             "Energy Tank":     int(o.energy_tank_count.value),
             "Energy Part":     int(o.energy_part_count.value),
@@ -248,18 +249,19 @@ class DreadWorld(World):
 
         # Chain-upgrade progression classification (dynamic, unlike the static
         # MIXED_CLASSIFICATION_FIRST_N below). The access logic gates some routes
-        # on Flash Shift / Speed Booster chain upgrades up to MAX_CHAIN_REQ; the
-        # main pickup credits `…_from_main` of them in logic (see collect), so
-        # only the first `MAX_CHAIN_REQ - from_main` *shuffled* copies are
-        # logic-relevant → progression. At the default (from_main=3 = the cap)
-        # this is 0, so any shuffled copies are pure QoL (`useful`). If the main
-        # plus the shuffled copies still can't reach a route's requirement, that
-        # route simply drops out of logic (AP's accessibility sweep stays sound).
+        # on Flash Shift / Speed Booster upgrades up to MAX_CHAIN_REQ; the main
+        # Flash Shift credits its `included_ammo` in logic (see collect), so only
+        # the first `MAX_CHAIN_REQ - included` *shuffled* Flash Shift Upgrades are
+        # logic-relevant → progression (1 at the vanilla default included=2). The
+        # Speed Booster major includes nothing, so all of its first MAX_CHAIN_REQ
+        # shuffled copies are logic-relevant. Copies past these are pure QoL
+        # (`useful`). If the main plus shuffled copies still can't reach a route's
+        # requirement, that route drops out of logic (AP accessibility stays
+        # sound).
         chain_progression_n = {
             "Flash Shift Upgrade": max(
-                0, MAX_CHAIN_REQ - int(o.flash_shift_chains_from_main.value)),
-            "Speed Booster Upgrade": max(
-                0, MAX_CHAIN_REQ - int(o.speed_booster_charges_from_main.value)),
+                0, MAX_CHAIN_REQ - int(o.flash_shift_included_ammo.value)),
+            "Speed Booster Upgrade": MAX_CHAIN_REQ,
         }
 
         # For items where the pool has more copies than compiled rules need
@@ -456,17 +458,19 @@ class DreadWorld(World):
     # `remove` is the exact inverse so collect/remove round-trip during fill.
     # (Standard AP progressive idiom; see [[ap-nonadvancement-invisible-to-state]]
     # — the progressive items are `progression`, so AP's sweep calls collect.)
-    # Main ability → (chain-upgrade item, "from main" option attr). Collecting
-    # the main Flash Shift / Speed Booster credits its baked-in chains/charges in
-    # ACCESS LOGIC — exactly mirroring the patcher bundling them into the main
-    # pickup (see pickup_resource_stage / ammo_amount_override). So
-    # state.has("Flash Shift Upgrade", N) clears once the main is reachable, even
-    # with no upgrades shuffled. The credited count is the option value (one
-    # "Flash Shift Upgrade" per chain, matching the logic atom's unit); remove is
-    # the exact inverse so collect/remove round-trip during fill.
+    # Main ability → (ammo item, "included ammo" option attr). Collecting the
+    # main Flash Shift credits its `included_ammo` (Randovania's term) onto the
+    # Flash Shift Upgrade item in ACCESS LOGIC — exactly mirroring the patcher
+    # bundling them into the main pickup (see pickup_resource_stage /
+    # ammo_amount_override). So state.has("Flash Shift Upgrade", 2) clears once
+    # the main is reachable, with no upgrades shuffled. The credited count is the
+    # option value (one Flash Shift Upgrade per FlashUpgrade unit, matching the
+    # logic atom); remove is the exact inverse so collect/remove round-trip during
+    # fill. Speed Booster is NOT here: in Randovania the Speed Booster major
+    # includes no charge upgrades (Speed Booster Upgrade is a standalone standard
+    # pickup), so the main credits nothing.
     MAIN_CHAIN_CREDIT: dict[str, tuple[str, str]] = {
-        "Flash Shift": ("Flash Shift Upgrade", "flash_shift_chains_from_main"),
-        "Speed Booster": ("Speed Booster Upgrade", "speed_booster_charges_from_main"),
+        "Flash Shift": ("Flash Shift Upgrade", "flash_shift_included_ammo"),
     }
 
     def collect(self, state, item) -> bool:
@@ -578,14 +582,14 @@ class DreadWorld(World):
             "Power Bomb Tank":       int(o.power_bomb_tank_ammo.value),
             "Flash Shift Upgrade":   int(o.flash_shift_upgrade_amount.value),
             "Speed Booster Upgrade": int(o.speed_booster_upgrade_amount.value),
-            # The MAIN Flash Shift / Speed Booster bake their "from main" chain /
-            # charge upgrades into the pickup (pickup_resource_stage expands
-            # ITEM_GHOST_AURA / ITEM_SPEED_BOOSTER into unlock + N capacity). The
-            # value is the chain/charge count, not a copy count. This flows to
-            # both the seed-baked placement quantity AND slot_data item_amounts,
-            # so own and wire-delivered mains grant the same chains.
-            "Flash Shift":           int(o.flash_shift_chains_from_main.value),
-            "Speed Booster":         int(o.speed_booster_charges_from_main.value),
+            # The MAIN Flash Shift bundles its `included_ammo` FlashUpgrade into
+            # the pickup (pickup_resource_stage expands ITEM_GHOST_AURA into
+            # unlock + N chain). The value is the FlashUpgrade count, not a copy
+            # count. This flows to both the seed-baked placement quantity AND
+            # slot_data item_amounts, so own and wire-delivered mains bundle the
+            # same chains. Speed Booster has no included ammo (its upgrade is a
+            # standalone standard pickup), so its main stays a single resource.
+            "Flash Shift":           int(o.flash_shift_included_ammo.value),
         }
         placements: list[dict[str, Any]] = []
         for loc in self.multiworld.get_locations(self.player):

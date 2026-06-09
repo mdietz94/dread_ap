@@ -414,23 +414,36 @@ class SpeedBoosterUpgradeAmount(Range):
 
 
 # ---------------------------------------------------------------------------
-# Flash Shift / Speed Booster chain upgrades. Neither the Flash Shift Upgrade
-# nor the Speed Booster Upgrade is a base-game item — Randovania adds them as
-# custom pickups and, by default, does NOT shuffle any of them (count 0).
-# Instead the chains/charges are baked into the MAIN Flash Shift / Speed Booster
-# pickup ("…FromMain", default 3 = vanilla). These two knobs are coupled: the
-# access logic gates some routes on up to 3 chain upgrades, and a default-3
-# "from main" satisfies every such gate even with 0 shuffled (collecting the
-# main credits the chains in logic — see World.collect). Lower the "from main"
-# value and raise the count to make the extra chains findable instead.
+# Flash Shift / Speed Booster chain upgrades. Neither is a base-game item;
+# Randovania adds them as custom pickups and, by default, shuffles NONE of them.
+# The two are modelled DIFFERENTLY in Randovania (so they expose different
+# knobs — mirrored 1:1 below):
+#
+#   * "Flash Shift Upgrade" is an AMMO pickup of the Flash Shift major. RDV
+#     config (starter preset): `pickup_count: 0`, `ammo_count: [1]`,
+#     `requires_main_item: true`; the Flash Shift major carries
+#     `included_ammo: [2]` — i.e. the MAIN Flash Shift bundles 2 FlashUpgrade
+#     (vanilla: "2 flashes after the first" = 3 total dashes). So the main alone
+#     reproduces vanilla; the FlashUpgrade>=3 route needs one shuffled upgrade
+#     (or an alternative path).
+#   * "Speed Booster Upgrade" is a STANDARD pickup (NOT ammo of Speed Booster).
+#     RDV config: defaults to 0 shuffled. The Speed Booster major includes
+#     NOTHING — there is no "from main" charge amount (vanilla has no speed
+#     charge upgrade). SpeedBoostUpgrade>=N routes rely on shuffled copies or
+#     alternatives.
+#
+# The "included" amount feeds ACCESS LOGIC: collecting a main credits its
+# included ammo onto the upgrade item in `state` (see World.collect), so
+# state.has("Flash Shift Upgrade", 2) clears once the main is reachable, with no
+# upgrades shuffled.
 # ---------------------------------------------------------------------------
 
 class FlashShiftUpgradeCount(Range):
-    """How many Flash Shift Upgrade pickups to shuffle into the item pool. Each
-    grants extra chained dashes (see Flash Shift Upgrade Amount). Randovania does
-    NOT shuffle these by default — default 0. With 0 shuffled, the main Flash
-    Shift still grants 'Flash Shift Chains From Main' chains (default 3 =
-    vanilla), so chain-gated checks stay reachable."""
+    """How many Flash Shift Upgrade pickups to shuffle into the item pool
+    (Randovania ammo `pickup_count`). Each grants `Flash Shift Upgrade Amount`
+    extra chained dashes. Randovania does NOT shuffle these by default — default
+    0; the vanilla chains come bundled in the main Flash Shift (see Flash Shift
+    Included Ammo)."""
     display_name = "Flash Shift Upgrade Count"
     range_start = 0
     range_end = 16
@@ -438,40 +451,41 @@ class FlashShiftUpgradeCount(Range):
 
 
 class SpeedBoosterUpgradeCount(Range):
-    """How many Speed Booster Upgrade pickups to shuffle into the item pool.
-    Each grants an extra Speed Booster charge upgrade. Randovania does NOT
-    shuffle these by default — default 0. With 0 shuffled, the main Speed Booster
-    still grants 'Speed Booster Charges From Main' charges (default 3)."""
+    """How many Speed Booster Upgrade pickups to shuffle into the item pool
+    (Randovania standard `num_shuffled_pickups`). Each reduces Speed Booster
+    charge time. Randovania does NOT shuffle these by default — default 0. The
+    main Speed Booster grants none (vanilla has no charge upgrade), so
+    speed-charge routes need shuffled copies (or an alternative path)."""
     display_name = "Speed Booster Upgrade Count"
     range_start = 0
     range_end = 16
     default = 0
 
 
-class FlashShiftChainsFromMain(Range):
-    """How many Flash Shift chained dashes the MAIN Flash Shift pickup grants on
-    its own (Randovania's 'included' amount). Vanilla Dread chains 3 dashes, so
-    the default is 3 — enough to satisfy the access-logic chain gates (which top
-    out at 3) even when no Flash Shift Upgrades are shuffled. Lower this and
-    raise Flash Shift Upgrade Count to make the extra chains findable; if the
-    main plus the shuffled upgrades can't reach a route's required chain count,
-    that route drops out of logic."""
-    display_name = "Flash Shift Chains From Main"
+class FlashShiftIncludedAmmo(Range):
+    """How many Flash Shift Upgrades the MAIN Flash Shift pickup bundles in
+    (Randovania's `included_ammo` for the Flash Shift major). Vanilla = 2 ("2
+    flashes after the first" → 3 total dashes), so default 2. This feeds the
+    access logic (collecting the main credits this many in `state`); the
+    FlashUpgrade>=3 route therefore needs one shuffled Flash Shift Upgrade or an
+    alternative. Raise it to bundle more dashes into the main; if the main plus
+    any shuffled upgrades can't reach a route's requirement, that route drops out
+    of logic."""
+    display_name = "Flash Shift Included Ammo"
     range_start = 0
     range_end = 9
-    default = 3
+    default = 2
 
 
-class SpeedBoosterChargesFromMain(Range):
-    """How many Speed Booster charge upgrades the MAIN Speed Booster pickup
-    grants on its own. Default 3 satisfies the access-logic speed-charge gates
-    (which top out at 3) even when no Speed Booster Upgrades are shuffled. Lower
-    this and raise Speed Booster Upgrade Count to make the extra charges
-    findable."""
-    display_name = "Speed Booster Charges From Main"
-    range_start = 0
-    range_end = 9
-    default = 3
+class FlashShiftUpgradeRequiresMainItem(DefaultOnToggle):
+    """Whether Flash Shift Upgrades require the main Flash Shift to function
+    (Randovania's ammo `requires_main_item`, default ON). In this world this is
+    effectively always ON regardless: every compiled rule that references a Flash
+    Shift Upgrade also requires Flash Shift, and the extra dashes are inert
+    in-game without the ability. Exposed for parity with Randovania; turning it
+    OFF does not relax the access logic (the requirement is baked into the
+    rules)."""
+    display_name = "Flash Shift Upgrade Requires Main Item"
 
 
 @dataclass
@@ -515,8 +529,8 @@ class _DreadOptionsBase(PerGameCommonOptions):
     speed_booster_upgrade_amount: SpeedBoosterUpgradeAmount
     flash_shift_upgrade_count: FlashShiftUpgradeCount
     speed_booster_upgrade_count: SpeedBoosterUpgradeCount
-    flash_shift_chains_from_main: FlashShiftChainsFromMain
-    speed_booster_charges_from_main: SpeedBoosterChargesFromMain
+    flash_shift_included_ammo: FlashShiftIncludedAmmo
+    flash_shift_upgrade_requires_main_item: FlashShiftUpgradeRequiresMainItem
 
 
 # Final options dataclass = the explicit base above + one generated field per

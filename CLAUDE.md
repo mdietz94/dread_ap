@@ -459,43 +459,49 @@ effective-level map + symbolic-atom resolution + artifact carries trick atoms),
 levels 4–5 (Expert/Mastery) are now reachable, which the old 1–3 file system
 could not express.
 
-Flash Shift / Speed Booster chain upgrades: SHIPPED. Neither the Flash Shift
-Upgrade nor the Speed Booster Upgrade is a base-game item — Randovania adds them
-as custom pickups and, by default, shuffles NONE of them. So both now have
-`pool_count: 0` in items.json, and two new count options
-(`flash_shift_upgrade_count` / `speed_booster_upgrade_count`, default 0, the
-single override consulted in `World.create_items` `pool_overrides`) shuffle them
-in when raised. The chains/charges are instead baked into the MAIN pickup via two
-`…_from_main` options (`flash_shift_chains_from_main` /
-`speed_booster_charges_from_main`, both default 3 = vanilla). This is the key
-faithfulness point: the access logic gates some routes on `Flash AND
-FlashUpgrade>=N` / `Speed AND SpeedBoostUpgrade>=N` (N up to 3, verified against
-the upstream snapshot), and in vanilla the main grants the chains that satisfy
-them. So "from main" is NOT cosmetic — it feeds logic. Three coupled mechanisms:
-(1) `protocol.pickup_resource_stage` expands `ITEM_GHOST_AURA` / `ITEM_SPEED_BOOSTER`
-into `[{unlock:1},{chain/charge:N}]` (same paired-resource pattern as the main
-Power Bomb), where N is the `…_from_main` value — this rides each main's
-placement `quantity` (set via `ammo_amount_override["Flash Shift"]` / `["Speed
-Booster"]`) so BOTH the seed-baked patcher path AND the wire `RL.ReceivePickup`
-path (slot_data `item_amounts`) bundle the chains into the main's first/only
-pickup; the unlock-flag class (RandomizerFlashShift / RandomizerSpeedBooster)
-grants both because the "already has Flash Shift" zero-out branch never fires for
-the main's own grant. (2) `World.collect`/`remove` credit `…_from_main` copies of
-the chain-upgrade item onto `state` when the MAIN is collected (the established
-progressive-collect idiom; backend-agnostic — both the closed-form and native
-graph read `state.has`), so `state.has("Flash Shift Upgrade", 3)` clears once the
-main is reachable with 0 upgrades shuffled. (3) classification is dynamic: any
-shuffled copies are progression only for the first `max(0, MAX_CHAIN_REQ -
-from_main)` (= 0 at the default `from_main=3`), else `useful` — `MAX_CHAIN_REQ=3`.
-If the main plus shuffled copies can't reach a route's requirement that route
-drops out of logic (AP accessibility stays sound; no silent over-reach). The two
-upgrades are no longer in `MIXED_CLASSIFICATION_FIRST_N`. Tests:
-`test_item_pool` (pool_count=0, default-absent, count-drives-pool, dynamic
-progression split, collect/remove chain credit round-trip), `test_protocol`
-(pickup_resource_stage GHOST_AURA / SPEED_BOOSTER baking). NOTE: the existing
-`flash_shift_upgrade_amount` / `speed_booster_upgrade_amount` options (per-pickup
-grant) are unchanged and stay logic-inert (each shuffled upgrade still credits 1
-in logic, conservatively).
+Flash Shift / Speed Booster chain upgrades: SHIPPED — mirrors Randovania's
+config 1:1 (verified against `dread/presets/starter_preset.rdvpreset`). Neither
+upgrade is a base-game item; RDV shuffles NONE by default, and the two are
+modelled DIFFERENTLY:
+
+  * **Flash Shift Upgrade** is an AMMO pickup of the Flash Shift major. RDV:
+    `pickup_count: 0`, `ammo_count: [1]`, `requires_main_item: true`; the Flash
+    Shift major carries `included_ammo: [2]` (vanilla "2 flashes after the first"
+    = 3 total dashes). Options: `flash_shift_upgrade_count` (pickup_count, 0),
+    `flash_shift_upgrade_amount` (ammo_count, 1), `flash_shift_included_ammo`
+    (included_ammo, **2**), `flash_shift_upgrade_requires_main_item`
+    (requires_main_item, On — logic-inert/parity: every FlashUpgrade rule already
+    AND-s Flash, and the dashes are inert in-game without the ability).
+  * **Speed Booster Upgrade** is a STANDARD pickup (NOT ammo of Speed Booster).
+    RDV: 0 shuffled by default; the Speed Booster major includes NOTHING (there
+    is no "from main" charge amount). Option: `speed_booster_upgrade_count`
+    (num_shuffled_pickups, 0).
+
+Both have `pool_count: 0` in items.json (count options drive the pool). The
+`included_ammo` feeds ACCESS LOGIC: the logic gates routes on `Flash AND
+FlashUpgrade>=N` / `Speed AND SpeedBoostUpgrade>=N` (N up to 3). Three
+mechanisms: (1) `protocol.pickup_resource_stage` expands `ITEM_GHOST_AURA` into
+`[{unlock:1},{chain:N}]` (paired-resource pattern like the main Power Bomb),
+N = `flash_shift_included_ammo`, riding the main's placement `quantity`
+(`ammo_amount_override["Flash Shift"]`) so BOTH the seed-baked patcher path AND
+the wire `RL.ReceivePickup` path (slot_data `item_amounts`) bundle the 2 chains
+into the main; RandomizerFlashShift grants both because its "already has Flash
+Shift" zero-out branch never fires for the main's own grant. `ITEM_SPEED_BOOSTER`
+stays a single resource. (2) `World.collect`/`remove` credit `included_ammo`
+copies of Flash Shift Upgrade onto `state` when the MAIN Flash Shift is collected
+(established progressive-collect idiom; backend-agnostic), so
+`state.has("Flash Shift Upgrade", 2)` clears once the main is reachable — Speed
+Booster credits nothing. (3) classification is dynamic: shuffled Flash Shift
+Upgrades are progression for the first `max(0, MAX_CHAIN_REQ - included_ammo)`
+(= 1 at vanilla 2), Speed Booster Upgrades for the first `MAX_CHAIN_REQ` (no main
+credit); `MAX_CHAIN_REQ=3`. The `FlashUpgrade>=3` route therefore needs one
+shuffled Flash Shift Upgrade or an alternative — verified solvable at the
+faithful defaults (flash included 2, speed 0, counts 0) across
+minimal/beginner/mastery. The two upgrades are no longer in
+`MIXED_CLASSIFICATION_FIRST_N`. Tests: `test_item_pool` (pool_count=0,
+default-absent, count-drives-pool, dynamic progression split, collect/remove
+credit round-trip — flash only), `test_protocol` (pickup_resource_stage
+GHOST_AURA bundling; SPEED_BOOSTER passthrough).
 
 Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
 collapse ammo to >=1 and damage to suit ownership); door/elevator randomization.

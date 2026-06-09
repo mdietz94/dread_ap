@@ -356,11 +356,10 @@ def test_item_amounts_reflect_options_in_slot_data():
         "Power Bomb Tank": 3,
         "Flash Shift Upgrade": 2,
         "Speed Booster Upgrade": 4,
-        # "from main" chains/charges default to 3 (vanilla); baked into the
-        # main pickup via pickup_resource_stage on both the seed-baked and wire
-        # delivery paths.
-        "Flash Shift": 3,
-        "Speed Booster": 3,
+        # The main Flash Shift bundles its included_ammo (default 2) — flows to
+        # both the seed-baked and wire delivery paths. Speed Booster's main has
+        # no included ammo, so it is absent here.
+        "Flash Shift": 2,
     }
 
 
@@ -376,8 +375,9 @@ def test_item_amounts_default_to_randovania_values():
         "Power Bomb Tank": 1,
         "Flash Shift Upgrade": 1,
         "Speed Booster Upgrade": 1,
-        "Flash Shift": 3,
-        "Speed Booster": 3,
+        # main Flash Shift bundles included_ammo=2 (vanilla); Speed Booster main
+        # has no included ammo.
+        "Flash Shift": 2,
     }
 
 
@@ -490,9 +490,9 @@ def test_missile_plus_tank_first_is_progression_rest_useful():
 
 def test_upgrade_pool_count_is_zero(items):
     """Flash Shift Upgrade and Speed Booster Upgrade have pool_count=0 —
-    Randovania doesn't shuffle them by default; the chains/charges are baked
-    into the main pickup instead (FlashShiftChainsFromMain, default 3). The
-    *_upgrade_count options shuffle them in when raised."""
+    Randovania doesn't shuffle them by default. The Flash Shift main bundles its
+    vanilla chains via flash_shift_included_ammo (default 2); the Speed Booster
+    main includes nothing. The *_upgrade_count options shuffle them in."""
     by_name = {it["name"]: it for it in items}
     assert by_name["Flash Shift Upgrade"]["pool_count"] == 0
     assert by_name["Speed Booster Upgrade"]["pool_count"] == 0
@@ -510,15 +510,13 @@ def test_chain_upgrades_absent_from_default_pool(name):
 
 @pytestmark_runtime
 @pytest.mark.parametrize(
-    "name, count_opt, main_opt",
+    "name, count_opt",
     [
-        ("Flash Shift Upgrade", "flash_shift_upgrade_count",
-         "flash_shift_chains_from_main"),
-        ("Speed Booster Upgrade", "speed_booster_upgrade_count",
-         "speed_booster_charges_from_main"),
+        ("Flash Shift Upgrade", "flash_shift_upgrade_count"),
+        ("Speed Booster Upgrade", "speed_booster_upgrade_count"),
     ],
 )
-def test_chain_upgrade_count_drives_pool(name, count_opt, main_opt):
+def test_chain_upgrade_count_drives_pool(name, count_opt):
     """Raising the count option shuffles that many copies into the pool."""
     world, mw = _build_world(**{count_opt: 4})
     world.create_items()
@@ -526,40 +524,47 @@ def test_chain_upgrade_count_drives_pool(name, count_opt, main_opt):
 
 
 @pytestmark_runtime
-@pytest.mark.parametrize(
-    "name, count_opt, main_opt",
-    [
-        ("Flash Shift Upgrade", "flash_shift_upgrade_count",
-         "flash_shift_chains_from_main"),
-        ("Speed Booster Upgrade", "speed_booster_upgrade_count",
-         "speed_booster_charges_from_main"),
-    ],
-)
-def test_chain_upgrade_progression_split_tracks_from_main(
-        name, count_opt, main_opt):
-    """When the main grants the full chain cap (default 3), shuffled copies are
-    pure QoL (`useful`). Lowering the "from main" value to 1 makes the first
-    MAX_CHAIN_REQ-1 = 2 copies logic-relevant (`progression`); the rest are
-    `useful`."""
+def test_flash_shift_upgrade_progression_split_tracks_included_ammo():
+    """The main Flash Shift bundles `included_ammo` (default 2), so only the
+    first MAX_CHAIN_REQ - 2 = 1 shuffled copy is logic-relevant (`progression`);
+    the rest are `useful`. Raising included_ammo to the cap (3) makes every
+    shuffled copy useful."""
     from BaseClasses import ItemClassification
-    # from_main at the cap → every shuffled copy is useful.
-    world, mw = _build_world(**{count_opt: 3})
+    name = "Flash Shift Upgrade"
+    # vanilla included_ammo=2 → first 1 progression.
+    world, mw = _build_world(flash_shift_upgrade_count=3)
     world.create_items()
     copies = [it for it in mw.itempool if it.name == name]
     assert len(copies) == 3
-    assert all(c.classification == ItemClassification.useful for c in copies)
-
-    # from_main below the cap → first (cap - from_main) copies are progression.
-    world, mw = _build_world(**{count_opt: 3, main_opt: 1})
-    world.create_items()
-    copies = [it for it in mw.itempool if it.name == name]
     progression_n = sum(
         1 for c in copies if c.classification == ItemClassification.progression
     )
-    assert progression_n == 2, (
-        f"{name}: expected 2 progression copies with from_main=1, got "
-        f"{progression_n}"
+    assert progression_n == 1, f"expected 1 progression copy, got {progression_n}"
+
+    # included_ammo at the cap → every shuffled copy is useful.
+    world, mw = _build_world(flash_shift_upgrade_count=3, flash_shift_included_ammo=3)
+    world.create_items()
+    copies = [it for it in mw.itempool if it.name == name]
+    assert all(c.classification == ItemClassification.useful for c in copies)
+
+
+@pytestmark_runtime
+def test_speed_booster_upgrade_progression_split_has_no_main_credit():
+    """The Speed Booster major includes nothing, so the first MAX_CHAIN_REQ = 3
+    shuffled Speed Booster Upgrades are all logic-relevant (`progression`)."""
+    from BaseClasses import ItemClassification
+    world, mw = _build_world(speed_booster_upgrade_count=4)
+    world.create_items()
+    copies = [it for it in mw.itempool if it.name == "Speed Booster Upgrade"]
+    assert len(copies) == 4
+    progression_n = sum(
+        1 for c in copies if c.classification == ItemClassification.progression
     )
+    useful_n = sum(
+        1 for c in copies if c.classification == ItemClassification.useful
+    )
+    assert progression_n == 3, f"expected 3 progression copies, got {progression_n}"
+    assert useful_n == 1, f"expected 1 useful copy, got {useful_n}"
 
 
 @pytestmark_runtime
@@ -729,39 +734,40 @@ def test_progressive_collect_remove_round_trips():
 
 
 @pytestmark_runtime
-@pytest.mark.parametrize(
-    "main_name, chain_item, main_opt, default_n",
-    [
-        ("Flash Shift", "Flash Shift Upgrade", "flash_shift_chains_from_main", 3),
-        ("Speed Booster", "Speed Booster Upgrade",
-         "speed_booster_charges_from_main", 3),
-    ],
-)
-def test_main_pickup_credits_chains_in_logic(
-        main_name, chain_item, main_opt, default_n):
-    """Collecting the main Flash Shift / Speed Booster credits its "from main"
-    chains onto the chain-upgrade item in state, so the access-logic chain gates
-    (state.has("Flash Shift Upgrade", N)) clear with no upgrades shuffled.
-    remove is the exact inverse so collect/remove round-trip during fill."""
-    world, _ = _build_world()  # defaults: from_main == 3
+def test_main_flash_shift_credits_included_ammo_in_logic():
+    """Collecting the main Flash Shift credits its `included_ammo` (default 2)
+    onto Flash Shift Upgrade in state, so state.has("Flash Shift Upgrade", 2)
+    clears with no upgrades shuffled. remove is the exact inverse so
+    collect/remove round-trip during fill."""
+    world, _ = _build_world()  # default: included_ammo == 2
     p = world.player
-    main = world.create_item(main_name)
+    main = world.create_item("Flash Shift")
     state = _MiniState()
 
     # No credit before the main is collected.
-    assert not state.has(chain_item, p, 1)
+    assert not state.has("Flash Shift Upgrade", p, 1)
     assert world.collect(state, main) is True
-    # The full default chain count is credited — clears every gate up to the cap.
-    assert state.count(chain_item, p) == default_n
-    assert state.has(chain_item, p, default_n)
+    assert state.count("Flash Shift Upgrade", p) == 2
+    assert state.has("Flash Shift Upgrade", p, 2)
 
     # Exact inverse on remove.
     world.remove(state, main)
-    assert state.count(chain_item, p) == 0
+    assert state.count("Flash Shift Upgrade", p) == 0
 
-    # A lower "from main" credits fewer.
-    world, _ = _build_world(**{main_opt: 1})
-    main = world.create_item(main_name)
+    # A different included_ammo credits that many.
+    world, _ = _build_world(flash_shift_included_ammo=1)
+    main = world.create_item("Flash Shift")
     state = _MiniState()
     world.collect(state, main)
-    assert state.count(chain_item, world.player) == 1
+    assert state.count("Flash Shift Upgrade", world.player) == 1
+
+
+@pytestmark_runtime
+def test_main_speed_booster_credits_nothing_in_logic():
+    """The Speed Booster major includes no charge upgrades, so collecting the
+    main Speed Booster must NOT credit any Speed Booster Upgrade in state."""
+    world, _ = _build_world()
+    main = world.create_item("Speed Booster")
+    state = _MiniState()
+    world.collect(state, main)
+    assert state.count("Speed Booster Upgrade", world.player) == 0

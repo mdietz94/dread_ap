@@ -259,28 +259,25 @@ def test_pickup_resource_stage_passthrough_for_ordinary_items():
     ]
 
 
-def test_pickup_resource_stage_main_flash_shift_bakes_chains():
-    """The main Flash Shift grants the ability flag plus the "from main" chained
-    dashes (quantity = chain count) in one stage, so the main alone satisfies
-    the access-logic chain gates. Quantity 0 → ability only."""
+def test_pickup_resource_stage_main_flash_shift_bundles_included_ammo():
+    """The main Flash Shift grants the ability flag plus its bundled
+    `included_ammo` chained dashes (quantity = FlashUpgrade count) in one stage,
+    so the main alone reproduces vanilla chaining. Quantity 0 → ability only."""
     from dread.client.protocol import pickup_resource_stage
-    assert pickup_resource_stage("ITEM_GHOST_AURA", 3) == [
+    assert pickup_resource_stage("ITEM_GHOST_AURA", 2) == [
         {"item_id": "ITEM_GHOST_AURA", "quantity": 1},
-        {"item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", "quantity": 3},
+        {"item_id": "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", "quantity": 2},
     ]
     assert pickup_resource_stage("ITEM_GHOST_AURA", 0) == [
         {"item_id": "ITEM_GHOST_AURA", "quantity": 1},
     ]
 
 
-def test_pickup_resource_stage_main_speed_booster_bakes_charges():
-    """The main Speed Booster grants the ability flag plus the "from main" charge
-    upgrades (quantity = charge count) in one stage."""
+def test_pickup_resource_stage_main_speed_booster_is_single_resource():
+    """The main Speed Booster grants only the ability flag — Randovania's Speed
+    Booster major includes no charge upgrades (the Speed Booster Upgrade is a
+    standalone standard pickup), so the main stays a single resource."""
     from dread.client.protocol import pickup_resource_stage
-    assert pickup_resource_stage("ITEM_SPEED_BOOSTER", 3) == [
-        {"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1},
-        {"item_id": "ITEM_UPGRADE_SPEED_BOOST_CHARGE", "quantity": 3},
-    ]
-    assert pickup_resource_stage("ITEM_SPEED_BOOSTER", 0) == [
+    assert pickup_resource_stage("ITEM_SPEED_BOOSTER", 1) == [
         {"item_id": "ITEM_SPEED_BOOSTER", "quantity": 1},
     ]
