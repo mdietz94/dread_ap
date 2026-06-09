@@ -404,13 +404,10 @@ class FlashShiftUpgradeAmount(Range):
     default = 1
 
 
-class SpeedBoosterUpgradeAmount(Range):
-    """How many Speed Booster charge-time upgrades each Speed Booster Upgrade
-    grants. Randovania `ammo_count` default: 1."""
-    display_name = "Speed Booster Upgrade Amount"
-    range_start = 1
-    range_end = 9
-    default = 1
+# Note: there is deliberately NO speed_booster_upgrade_amount option. In
+# Randovania, Speed Booster Upgrade is a STANDARD pickup (not ammo), so each
+# copy grants exactly one charge upgrade with no per-pickup `ammo_count` knob —
+# unlike Flash Shift Upgrade, which is an ammo pickup (see FlashShiftUpgradeAmount).
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +523,6 @@ class _DreadOptionsBase(PerGameCommonOptions):
     missile_plus_tank_ammo: MissilePlusTankAmmo
     power_bomb_tank_ammo: PowerBombTankAmmo
     flash_shift_upgrade_amount: FlashShiftUpgradeAmount
-    speed_booster_upgrade_amount: SpeedBoosterUpgradeAmount
     flash_shift_upgrade_count: FlashShiftUpgradeCount
     speed_booster_upgrade_count: SpeedBoosterUpgradeCount
     flash_shift_included_ammo: FlashShiftIncludedAmmo

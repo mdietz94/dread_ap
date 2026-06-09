@@ -184,7 +184,8 @@ def test_starting_power_bombs_quantity_routes_to_pickup_resource():
         ("Missile+ Tank", "ITEM_WEAPON_MISSILE_MAX", 25),
         ("Power Bomb Tank", "ITEM_WEAPON_POWER_BOMB_MAX", 3),
         ("Flash Shift Upgrade", "ITEM_UPGRADE_FLASH_SHIFT_CHAIN", 2),
-        ("Speed Booster Upgrade", "ITEM_UPGRADE_SPEED_BOOST_CHARGE", 4),
+        # Speed Booster Upgrade has no amount option (standard pickup), so it is
+        # not parametrized here.
     ],
 )
 def test_ammo_amount_quantity_routes_to_pickup_resource(
@@ -345,7 +346,6 @@ def test_item_amounts_reflect_options_in_slot_data():
         missile_plus_tank_ammo=25,
         power_bomb_tank_ammo=3,
         flash_shift_upgrade_amount=2,
-        speed_booster_upgrade_amount=4,
         starting_power_bombs=2,
     )
     payload = world.fill_slot_data()
@@ -355,10 +355,10 @@ def test_item_amounts_reflect_options_in_slot_data():
         "Missile+ Tank": 25,
         "Power Bomb Tank": 3,
         "Flash Shift Upgrade": 2,
-        "Speed Booster Upgrade": 4,
         # The main Flash Shift bundles its included_ammo (default 2) — flows to
         # both the seed-baked and wire delivery paths. Speed Booster's main has
-        # no included ammo, so it is absent here.
+        # no included ammo, and Speed Booster Upgrade (a standard pickup) has no
+        # amount option, so neither appears here.
         "Flash Shift": 2,
     }
 
@@ -374,9 +374,8 @@ def test_item_amounts_default_to_randovania_values():
         "Missile+ Tank": 10,
         "Power Bomb Tank": 1,
         "Flash Shift Upgrade": 1,
-        "Speed Booster Upgrade": 1,
         # main Flash Shift bundles included_ammo=2 (vanilla); Speed Booster main
-        # has no included ammo.
+        # has no included ammo, and Speed Booster Upgrade has no amount option.
         "Flash Shift": 2,
     }
 

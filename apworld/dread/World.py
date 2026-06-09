@@ -581,8 +581,10 @@ class DreadWorld(World):
             "Missile+ Tank":         int(o.missile_plus_tank_ammo.value),
             "Power Bomb Tank":       int(o.power_bomb_tank_ammo.value),
             "Flash Shift Upgrade":   int(o.flash_shift_upgrade_amount.value),
-            "Speed Booster Upgrade": int(o.speed_booster_upgrade_amount.value),
-            # The MAIN Flash Shift bundles its `included_ammo` FlashUpgrade into
+            # Speed Booster Upgrade has no entry: it's a standard pickup in
+            # Randovania (no per-pickup ammo_count), so each copy grants its
+            # items.json quantity of 1. The MAIN Flash Shift bundles its
+            # `included_ammo` FlashUpgrade into
             # the pickup (pickup_resource_stage expands ITEM_GHOST_AURA into
             # unlock + N chain). The value is the FlashUpgrade count, not a copy
             # count. This flows to both the seed-baked placement quantity AND
