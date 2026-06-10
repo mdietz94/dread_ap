@@ -582,13 +582,19 @@ NOT A REMAINING GAP at default config; one real leniency fix landed. Findings:
     the DreadfulJim door+transport stress seed. Tests:
     `test_translate_damage_lava_emits_threshold` pins Gravity-only.
 
-Outstanding (non-blocking for v0.1): ammo/E-tank counting (rest of v0.3 — rules
-still collapse ammo to >=1; the HP-threshold + environmental-damage halves are
-now at RDV parity, see above); door/elevator randomization.
-Real-hardware (or Ryujinx)
-end-to-end run is the next manual gate — but now an *integration smoke* (does the
-bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
-NOT a semantics probe: the counter/cutscene questions are settled from source.
+Outstanding (non-blocking for v0.1): ammo counting is the only remaining v0.3
+item — ammo requirements still collapse to >=1 (the `sum` atoms exist but the
+binding requirement is "have a missile/PB source", and the per-tank amount knobs
+don't feed logic). E-tank/energy (HP-threshold) counting AND environmental/
+energy-drain damage are both now at RDV parity (see above). Door-lock and
+transport (elevator/shuttle) randomization are SHIPPED (`DoorRando.py` /
+`TransportRando.py`, exposed as the `door_lock_rando` / `transport_rando`
+options).
+
+The real-hardware end-to-end integration smoke is DONE: validated on real
+hardware (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop,
+and checks register. The manual validation gate is cleared; the counter/cutscene
+semantics were already settled from source.
 
 Kivy GUI: SHIPPED. `client/gui.py` defines `DreadManager(GameManager)` (lazy-
 imported by `DreadContext.run_gui`, so Kivy is never pulled at apworld/generation
