@@ -544,13 +544,19 @@ environmental/energy-drain half of v0.3 remain deferred (ammo still collapses to
 low-energy still-generates), `test_graph_logic` (expanded solvability matrix +
 threshold pin).
 
-Outstanding (non-blocking for v0.1): ammo/E-tank counting and environmental
-damage drain (rest of v0.3 — rules still collapse ammo to >=1; the HP-threshold
-half is now faithful, see above); door/elevator randomization.
-Real-hardware (or Ryujinx)
-end-to-end run is the next manual gate — but now an *integration smoke* (does the
-bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
-NOT a semantics probe: the counter/cutscene questions are settled from source.
+Outstanding (non-blocking for v0.1): ammo counting and environmental/energy-drain
+damage — the rest of v0.3. Ammo requirements still collapse to >=1 (the `sum`
+atoms exist but the binding requirement is "have a missile/PB source", and the
+per-tank amount knobs don't feed logic). E-tank/energy counting is DONE — the
+HP-threshold half of damage is faithful (see the "faithful v0.3 HP damage model"
+entry above). Door-lock randomization and transport (elevator/shuttle)
+randomization are SHIPPED (`DoorRando.py` / `TransportRando.py`, exposed as the
+`door_lock_rando` / `transport_rando` options).
+
+The real-hardware end-to-end integration smoke is DONE: validated on real
+hardware (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop,
+and checks register. The manual validation gate is cleared; the counter/cutscene
+semantics were already settled from source.
 
 Kivy GUI: SHIPPED. `client/gui.py` defines `DreadManager(GameManager)` (lazy-
 imported by `DreadContext.run_gui`, so Kivy is never pulled at apworld/generation
