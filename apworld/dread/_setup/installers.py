@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import ssl
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -62,6 +64,44 @@ class InstallResult:
 
 
 # ---------------------------------------------------------------------------
+# SSL context helper — frozen Archipelago bundles OpenSSL without the OS CA
+# ---------------------------------------------------------------------------
+
+# System CA bundle paths tried on non-Windows. The frozen Archipelago launcher
+# on Linux (Steam Deck) ships OpenSSL but not the OS certificate store, so the
+# default ssl.create_default_context() finds no certs and fails with
+# CERTIFICATE_VERIFY_FAILED. Trying the OS bundle directly fixes it.
+_LINUX_CA_BUNDLES = (
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian/Ubuntu/SteamOS
+    "/etc/pki/tls/certs/ca-bundle.crt",    # RHEL/Fedora
+    "/etc/ssl/ca-bundle.pem",              # OpenSUSE
+    "/etc/ssl/cert.pem",                   # macOS/FreeBSD/Alpine
+)
+
+
+def _best_ssl_context() -> ssl.SSLContext:
+    """Return the best available SSL context for outbound HTTPS probes.
+
+    On non-Windows the frozen bundle lacks the OS CA store. Try known system
+    bundle paths first so the connectivity probe works on Steam Deck without
+    needing certifi.
+    """
+    if sys.platform != "win32":
+        for ca_bundle in _LINUX_CA_BUNDLES:
+            if Path(ca_bundle).is_file():
+                try:
+                    return ssl.create_default_context(cafile=ca_bundle)
+                except Exception:
+                    continue
+        try:
+            import certifi  # type: ignore[import]
+            return ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            pass
+    return ssl.create_default_context()
+
+
+# ---------------------------------------------------------------------------
 # Preflight checks called before any installer runs
 # ---------------------------------------------------------------------------
 
@@ -94,21 +134,43 @@ def check_internet(on_line: ProgressFn | None = None) -> InstallResult:
     responds, because winget itself depends on HTTPS. Surface ONE clear
     "no internet" error instead of a confusing timeout deep inside the
     installer.
+
+    Uses ``_best_ssl_context()`` so the probe succeeds on Linux / Steam Deck
+    where the frozen Archipelago bundle ships OpenSSL without the OS CA store.
+    If SSL cert verification still fails despite the best-effort context (e.g.
+    corporate proxy with self-signed cert), the host clearly responded, so we
+    treat the probe as "internet reachable" — pip and winget handle their own
+    TLS and are unaffected by this probe's cert context.
     """
     msg_fail = (
         "no internet connectivity (HEAD https://github.com timed out / "
         "failed). Connect to the internet and try again, or install "
         "Python 3.12 manually."
     )
+    ctx = _best_ssl_context()
     try:
         req = urllib.request.Request("https://github.com", method="HEAD")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             if on_line:
                 on_line(f"[internet] github.com HEAD -> {resp.status}")
             return InstallResult(ok=True, returncode=0,
                                  log=f"HEAD https://github.com -> {resp.status}",
                                  detail="internet reachable")
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+    except urllib.error.URLError as e:
+        # If the underlying cause is an SSL cert error the host DID respond —
+        # network is up. pip/winget use their own cert handling so this probe's
+        # SSL context doesn't gate them.
+        if isinstance(e.reason, ssl.SSLCertVerificationError):
+            note = f"SSL cert not verified ({e.reason}); treating as reachable"
+            if on_line:
+                on_line(f"[internet] {note}")
+            return InstallResult(ok=True, returncode=0, log=note,
+                                 detail="internet reachable (SSL cert unverified)")
+        log = f"{type(e).__name__}: {e}"
+        if on_line:
+            on_line(f"[internet] FAIL: {log}")
+        return InstallResult(ok=False, returncode=1, log=log, detail=msg_fail)
+    except (TimeoutError, OSError) as e:
         log = f"{type(e).__name__}: {e}"
         if on_line:
             on_line(f"[internet] FAIL: {log}")

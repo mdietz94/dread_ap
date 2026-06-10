@@ -7,6 +7,8 @@ shelling out to pip or touching the network.
 """
 from __future__ import annotations
 
+import ssl
+import urllib.error
 import sys
 from pathlib import Path
 
@@ -25,6 +27,64 @@ def _stub_preconditions(monkeypatch):
                         lambda on_line=None: installers.InstallResult(
                             ok=True, returncode=0, log="", detail="ok"))
 
+
+# ---------------------------------------------------------------------------
+# check_internet SSL fallback (Steam Deck / frozen bundle cert fix)
+# ---------------------------------------------------------------------------
+
+def test_check_internet_succeeds_on_200(monkeypatch):
+    """Normal path: GitHub returns 200, probe is ok."""
+    class _FakeResp:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+
+    monkeypatch.setattr(installers.urllib.request, "urlopen",
+                        lambda req, timeout, context: _FakeResp())
+    monkeypatch.setattr(installers, "_best_ssl_context",
+                        lambda: ssl.create_default_context())
+    result = installers.check_internet()
+    assert result.ok is True
+    assert result.detail == "internet reachable"
+
+
+def test_check_internet_ssl_cert_error_treated_as_reachable(monkeypatch):
+    """SSL CERTIFICATE_VERIFY_FAILED means the host responded — treat as
+    internet reachable so the preflight passes on Steam Deck / frozen bundles
+    where _best_ssl_context still can't find a cert bundle."""
+    ssl_err = ssl.SSLCertVerificationError(1, "CERTIFICATE_VERIFY_FAILED")
+    url_err = urllib.error.URLError(ssl_err)
+
+    def _fake_urlopen(req, timeout, context):
+        raise url_err
+
+    monkeypatch.setattr(installers.urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(installers, "_best_ssl_context",
+                        lambda: ssl.create_default_context())
+    lines: list[str] = []
+    result = installers.check_internet(on_line=lines.append)
+    assert result.ok is True
+    assert "SSL cert not verified" in result.detail or "unverified" in result.detail
+    assert any("SSL" in ln for ln in lines)
+
+
+def test_check_internet_network_failure_is_not_ok(monkeypatch):
+    """A genuine network failure (not an SSL cert issue) returns ok=False."""
+    url_err = urllib.error.URLError("timed out")
+
+    def _fake_urlopen(req, timeout, context):
+        raise url_err
+
+    monkeypatch.setattr(installers.urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(installers, "_best_ssl_context",
+                        lambda: ssl.create_default_context())
+    result = installers.check_internet()
+    assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# install_open_dread_rando version / interpreter guard
+# ---------------------------------------------------------------------------
 
 def test_install_refuses_too_old_python(monkeypatch):
     """A sub-3.10 best-candidate is rejected up front with an actionable
