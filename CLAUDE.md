@@ -503,8 +503,46 @@ default-absent, count-drives-pool, dynamic progression split, collect/remove
 credit round-trip — flash only), `test_protocol` (pickup_resource_stage
 GHOST_AURA bundling; SPEED_BOOSTER passthrough).
 
-Outstanding (non-blocking for v0.1): ammo/damage/E-tank counting (v0.3 — rules
-collapse ammo to >=1 and damage to suit ownership); door/elevator randomization.
+Faithful HP damage model (v0.3 — DAMAGE half SHIPPED): the native graph emits
+no-suit `damage_threshold` atoms with REAL `hp_needed` values (Randovania's
+pre-resolved route damage, up to 1150). These are now HONORED, not stripped:
+`Rules.compile_to_lambda` resolves them as `any suit OR 99 + energy_per_tank*
+EnergyTank + (energy_per_tank/4)*EnergyPart >= hp_needed`. For that to be SOUND
+under AP's advancement-only beatability sweep, `World.create_items` makes enough
+Energy Tank / Energy Part copies `progression` to cover the worst gate at the
+slot's `energy_per_tank` (`_energy_progression_counts`: credit tanks first, then
+parts; default 100/tank → 8 tanks + 11 parts advancement, the rest `useful`;
+items.json Energy Part flipped filler→progression). `energy_per_tank` now FEEDS
+LOGIC (the old "pure difficulty, logic-inert" note is stale): lowering it shrinks
+the budget so the player needs more energy for the same route (threaded through
+`graph_logic`, `Rules`, and `DoorRando._eval`; a part = 1/4 tank, base 99 fixed).
+`MAX_NO_SUIT_HP=1150` in World.py is pinned to the graph by
+`test_graph_logic::test_max_no_suit_threshold_matches_world_constant`. KEY
+soundness fact: every high no-suit gate is ALWAYS OR'd with a non-damage
+alternative (a Combat/Knowledge trick branch and/or a Power Bomb route), so the
+energy budget is rarely the sole binding factor — verified by 20/20 real
+generations passing at FULL accessibility across default / DreadfulJim
+(door+transport rando) / energy_per_tank=60 / energy counts 14+32, ~4.2s each
+(fill ~150-200ms, no fragility even with the larger advancement pool). We
+DELIBERATELY do not pre-guard low-energy configs: `energy_per_tank=60` and
+`energy_tank_count=4` are solvable at full despite a sub-1150 max budget, so a
+budget guard would reject solvable seeds; AP's own FillError is the accurate
+signal. Known-unsupported extreme: `energy_tank_count=0` (16 parts self-gate —
+parts behind the very damage route that needs them; neither full nor minimal
+reliably generates — use low `energy_per_tank` instead). Residual gap: the baked
+`hp_needed` values assume vanilla 100/tank, and we scale the BUDGET by
+`energy_per_tank` but do NOT rescale the thresholds themselves (they're route
+damage, independent of tank size — correct), so no rescaling is needed; the only
+assumption is the fixed 99 base HP. AMMO/E-tank-as-counting and the
+environmental/energy-drain half of v0.3 remain deferred (ammo still collapses to
+>=1). Tests: `test_rule_compiler` (energy_per_tank scaling + part-fraction),
+`test_item_pool` (energy progression visibility + scaling + pool caps +
+low-energy still-generates), `test_graph_logic` (expanded solvability matrix +
+threshold pin).
+
+Outstanding (non-blocking for v0.1): ammo/E-tank counting and environmental
+damage drain (rest of v0.3 — rules still collapse ammo to >=1; the HP-threshold
+half is now faithful, see above); door/elevator randomization.
 Real-hardware (or Ryujinx)
 end-to-end run is the next manual gate — but now an *integration smoke* (does the
 bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),

@@ -347,10 +347,13 @@ class StartingMissiles(Range):
 
 
 class EnergyPerTank(Range):
-    """How much energy a single Energy Tank grants (also Samus's base max HP
-    before tanks). Vanilla Dread: 100. Lower values = harder; higher = easier.
-    A pure difficulty knob — does not affect AP logic, which currently models
-    damage as suit ownership."""
+    """How much energy a single Energy Tank grants (an Energy Part grants 1/4 of
+    this). Vanilla Dread: 100. Lower values = harder; higher = easier.
+
+    This DOES feed AP logic (faithful v0.3 HP model): damage gates are checked
+    against ``99 + energy_per_tank*EnergyTank + (energy_per_tank/4)*EnergyPart``,
+    so lowering it makes the player need more energy to clear the same route.
+    Samus's base max HP (99, pre-tank) is fixed regardless of this value."""
     display_name = "Energy Per Tank"
     range_start = 1
     range_end = 1499

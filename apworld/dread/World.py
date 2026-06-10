@@ -53,6 +53,52 @@ GAME_NAME = "Metroid Dread"
 # and collect/remove (the in-logic credit).
 MAX_CHAIN_REQ = 3
 
+# Faithful v0.3 HP damage model. The native logic graph emits no-suit
+# ``damage_threshold`` atoms with real ``hp_needed`` values (Randovania's
+# pre-resolved damage amounts on a route). ``Rules.compile_to_lambda`` checks
+# them against an energy budget of ``99 + energy_per_tank·EnergyTank +
+# (energy_per_tank/4)·EnergyPart``. For AP's advancement-only beatability sweep
+# to ever satisfy those gates, the Energy Tanks and Energy Parts it counts must
+# be ``progression`` — otherwise ``state.count`` sees 0 and every threshold
+# above 99 is permanently unreachable (the v0.2 bug this replaces). We classify
+# exactly enough copies progression to cover the worst binding threshold at the
+# slot's ``energy_per_tank``; the rest are ``useful`` (pure HP capacity).
+#
+# MAX_NO_SUIT_HP is the largest no-suit ``hp_needed`` in logic_graph.json
+# (regenerate the graph and re-run scripts/tests/test_extract_dread_rules.py
+# ::test_max_no_suit_threshold if upstream logic changes it). Tanks are credited
+# before parts (a tank is worth 4 parts), so the minimal sound progression count
+# is: all tanks, then enough parts to close the gap.
+MAX_NO_SUIT_HP = 1150
+BASE_HP = 99
+PARTS_PER_TANK = 4
+
+
+def _energy_progression_counts(
+    energy_per_tank: int, tank_count: int, part_count: int,
+) -> tuple[int, int]:
+    """How many Energy Tanks / Energy Parts must be ``progression`` so the
+    advancement sweep can clear the worst no-suit damage gate.
+
+    Credits tanks first (each worth ``energy_per_tank`` HP), then parts (1/4 of
+    a tank). Caps at the available pool counts — if even the full pool can't
+    reach ``MAX_NO_SUIT_HP`` (e.g. the user zeroed the counts or set a very low
+    ``energy_per_tank``), all copies are progression and the unreachable
+    threshold simply drops that route out of logic (AP accessibility stays
+    sound — see the soundness note in create_items)."""
+    per_tank = max(1, int(energy_per_tank))
+    per_part = per_tank / PARTS_PER_TANK
+    deficit = MAX_NO_SUIT_HP - BASE_HP
+    if deficit <= 0:
+        return 0, 0
+    tanks = min(tank_count, -(-deficit // per_tank))  # ceil div
+    remaining = deficit - per_tank * tanks
+    if remaining <= 0 or per_part <= 0:
+        return tanks, 0
+    import math
+    parts = min(part_count, math.ceil(remaining / per_part))
+    return tanks, parts
+
 # Number of in-game Nav Station hint plaques baked into the starter template.
 # _generate_nav_hints fills up to this many with real AP placement hints;
 # patcher_pipeline._apply_nav_hints maps them onto the template plaques and
@@ -157,7 +203,8 @@ class DreadWorld(World):
             self._dock_assignments = roll_assignments(
                 graph, self.random, mode="randomized",
                 starting_items=base_items, trick_levels=tl,
-                start_comp=self._start_comp, transport_matching=tm)
+                start_comp=self._start_comp, transport_matching=tm,
+                energy_per_tank=int(self.options.energy_per_tank.value))
 
     def create_regions(self) -> None:
         # Events are graph regions; AP's BFS must re-derive event-gated
@@ -224,6 +271,31 @@ class DreadWorld(World):
             "Speed Booster Upgrade": MAX_CHAIN_REQ,
         }
 
+        # Faithful HP model (v0.3): make enough Energy Tank / Energy Part copies
+        # progression that AP's advancement sweep can clear the worst no-suit
+        # damage_threshold at this slot's energy_per_tank. See
+        # _energy_progression_counts + MAX_NO_SUIT_HP. The remaining copies are
+        # useful (pure HP capacity, placeable anywhere). This is what makes the
+        # real thresholds in logic_graph.json SOUND under fill: without it
+        # state.count(Energy *) is 0 for the sweep and every gate above base HP
+        # is unreachable.
+        ept = int(o.energy_per_tank.value)
+        etank_prog, epart_prog = _energy_progression_counts(
+            ept, int(o.energy_tank_count.value), int(o.energy_part_count.value),
+        )
+        chain_progression_n["Energy Tank"] = etank_prog
+        chain_progression_n["Energy Part"] = epart_prog
+        # NOTE: we deliberately do NOT raise when the full energy pool can't reach
+        # the worst no-suit threshold (e.g. very low energy_per_tank, or a small
+        # tank count). Those high-HP gates are ALWAYS inside an OR with a
+        # non-damage alternative (a Combat/Knowledge trick branch and/or a Power
+        # Bomb route — verified against logic_graph.json), so the energy budget is
+        # rarely the sole binding factor. Whether a given config is reachable at
+        # `full` accessibility is exactly what AP's fill/beatability sweep
+        # decides; a pre-emptive budget guard would reject solvable seeds (4
+        # tanks, default trick level, is solvable). If a config truly can't reach
+        # everything, AP raises its own FillError — the faithful, accurate signal.
+
         # For items where the pool has more copies than compiled rules need
         # at amount=1, only the FIRST N copies get the row's classification —
         # the rest fall back to "useful" (logic-irrelevant but still placed in
@@ -252,11 +324,9 @@ class DreadWorld(World):
         MIXED_CLASSIFICATION_FIRST_N = {
             "Missile+ Tank": 1,
             "Missile Tank": 3,
-            # Region floors (Hanubia at trick levels 1/2) gate Menu→Region on
-            # `state.has("Energy Tank", 3)`; the first 3 copies are
-            # progression-relevant, the remaining 5 are pure HP capacity and
-            # would over-saturate the progression pool.
-            "Energy Tank": 3,
+            # Energy Tank / Energy Part progression counts are dynamic (depend on
+            # energy_per_tank) and live in chain_progression_n — see the faithful
+            # HP model above. NOT listed here.
             # PBAmmo sum gates top out at threshold=2 (= 1 PB Tank's worth),
             # so only the first copy needs to be progression. The remaining
             # 12 are pure ammo capacity.

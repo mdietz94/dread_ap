@@ -66,12 +66,12 @@ def test_translate_damage_cold_emits_threshold():
 def test_translate_damage_generic_emits_no_suit_threshold():
     """Plain `Damage` (non-suit-typed: spike rooms, contact, falls) emits
     damage_threshold with empty suit_options carrying the HP amount.
-    Downstream, compile_forward extracts amounts to derive per-region E-Tank
-    floors via ``compute_region_etank_floors`` and then strips these no-suit
-    nodes from per-location rules via ``_strip_no_suit_damage_thresholds``.
-    Per-location HP gates deadlock AP's fill (Randovania pre-orders pickups
-    for HP accumulation; AP's fill doesn't); per-region gating at the floor
-    level is the right grain."""
+
+    Faithful v0.3 model: these no-suit thresholds are honored directly in the
+    graph (NOT stripped). compile_to_lambda checks them against the energy
+    budget (99 + energy_per_tank*EnergyTank + (energy_per_tank/4)*EnergyPart),
+    and World.create_items makes enough Energy Tank/Part copies progression that
+    AP's advancement sweep can satisfy them (see _energy_progression_counts)."""
     ast = edr.translate_damage("Damage", 60)
     assert ast["type"] == "damage_threshold"
     assert ast["suit_options"] == []

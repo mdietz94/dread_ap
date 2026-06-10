@@ -319,7 +319,12 @@ def _build_world(**option_overrides):
     hints = typing.get_type_hints(DreadOptions)
     opts = DreadOptions(**{name: cls.from_any(cls.default) for name, cls in hints.items()})
     for key, value in option_overrides.items():
-        getattr(opts, key).value = value
+        if isinstance(value, str):
+            # Choice options (e.g. accessibility="minimal") need from_any to map
+            # the key string to the right value; numeric ranges set .value direct.
+            setattr(opts, key, hints[key].from_any(value))
+        else:
+            getattr(opts, key).value = value
 
     world = DreadWorld(mw, player=1)  # type: ignore[call-arg]
     world.options = opts
@@ -593,6 +598,83 @@ def test_energy_tank_count_drives_pool():
     world.create_items()
     n = sum(1 for it in mw.itempool if it.name == "Energy Tank")
     assert n == 4
+
+
+@pytestmark_runtime
+def test_energy_is_progression_visible_to_logic():
+    """Faithful v0.3 HP model: enough Energy Tank / Energy Part copies are
+    advancement that AP's sweep can clear the worst no-suit damage gate. At the
+    vanilla default (8 tanks, 16 parts, 100/tank) that's all 8 tanks and 11
+    parts (99 + 800 + 25*11 = 1174 >= MAX_NO_SUIT_HP 1150). Without this the
+    sweep sees 0 energy and every gate above 99 HP is unreachable."""
+    from BaseClasses import ItemClassification
+    from dread.World import _energy_progression_counts, MAX_NO_SUIT_HP, BASE_HP
+    world, mw = _build_world()
+    world.create_items()
+
+    et_adv = sum(1 for it in mw.itempool
+                 if it.name == "Energy Tank" and it.advancement)
+    ep_adv = sum(1 for it in mw.itempool
+                 if it.name == "Energy Part" and it.advancement)
+    exp_t, exp_p = _energy_progression_counts(100, 8, 16)
+    assert (et_adv, ep_adv) == (exp_t, exp_p) == (8, 11)
+    # Provisioned budget actually covers the worst threshold.
+    assert BASE_HP + 100 * et_adv + 25 * ep_adv >= MAX_NO_SUIT_HP
+    # Surplus copies are non-advancement (pure capacity).
+    assert all(it.classification in (ItemClassification.useful,
+                                     ItemClassification.filler)
+               for it in mw.itempool
+               if it.name == "Energy Part" and not it.advancement)
+
+
+@pytestmark_runtime
+def test_energy_progression_scales_with_energy_per_tank():
+    """Lowering energy_per_tank makes each tank/part worth less HP, so MORE
+    copies must be progression to cover the same worst-case gate; raising it
+    means fewer. At 50/tank the full default pool (8 tanks + 16 parts) is all
+    advancement; at 200/tank only 6 tanks (no parts) are needed."""
+    from dread.World import _energy_progression_counts
+    assert _energy_progression_counts(50, 8, 16) == (8, 16)
+    assert _energy_progression_counts(200, 8, 16) == (6, 0)
+
+    world, mw = _build_world(energy_per_tank=200)
+    world.create_items()
+    et_adv = sum(1 for it in mw.itempool
+                 if it.name == "Energy Tank" and it.advancement)
+    ep_adv = sum(1 for it in mw.itempool
+                 if it.name == "Energy Part" and it.advancement)
+    assert (et_adv, ep_adv) == (6, 0)
+
+
+@pytestmark_runtime
+def test_energy_progression_caps_at_available_pool():
+    """If even the full pool can't reach the worst gate (counts too low, or a
+    very low energy_per_tank), every copy is progression and the unreachable
+    route simply drops from logic — no crash, no over-allocation past the pool.
+    With 2 tanks + 2 parts the function returns exactly (2, 2)."""
+    from dread.World import _energy_progression_counts
+    assert _energy_progression_counts(100, 2, 2) == (2, 2)
+    assert _energy_progression_counts(1, 8, 16) == (8, 16)
+    # Zeroed energy: nothing to classify, no error.
+    assert _energy_progression_counts(100, 0, 0) == (0, 0)
+
+
+@pytestmark_runtime
+def test_low_energy_per_tank_still_generates():
+    """At a low energy_per_tank the full energy pool can't reach the worst
+    no-suit damage gate (1150 HP), but those high gates are always OR'd with a
+    non-damage alternative (Combat/Knowledge trick or Power Bomb route), so
+    create_items does NOT raise — fill resolves reachability. We deliberately
+    don't pre-judge solvability with a budget guard (it would reject solvable
+    seeds). Just assert the pool builds and energy is all-progression here."""
+    world, mw = _build_world(energy_per_tank=50)  # default accessibility = full
+    world.create_items()  # must NOT raise
+    et_adv = sum(1 for it in mw.itempool
+                 if it.name == "Energy Tank" and it.advancement)
+    ep_adv = sum(1 for it in mw.itempool
+                 if it.name == "Energy Part" and it.advancement)
+    # 50/tank: full default pool is all advancement (still under the worst gate).
+    assert (et_adv, ep_adv) == (8, 16)
 
 
 @pytestmark_runtime
