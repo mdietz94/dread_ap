@@ -44,6 +44,15 @@ from .prereqs import (
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+# winget exit codes that mean "the package is already installed" rather than a
+# real failure. `winget install <id>` auto-switches to upgrade mode when the
+# package is present; if nothing newer exists it exits non-zero. We only need a
+# working Python 3.12, not the latest, so these are successes for our purposes.
+#   0x8A15002B APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE  (no newer version)
+#   0x8A150061 APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED
+_WINGET_ALREADY_INSTALLED = frozenset({0x8A15002B, 0x8A150061})
+_WINGET_OK_RETURNCODES = frozenset({0}) | _WINGET_ALREADY_INSTALLED
+
 # Callback receiving one rstripped line of installer output per call.
 ProgressFn = Callable[[str], None]
 
@@ -227,14 +236,23 @@ def install_python312(on_line: ProgressFn | None = None) -> InstallResult:
     proc.wait()
 
     # Probe known post-install paths and update PATH for this process.
+    found = False
     for cmd_probe in _winget_python312_commands():
         if Path(cmd_probe[0]).is_file():
+            found = True
             _prepend_path(Path(cmd_probe[0]).parent)
 
     log = "\n".join(captured)
-    if proc.returncode == 0:
-        return InstallResult(ok=True, returncode=0, log=log,
-                             detail="Python 3.12 installed via winget")
+    # winget returns non-zero when the package is ALREADY installed and there's
+    # nothing newer to upgrade to. That is not a failure for us — we only need a
+    # working Python 3.12, not the latest one. Treat the "already installed /
+    # no applicable upgrade" codes (or a Python actually found on disk) as
+    # success so a healthy machine isn't reported as a failed install.
+    if proc.returncode in _WINGET_OK_RETURNCODES or found:
+        detail = ("Python 3.12 already present"
+                  if proc.returncode in _WINGET_ALREADY_INSTALLED
+                  else "Python 3.12 installed via winget")
+        return InstallResult(ok=True, returncode=0, log=log, detail=detail)
     return InstallResult(
         ok=False, returncode=proc.returncode, log=log,
         detail=(f"winget exited {proc.returncode}; install Python 3.12 "

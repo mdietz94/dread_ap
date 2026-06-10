@@ -152,3 +152,87 @@ def test_install_proceeds_when_version_unprobeable(monkeypatch):
 
     result = installers.install_open_dread_rando()
     assert result.ok is True
+
+
+# ---------------------------------------------------------------------------
+# install_python312 winget exit-code handling
+# ---------------------------------------------------------------------------
+
+def _stub_winget_preconditions(monkeypatch, *, probe_paths=()):
+    """Make check_winget + check_internet pass and pin the post-install probe
+    set so a test controls whether a Python is "found on disk" without touching
+    the real filesystem."""
+    monkeypatch.setattr(installers, "check_winget",
+                        lambda on_line=None: installers.InstallResult(
+                            ok=True, returncode=0, log="winget", detail="winget"))
+    monkeypatch.setattr(installers, "check_internet",
+                        lambda on_line=None: installers.InstallResult(
+                            ok=True, returncode=0, log="", detail="ok"))
+    monkeypatch.setattr(installers, "_winget_python312_commands",
+                        lambda: [[p] for p in probe_paths])
+    monkeypatch.setattr(installers, "_prepend_path", lambda _p: None)
+
+
+def _fake_winget_proc(returncode):
+    class _FakeProc:
+        stdout = iter(("Found an existing package already installed.",))
+
+        def __init__(self):
+            self.returncode = returncode
+
+        def wait(self):
+            return self.returncode
+    return lambda cmd, **_kw: _FakeProc()
+
+
+def test_python312_already_installed_is_success(monkeypatch):
+    """winget exits 0x8A15002B (UPDATE_NOT_APPLICABLE) when Python is already
+    present and there's nothing newer to upgrade to. That is NOT a failure —
+    we only need a working 3.12, not the latest. (Regression: a healthy machine
+    was reported as a failed install.)"""
+    _stub_winget_preconditions(monkeypatch)  # nothing found on disk
+    monkeypatch.setattr(installers.subprocess, "Popen",
+                        _fake_winget_proc(0x8A15002B))
+
+    result = installers.install_python312()
+    assert result.ok is True
+    assert result.returncode == 0
+    assert "already present" in result.detail
+
+
+def test_python312_package_already_installed_code_is_success(monkeypatch):
+    """The sibling code 0x8A150061 (PACKAGE_ALREADY_INSTALLED) is also OK."""
+    _stub_winget_preconditions(monkeypatch)
+    monkeypatch.setattr(installers.subprocess, "Popen",
+                        _fake_winget_proc(0x8A150061))
+
+    result = installers.install_python312()
+    assert result.ok is True
+    assert "already present" in result.detail
+
+
+def test_python312_found_on_disk_overrides_nonzero_exit(monkeypatch, tmp_path):
+    """An unrecognized non-zero exit is forgiven if a Python 3.12 actually
+    landed on disk — the post-install probe is the ground truth."""
+    py = tmp_path / "python.exe"
+    py.write_bytes(b"")
+    _stub_winget_preconditions(monkeypatch, probe_paths=[str(py)])
+    monkeypatch.setattr(installers.subprocess, "Popen",
+                        _fake_winget_proc(1))
+
+    result = installers.install_python312()
+    assert result.ok is True
+    assert result.returncode == 0
+
+
+def test_python312_genuine_failure_still_fails(monkeypatch):
+    """A real non-zero exit with no Python on disk stays a failure, with the
+    manual-download hint."""
+    _stub_winget_preconditions(monkeypatch)  # nothing found on disk
+    monkeypatch.setattr(installers.subprocess, "Popen",
+                        _fake_winget_proc(1))
+
+    result = installers.install_python312()
+    assert result.ok is False
+    assert result.returncode == 1
+    assert "python.org" in result.detail
