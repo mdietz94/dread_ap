@@ -53,6 +53,26 @@ def test_graph_schema_and_shape(graph):
 
 
 @graph_required
+def test_no_generic_no_suit_damage_thresholds(graph):
+    """Regression: the emitter must strip generic (no-suit) damage_threshold
+    atoms to TRIVIAL. Leaving them in per-edge rules over-restricts — the path
+    to the ship needs ~500-800 HP that AP's advancement sweep can't supply
+    (Energy Part is non-progression), so seeds go unbeatable at low trick levels
+    even with a full loadout. Suit-based thresholds (non-empty suit_options) are
+    fine (the suit is reachable). See scripts/extract_dread_rules.strip_no_suit_damage."""
+    def walk(ast, found):
+        if ast.get("type") == "damage_threshold" and not ast.get("suit_options"):
+            found.append(ast)
+        for c in ast.get("items", ()):
+            walk(c, found)
+    found: list = []
+    for _src, _dst, ast in graph["entrances"]:
+        walk(ast, found)
+    walk(graph["victory_condition"], found)
+    assert not found, f"{len(found)} no-suit damage_threshold atoms leaked into rules"
+
+
+@graph_required
 def test_every_pickup_maps_to_an_ap_location(graph):
     # Read names straight from locations.json so this runs without the AP runtime
     # (importing dread.Locations pulls BaseClasses, absent in CI).
@@ -144,6 +164,13 @@ runtime = pytest.mark.skipif(
     {"accessibility": "minimal"},
     {"trick_level": 5},
     {"required_artifacts": 12},
+    # The DreadfulJim report: door rando + full accessibility at the beginner
+    # baseline. Used to fail "Game appears as unbeatable" because no-suit
+    # damage_threshold atoms leaked into the path to the ship.
+    {"accessibility": "full", "door_lock_rando": "randomized",
+     "progressive_charge_beam": True, "progressive_bomb": True,
+     "required_artifacts": 6, "artifact_placement": "anywhere",
+     "start_with_pulse_radar": False},
 ])
 def test_graph_generation_is_solvable(opts):
     from test.general import setup_multiworld, gen_steps

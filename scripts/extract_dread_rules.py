@@ -478,6 +478,29 @@ def translate_damage(kind: str, amount: int) -> dict:
     raise CompileError(f"unknown damage kind {kind!r}")
 
 
+def strip_no_suit_damage(ast: dict) -> dict:
+    """Replace generic no-suit ``damage_threshold`` atoms with TRIVIAL.
+
+    ``translate_damage("Damage", ...)`` emits ``damage_threshold`` nodes with an
+    empty ``suit_options`` for generic (no protective suit) damage. The documented
+    model is "damage collapses to suit ownership; generic damage is not HP-modeled
+    per-edge" — these no-suit nodes were historically stripped to TRIVIAL by the
+    closed-form pipeline's ``_strip_no_suit_damage_thresholds`` (deleted in the
+    refactor that made the native graph the sole backend). Without the strip they
+    leak into per-edge rules and over-restrict: e.g. the path to the ship needs to
+    survive ~500-800 HP that AP's advancement sweep can't supply (Energy Part is
+    non-progression), marking the seed unbeatable at low trick levels even with a
+    full loadout. Suit-based thresholds (Heat/Cold/Lava → non-empty ``suit_options``)
+    are left intact — they're satisfiable via the reachable suit.
+    """
+    t = ast.get("type")
+    if t == "damage_threshold" and not ast.get("suit_options"):
+        return {"type": "trivial"}
+    if t in ("and", "or"):
+        return {"type": t, "items": [strip_no_suit_damage(c) for c in ast["items"]]}
+    return ast
+
+
 def _translate_ammo(rdv_name: str, amount: int) -> dict:
     """Turn MissileAmmo/PBAmmo requirements into sum nodes.
 
@@ -1178,10 +1201,12 @@ def emit_graph(
     n_regions = (max(comp.values()) + 1) if comp else 0
 
     # Cross-region entrances (intra-component edges are free → dropped).
+    # Generic no-suit damage_threshold atoms are stripped to TRIVIAL here (the
+    # native graph is the sole backend; see strip_no_suit_damage for why).
     entrances: list = []
     for u, v, ast in conn_edges + dock_edges:
         if v in nodes and comp[u] != comp[v]:
-            entrances.append([comp[u], comp[v], ast])
+            entrances.append([comp[u], comp[v], strip_no_suit_damage(ast)])
 
     # Transport endpoints (elevator/shuttle), with comps resolved. The apworld
     # adds the ride edges from the per-seed matching (default = vanilla pairing).
@@ -1264,7 +1289,7 @@ def emit_graph(
         },
         "pickups": pickups,
         "events": events,
-        "victory_condition": victory_item_only,
+        "victory_condition": strip_no_suit_damage(victory_item_only),
     }
 
 
