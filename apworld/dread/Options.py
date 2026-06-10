@@ -328,7 +328,12 @@ class PowerBombTankCount(Range):
 class StartingPowerBombs(Range):
     """How many Power Bombs the main Power Bomb pickup grants on first
     collection (and Samus's starting PB capacity once the weapon unlocks).
-    Vanilla Randovania: 2."""
+    Vanilla Randovania: 2.
+
+    This feeds AP logic (faithful v0.3 ammo model): power-bomb capacity gates are
+    met by ``starting_power_bombs`` (from the launcher) + ``power_bomb_tank_ammo``
+    per Power Bomb Tank. The binding PB capacity in logic is small (2), met by the
+    launcher's vanilla grant alone; lowering this promotes PB tanks to logic."""
     display_name = "Starting Power Bombs"
     range_start = 0
     range_end = 5
@@ -337,9 +342,13 @@ class StartingPowerBombs(Range):
 
 class StartingMissiles(Range):
     """Samus's starting missile capacity (and starting ammo count). Vanilla
-    Randovania starter: 15. A pure difficulty knob — does not affect AP
-    logic, which currently treats ammo as a binary (have/don't-have any
-    missile-grant)."""
+    Randovania starter: 15.
+
+    This DOES feed AP logic (faithful v0.3 ammo model): missile capacity gates
+    are checked against ``starting_missiles + missile_tank_ammo·MissileTank +
+    missile_plus_tank_ammo·Missile+Tank``, so lowering it makes the player need
+    more tanks to clear the same missile-locked route. The binding capacity in
+    logic is small (15); above it every gate is OR'd with an alternative."""
     display_name = "Starting Missiles"
     range_start = 0
     range_end = 99
@@ -362,18 +371,19 @@ class EnergyPerTank(Range):
 
 # ---------------------------------------------------------------------------
 # Per-pickup grant amounts — mirror Randovania's `ammo_pickup_configuration`
-# `ammo_count` knob (one per ammo-style pickup). Like the count knobs above,
-# these are logic-inert today (compiled rules collapse ammo to "have >=1 of the
-# granting item", CLAUDE.md v0.3 deferred) — pure difficulty/flavor. Defaults
-# match the Randovania starter preset, so omitting them in YAML reproduces
-# today's patcher output exactly. The chosen amount flows to BOTH the seed-baked
-# patcher path (per-placement `quantity`) AND the live wire path (via slot_data
-# `item_amounts`), so own and remotely-delivered copies grant the same amount.
+# `ammo_count` knob (one per ammo-style pickup). As of the faithful v0.3 ammo
+# model these FEED LOGIC: the missile / power-bomb capacity `sum` gates scale
+# each tank's contribution by these values (see graph_logic.ammo_amounts_from_
+# options + Rules.compile_to_lambda). Defaults match the Randovania starter
+# preset, so omitting them in YAML reproduces vanilla logic + patcher output.
+# The chosen amount flows to BOTH the seed-baked patcher path (per-placement
+# `quantity`) AND the live wire path (via slot_data `item_amounts`), so own and
+# remotely-delivered copies grant the same amount.
 # ---------------------------------------------------------------------------
 
 class MissileTankAmmo(Range):
     """How much missile capacity each Missile Tank grants. Randovania
-    `ammo_count` default: 2."""
+    `ammo_count` default: 2. Feeds AP logic (missile capacity gates)."""
     display_name = "Missile Tank Ammo"
     range_start = 0
     range_end = 99
@@ -382,7 +392,7 @@ class MissileTankAmmo(Range):
 
 class MissilePlusTankAmmo(Range):
     """How much missile capacity each Missile+ Tank grants. Randovania
-    `ammo_count` default: 10."""
+    `ammo_count` default: 10. Feeds AP logic (missile capacity gates)."""
     display_name = "Missile+ Tank Ammo"
     range_start = 0
     range_end = 99
@@ -391,7 +401,7 @@ class MissilePlusTankAmmo(Range):
 
 class PowerBombTankAmmo(Range):
     """How much Power Bomb capacity each Power Bomb Tank grants. Randovania
-    `ammo_count` default: 1."""
+    `ammo_count` default: 1. Feeds AP logic (power-bomb capacity gates)."""
     display_name = "Power Bomb Tank Ammo"
     range_start = 0
     range_end = 10

@@ -41,6 +41,33 @@ def load_graph() -> dict:
     return g
 
 
+def ammo_amounts_from_options(options) -> dict[str, int]:
+    """Build the ``ammo_amounts`` override dict ``compile_to_lambda`` consumes
+    from a slot's options, so missile / power-bomb ``sum`` capacity gates reflect
+    the user's ammo settings (faithful v0.3 model). Maps:
+
+    * ``starting_missiles``      -> missile ``base``
+    * ``missile_tank_ammo``      -> per Missile Tank
+    * ``missile_plus_tank_ammo`` -> per Missile+ Tank
+    * power-bomb ``base`` stays 0; ``starting_power_bombs`` rides the
+      ``Power Bomb`` (launcher) term's per_unit, so the launcher item still gates
+      PB ammo (a player with tanks but no launcher reads 0 PB capacity)
+    * ``power_bomb_tank_ammo``   -> per Power Bomb Tank
+
+    The Power Bomb base stays 0 (you cannot fire without the launcher); the
+    launcher's ``starting_power_bombs`` capacity is credited via the
+    ``Power Bomb`` term's per_unit so a player with tanks but no launcher still
+    reads 0 PB capacity (the launcher is AND'd in by the extractor too)."""
+    return {
+        "missile_base": int(options.starting_missiles.value),
+        "missile_tank_per_unit": int(options.missile_tank_ammo.value),
+        "missile_plus_tank_per_unit": int(options.missile_plus_tank_ammo.value),
+        "pb_base": 0,
+        "power_bomb_per_unit": int(options.starting_power_bombs.value),
+        "power_bomb_tank_per_unit": int(options.power_bomb_tank_ammo.value),
+    }
+
+
 def _resolve_docks(ast: dict, assign: dict, dock_sides: dict, wreq: dict) -> dict:
     """Substitute every ``dock`` atom with the open requirement of its assigned
     weakness (default weakness when unassigned). Returns a dock-free AST."""
@@ -94,6 +121,7 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
     player = world.player
     tl = effective_trick_levels(world.options)
     ept = int(world.options.energy_per_tank.value)
+    amm = ammo_amounts_from_options(world.options)
     assign = dock_assignments or {}
     dock_sides = g["dock_sides"]
     wreq = g["weakness_requirements"]
@@ -135,7 +163,7 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
         ent = regions[csrc].connect(
             regions[cdst], f"e{i}",
             rule=compile_to_lambda(resolved, player, tl, graph_mode=True,
-                                   energy_per_tank=ept))
+                                   energy_per_tank=ept, ammo_amounts=amm))
         for en in _event_atoms(resolved):
             if en in ev_region:
                 indirect.append((ev_region[en], ent))
@@ -174,13 +202,14 @@ def set_graph_rules(world) -> None:
     mw = world.multiworld
     tl = effective_trick_levels(world.options)
     ept = int(world.options.energy_per_tank.value)
+    amm = ammo_amounts_from_options(world.options)
 
     if getattr(mw.worlds[player], "explicit_indirect_conditions", True):
         for ev_region, ent in getattr(world, "_graph_indirect", []):
             mw.register_indirect_condition(ev_region, ent)
 
     victory = compile_to_lambda(world._graph_victory, player, tl, graph_mode=True,
-                                energy_per_tank=ept)
+                                energy_per_tank=ept, ammo_amounts=amm)
     n_dna = int(world.options.required_artifacts.value)
     if n_dna > 0:
         dna = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))

@@ -533,16 +533,55 @@ reliably generates — use low `energy_per_tank` instead). Residual gap: the bak
 `hp_needed` values assume vanilla 100/tank, and we scale the BUDGET by
 `energy_per_tank` but do NOT rescale the thresholds themselves (they're route
 damage, independent of tank size — correct), so no rescaling is needed; the only
-assumption is the fixed 99 base HP. AMMO/E-tank-as-counting and the
-environmental/energy-drain half of v0.3 remain deferred (ammo still collapses to
->=1). Tests: `test_rule_compiler` (energy_per_tank scaling + part-fraction),
-`test_item_pool` (energy progression visibility + scaling + pool caps +
-low-energy still-generates), `test_graph_logic` (expanded solvability matrix +
-threshold pin).
+assumption is the fixed 99 base HP. Tests: `test_rule_compiler` (energy_per_tank
+scaling + part-fraction), `test_item_pool` (energy progression visibility +
+scaling + pool caps + low-energy still-generates), `test_graph_logic` (expanded
+solvability matrix + threshold pin).
 
-Outstanding (non-blocking for v0.1): ammo/E-tank counting and environmental
-damage drain (rest of v0.3 — rules still collapse ammo to >=1; the HP-threshold
-half is now faithful, see above); door/elevator randomization.
+Faithful AMMO model (v0.3 — AMMO half SHIPPED): the native graph already emitted
+`sum` capacity atoms for missiles (`base 15 + 2/Missile Tank + 10/Missile+ Tank`)
+and power bombs (`base 0 + 2/Power Bomb launcher + 2/Power Bomb Tank`), plus a
+plain `Missile Tank>=1` atom standing in for Randovania's MissileLauncher unlock.
+These now FEED LOGIC two ways. (1) `Rules.compile_to_lambda` takes an
+`ammo_amounts` dict (`graph_logic.ammo_amounts_from_options`) that rescales each
+`sum` atom's `base`/`per_unit` to the slot's `starting_missiles` /
+`*_tank_ammo` / `starting_power_bombs` settings — the `threshold` (route's raw
+ammo demand) is never rescaled. Threaded through `graph_logic`, `Rules`, and
+`DoorRando._eval`. The old "logic-inert difficulty knob" notes on those options
+are stale. (2) `World.create_items` makes just enough Missile / Missile+ / Power
+Bomb Tank copies `progression` (`_ammo_progression_counts`) to clear the binding
+capacity at the slot's settings — dynamic, in `chain_progression_n`; the tanks
+were REMOVED from `MIXED_CLASSIFICATION_FIRST_N`. KEY EMPIRICAL FINDING (walked
+the graph, `scripts/analyze_ammo_binding.py`): the prior "ammo is never the sole
+gate" is HALF TRUE. Zero ammo loses ~36 pickups AND the Ship goal, so ammo IS
+binding — but the irreducible binding capacity is tiny: `MAX_BINDING_MISSILE_CAP=
+15` and `MAX_BINDING_PB_CAP=2` (every higher `sum` threshold, up to 300, IS OR'd
+with a reachable alternative). And the launcher-unlock `Missile Tank>=1` is
+satisfied by the PRECOLLECTED Missile Tank. So at the VANILLA defaults (start 15
+missiles / 2 PB) base capacity already meets both caps → `_ammo_progression_counts`
+returns (0,0,0): NO findable tank is required, STRICTLY FEWER advancement copies
+than the old static (3/1/1), a fill-health WIN. Findable progression copies only
+appear when the user lowers starting/per-tank ammo (e.g. `starting_missiles=0`
+→ 7 Missile Tanks). Soundness: every counted gate ≤ the cap is satisfiable by the
+advancement sweep at the chosen amounts; gates above the cap are OR'd, so a thin
+ammo budget never strands a location — AP's own FillError is the accurate signal
+otherwise. Two clear OptionError guards replace cryptic FillErrors: (a) PB / missile
+capacity that can NEVER reach the cap (no source), and (b) the self-gate extreme
+`starting_missiles=0 AND missile_tank_ammo=0` (all capacity forced through the 12
+Missile+ Tanks, which sit behind the very missile gates they'd open — unsolvable
+at any accessibility, verified across seeds; the analogue of the
+`energy_tank_count=0` extreme). `MAX_BINDING_*` pinned to the graph by
+`test_graph_logic::test_max_binding_ammo_cap_matches_world_constants`. Robustness
++ timing: 4-slot ammo-extreme multiworld (start 0 / tank_ammo 0|1 / pb 0) ~3.6s,
+8-slot DreadfulJim (door+transport rando) + ammo extremes ~10s, no fragility.
+Tests: `test_rule_compiler` (sum option scaling + threshold invariance),
+`test_item_pool` (vanilla 0-progression + low-ammo scaling + both guards),
+`test_graph_logic` (ammo-stressing solvability matrix + cap pin),
+`test_extract_dread_rules` (sum translation unchanged).
+
+Outstanding (non-blocking for v0.1): the environmental/energy-drain half of v0.3
+(heat/cold/lava DOT — needs the runtime damage model); door/elevator
+randomization (door-lock rando shipped; this is the remaining transport polish).
 Real-hardware (or Ryujinx)
 end-to-end run is the next manual gate — but now an *integration smoke* (does the
 bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),

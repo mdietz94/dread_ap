@@ -86,6 +86,32 @@ def test_max_no_suit_threshold_matches_world_constant(graph):
 
 
 @graph_required
+def test_max_binding_ammo_cap_matches_world_constants(graph):
+    """The faithful ammo model in World.py sizes the Missile/Power-Bomb tank
+    progression pool from MAX_BINDING_MISSILE_CAP / MAX_BINDING_PB_CAP — the
+    largest ammo capacity that is the SOLE gate to 100% reachability (every
+    higher ``sum`` threshold is OR'd with a reachable alternative). Re-derive the
+    caps straight from the graph and assert the constants still cover them; if
+    upstream logic introduces a higher sole-binding threshold this catches it."""
+    import re
+    sys.path.insert(0, str(ROOT.parent.parent / "scripts"))
+    from analyze_ammo_binding import binding_caps  # noqa: E402
+
+    mcap, pbcap = binding_caps(graph)
+    world_src = (ROOT / "World.py").read_text()
+    dm = int(re.search(r"MAX_BINDING_MISSILE_CAP\s*=\s*(\d+)", world_src).group(1))
+    dp = int(re.search(r"MAX_BINDING_PB_CAP\s*=\s*(\d+)", world_src).group(1))
+    assert mcap <= dm, (
+        f"graph's sole-binding missile cap {mcap} > MAX_BINDING_MISSILE_CAP {dm}; "
+        f"bump the constant in World.py and re-verify the tank progression pool."
+    )
+    assert pbcap <= dp, (
+        f"graph's sole-binding PB cap {pbcap} > MAX_BINDING_PB_CAP {dp}; "
+        f"bump the constant in World.py and re-verify the PB tank pool."
+    )
+
+
+@graph_required
 def test_every_pickup_maps_to_an_ap_location(graph):
     # Read names straight from locations.json so this runs without the AP runtime
     # (importing dread.Locations pulls BaseClasses, absent in CI).
@@ -198,6 +224,20 @@ runtime = pytest.mark.skipif(
     # High counts: larger advancement energy pool — checks pool pressure /
     # trim behavior under full accessibility.
     {"energy_tank_count": 12, "energy_part_count": 24},
+    # Faithful AMMO model: the missile / power-bomb sum gates must stay
+    # satisfiable as the ammo knobs feed logic. At vanilla the binding caps
+    # (15 missiles / 2 PB) are met by base + the precollected Missile Tank, so
+    # no findable tank is required; lowering the starting / per-tank ammo
+    # promotes more tanks to progression (_ammo_progression_counts).
+    {"starting_missiles": 0},                       # base 0 -> need ~7 tanks
+    {"starting_missiles": 0, "missile_tank_ammo": 1},  # +1/tank -> ~14 tanks
+    {"missile_tank_ammo": 0},                       # tanks inert; base 15 carries
+    {"starting_power_bombs": 0, "power_bomb_tank_ammo": 1},  # PB cap via 2 tanks
+    {"starting_missiles": 0, "trick_level": 1, "accessibility": "full"},
+    {"starting_missiles": 0, "trick_level": 5, "accessibility": "minimal"},
+    # High per-tank ammo (each tank worth more) — fewer tanks needed, trivially
+    # solvable; guards the credit math doesn't over-promote.
+    {"missile_tank_ammo": 50, "power_bomb_tank_ammo": 5},
 ])
 def test_graph_generation_is_solvable(opts):
     from test.general import setup_multiworld, gen_steps
