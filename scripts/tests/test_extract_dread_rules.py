@@ -27,43 +27,8 @@ from extract_dread_rules import (  # noqa: E402
     enumerate_paths,
     mk_and,
     mk_or,
-    strip_no_suit_damage,
     translate_requirement,
 )
-
-
-# ---- strip_no_suit_damage ----
-
-def test_strip_no_suit_damage_empty_suits_to_trivial():
-    """A generic (no-suit) damage_threshold collapses to TRIVIAL — the native
-    graph is the sole backend and must not leak per-edge HP gates (Energy Part
-    is non-progression, so AP's advancement sweep can't satisfy them → seeds
-    that go unbeatable at low trick levels). See the strip's docstring."""
-    ast = {"type": "damage_threshold", "suit_options": [], "hp_needed": 799}
-    assert strip_no_suit_damage(ast) == TRIVIAL
-
-
-def test_strip_no_suit_damage_preserves_suit_thresholds():
-    """Suit-based thresholds (Heat/Cold/Lava) are satisfiable via the reachable
-    suit and must survive the strip unchanged."""
-    ast = {"type": "damage_threshold",
-           "suit_options": ["Varia Suit", "Gravity Suit"], "hp_needed": 500}
-    assert strip_no_suit_damage(ast) == ast
-
-
-def test_strip_no_suit_damage_recurses_into_and_or():
-    item = {"type": "item", "name": "Morph Ball", "amount": 1}
-    suit = {"type": "damage_threshold",
-            "suit_options": ["Gravity Suit"], "hp_needed": 200}
-    nosuit = {"type": "damage_threshold", "suit_options": [], "hp_needed": 300}
-    ast = {"type": "or", "items": [
-        {"type": "and", "items": [item, nosuit]},
-        suit,
-    ]}
-    assert strip_no_suit_damage(ast) == {"type": "or", "items": [
-        {"type": "and", "items": [item, TRIVIAL]},
-        suit,
-    ]}
 
 
 # ---- mk_and / mk_or simplifiers ----
