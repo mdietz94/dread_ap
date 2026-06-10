@@ -431,28 +431,59 @@ def translate_requirement(
 def translate_damage(kind: str, amount: int) -> dict:
     """Map a damage requirement to a damage_threshold (or IMPOSSIBLE for OOB).
 
-    Randovania pre-resolves Dread's suit-multiplier math into the published
-    ``amount`` per requirement, so we don't model coefficients here — suits
-    are a binary shortcut OR an HP-budget check. The lambda compiler resolves
-    the threshold as ``99 + 100·count(Energy Tank) + 25·count(Energy Part)``.
+    Randovania bakes each connection's whole-segment damage into the published
+    ``amount`` (a single lava swim or hot-room crossing is ONE amount, e.g. the
+    1000-Lava Kraid tunnel), so we don't model per-tick coefficients here. A
+    suit that fully NEGATES the damage type is a binary shortcut; otherwise the
+    only pass is the HP budget, which the lambda compiler resolves as
+    ``99 + energy_per_tank·count(Energy Tank) + (energy_per_tank/4)·count(Energy Part)``.
 
-    Generic ``Damage`` (no suit applies) is emitted as ``damage_threshold``
-    with empty ``suit_options``, BUT downstream the compile_forward driver
-    walks the compiled rules to derive per-region E-Tank floors and then
-    *strips* these no-suit nodes from per-location rules (replacing with
-    TRIVIAL). The reason for the round-trip: the amounts are needed to set
-    region_access floors that approximate vanilla HP accumulation, but
-    leaving them in per-location rules deadlocks AP's fill (every Hanubia
-    location ends up needing 3+ E-Tanks reachable in sphere 1). The
-    region-level gate is what AP's fill can satisfy; the per-location gate
-    is too tight. See ``_strip_no_suit_damage_thresholds`` and
-    ``compute_region_etank_floors`` for the post-processing.
+    Which suits negate (multiplier 0.0 in RDV's ``damage_reductions``) and so
+    appear in ``suit_options``:
+      * Heat  → Varia OR Gravity (both 0.0)
+      * Lava  → Gravity ONLY    (Varia is 0.75, a reduction not a negation)
+      * Cold  → Gravity ONLY    (Varia is 0.75)
+      * Damage→ neither         (Varia 0.75 / Gravity 0.5; HP budget only)
+
+    SOUNDNESS NOTE re: path-cumulative damage. RDV's RESOLVER tracks energy as a
+    depletable resource: it subtracts each crossed segment's amount from current
+    energy (refilling only at the 26 heal nodes) and checks each gate against the
+    running total — see ``randovania/resolver/energy_tank_damage_state.py``
+    (``apply_damage`` / ``apply_node_heal`` / ``health_for_damage_requirements``).
+    AP has no path memory, so we check each gate independently against MAX HP.
+    This is LENIENT in principle (we never subtract across a no-heal chain).
+    In practice the gap is inert at the default trick level: the worst
+    cumulative no-suit route to any node at Beginner (Suitless<=1) is ~549 HP —
+    far under any single edge and under the budget — because every high-damage
+    chain is gated behind ``Suitless`` level 2-3 (which the player opts into
+    explicitly, mirroring RDV's own ``Suitless`` trick). The only nodes whose
+    cumulative no-suit route exceeds the 1150 max budget (the Cataris Diffusion
+    Beam / Kraid lava cluster, ~1330) require Suitless 2-3 AND are always OR'd
+    with a Gravity route, so the lenient path is never the sole reachability
+    grant at default config. See the v0.3 damage notes in CLAUDE.md.
     """
-    if kind in ("Heat", "Lava"):
-        # Vanilla: Varia required for hot areas (Cataris). Gravity also
-        # protects against heat.
+    if kind == "Heat":
+        # Heat (Cataris hot rooms): both suits fully negate. Confirmed against
+        # Randovania's ``damage_reductions`` table (header.json): Heat+Varia and
+        # Heat+Gravity are BOTH multiplier 0.0 (full negation), so either suit is
+        # a free pass — matching the source OR-groups, which offer Varia or
+        # Gravity interchangeably for heat.
         return {"type": "damage_threshold",
                 "suit_options": ["Varia Suit", "Gravity Suit"],
+                "hp_needed": int(amount)}
+    if kind == "Lava":
+        # Lava: ONLY Gravity Suit negates it (multiplier 0.0). Varia merely
+        # REDUCES lava to 0.75x (it does NOT make the player immune), so a
+        # Varia-only player still takes 3/4 of the listed amount and must clear
+        # the gate on the HP budget like any suitless player. Confirmed against
+        # Randovania's ``damage_reductions`` (Lava: Varia=0.75, Gravity=0.0) and
+        # the logic DB: of every OR-group containing a Lava branch, the only
+        # direct suit pass offered is Gravity — Varia never appears as a free
+        # lava pass. Listing Varia here previously let Varia-only seeds bypass
+        # lava gates RDV charges for / requires Gravity on. (Heat keeps both
+        # suits per its own mapping above; mirrors the Cold treatment below.)
+        return {"type": "damage_threshold",
+                "suit_options": ["Gravity Suit"],
                 "hp_needed": int(amount)}
     if kind == "Cold":
         # In Dread, ONLY Gravity Suit negates cold — Varia does not. Verified
@@ -470,8 +501,12 @@ def translate_damage(kind: str, amount: int) -> dict:
         # impossible to avoid encoding tricks via the back door.
         return IMPOSSIBLE
     if kind == "Damage":
-        # Generic damage — kept temporarily so compile_forward can derive
-        # region floors. Stripped before output (per-location, not per-region).
+        # Generic damage (spikes / unavoidable enemy contact): NO suit grants a
+        # free pass — Randovania's ``damage_reductions`` only REDUCES generic
+        # Damage (Varia 0.75x, Gravity 0.5x), it never negates it. So the only
+        # way past is the HP budget. Emitted as a no-suit ``damage_threshold``
+        # and HONORED per-gate by ``Rules.compile_to_lambda`` (since #114 these
+        # are no longer stripped — the earlier region-floor round-trip is gone).
         return {"type": "damage_threshold",
                 "suit_options": [],
                 "hp_needed": int(amount)}

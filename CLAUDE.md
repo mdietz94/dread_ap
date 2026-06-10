@@ -537,20 +537,68 @@ reliably generates — use low `energy_per_tank` instead). Residual gap: the bak
 `hp_needed` values assume vanilla 100/tank, and we scale the BUDGET by
 `energy_per_tank` but do NOT rescale the thresholds themselves (they're route
 damage, independent of tank size — correct), so no rescaling is needed; the only
-assumption is the fixed 99 base HP. AMMO/E-tank-as-counting and the
-environmental/energy-drain half of v0.3 remain deferred (ammo still collapses to
->=1). Tests: `test_rule_compiler` (energy_per_tank scaling + part-fraction),
-`test_item_pool` (energy progression visibility + scaling + pool caps +
-low-energy still-generates), `test_graph_logic` (expanded solvability matrix +
-threshold pin).
+assumption is the fixed 99 base HP. AMMO/E-tank-as-counting remains deferred
+(ammo still collapses to >=1). Tests: `test_rule_compiler` (energy_per_tank
+scaling + part-fraction), `test_item_pool` (energy progression visibility +
+scaling + pool caps + low-energy still-generates), `test_graph_logic` (expanded
+solvability matrix + threshold pin).
 
-Outstanding (non-blocking for v0.1): ammo/E-tank counting and environmental
-damage drain (rest of v0.3 — rules still collapse ammo to >=1; the HP-threshold
-half is now faithful, see above); door/elevator randomization.
-Real-hardware (or Ryujinx)
-end-to-end run is the next manual gate — but now an *integration smoke* (does the
-bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
-NOT a semantics probe: the counter/cutscene questions are settled from source.
+Environmental / energy-drain damage (the "other half" of v0.3) — INVESTIGATED,
+NOT A REMAINING GAP at default config; one real leniency fix landed. Findings:
+  * **`environmental_damage.py` is PURELY the patcher** (sets in-game heat/cold/
+    lava room DPS+tick on the actor configs); it carries ZERO logic. All damage
+    LOGIC lives in the cached RDV logic JSON we already extract — confirmed.
+  * **RDV's RESOLVER is genuinely path-cumulative.** `energy_tank_damage_state.py`
+    threads a `DamageState`: `apply_damage` subtracts each crossed segment's
+    `amount` from CURRENT energy, `apply_node_heal` refills to max at the 26 heal
+    nodes (save/recharge stations), and each gate is checked against the running
+    `health_for_damage_requirements()` (= current, not max). The native
+    `resolver_reach` builds a per-node current-health map. So RDV requires
+    surviving the SUM of damage along a no-heal chain; AP (no path memory) checks
+    each gate independently vs MAX HP — our model is LENIENT in principle (never
+    subtracts across a chain).
+  * **The per-requirement `amount` is the WHOLE segment damage, already baked**
+    (e.g. the Cataris Kraid→Diffusion lava tunnel is ONE `Lava:1000` edge gated by
+    `Suitless`-2). The cumulative-vs-max distinction only bites when 2+ damage
+    edges chain between heal nodes.
+  * **The gap is INERT at the default Beginner trick level.** A multi-source
+    Dijkstra (refill at the 26 heal nodes) over the source DB shows the worst
+    cumulative no-suit route to ANY node at `Suitless<=1` is ~549 HP — far under
+    a single edge and under the 1150 budget — because every high-damage chain is
+    gated behind `Suitless` 2-3 (an explicit opt-in mirroring RDV's own trick).
+    The only nodes whose cumulative exceeds 1150 (the Diffusion Beam / Kraid lava
+    cluster, ~1330) need Suitless 2-3 AND are always OR'd with a Gravity route, so
+    the lenient no-subtraction path is never the SOLE reachability grant. Modeling
+    true cross-room depletion is intractable in AP (item-set logic, no path
+    memory) and unnecessary here. Verdict: per-gate max-HP thresholds are a sound,
+    conservative-enough approximation of RDV's gating for Dread; no region-floor
+    machinery is warranted.
+  * **REAL FIX shipped — Lava suit list corrected to Gravity-only.** RDV's
+    `damage_reductions` give Lava+Varia a 0.75x multiplier (a reduction, NOT a
+    negation) and Lava+Gravity 0.0x; the logic DB never offers Varia as a direct
+    lava pass. `translate_damage` previously listed BOTH suits for Lava (copied
+    from Heat), letting a Varia-only player bypass every lava gate for free — a
+    concrete leniency bug. Heat is unchanged (both suits ARE 0.0x = negated). Now
+    Lava → `["Gravity Suit"]` (mirrors the existing Cold treatment). Sound: every
+    lava gate already offers Gravity or the no-suit HP-budget route, so dropping
+    Varia removes a false free pass without removing the only pass — verified
+    solvable at full+minimal across trick 1/5, default + `energy_per_tank=60`, and
+    the DreadfulJim door+transport stress seed. Tests:
+    `test_translate_damage_lava_emits_threshold` pins Gravity-only.
+
+Outstanding (non-blocking for v0.1): ammo counting is the only remaining v0.3
+item — ammo requirements still collapse to >=1 (the `sum` atoms exist but the
+binding requirement is "have a missile/PB source", and the per-tank amount knobs
+don't feed logic). E-tank/energy (HP-threshold) counting AND environmental/
+energy-drain damage are both now at RDV parity (see above). Door-lock and
+transport (elevator/shuttle) randomization are SHIPPED (`DoorRando.py` /
+`TransportRando.py`, exposed as the `door_lock_rando` / `transport_rando`
+options).
+
+The real-hardware end-to-end integration smoke is DONE: validated on real
+hardware (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop,
+and checks register. The manual validation gate is cleared; the counter/cutscene
+semantics were already settled from source.
 
 Kivy GUI: SHIPPED. `client/gui.py` defines `DreadManager(GameManager)` (lazy-
 imported by `DreadContext.run_gui`, so Kivy is never pulled at apworld/generation
