@@ -336,9 +336,13 @@ AP-message tasks. See [[dread-delivery-protocol]].
 Options: beyond StartingArea/IncludeBossPickups, the apworld now exposes
 TrickLevel, a Metroid DNA collection goal (RequiredArtifacts 0-12 +
 ArtifactPlacement), and cosmetic/combat passthrough (HUD toggles, room-name
-display, death counter, Raven Beak damage table, nerf power bombs). Energy /
-environmental-damage settings are intentionally NOT exposed (they need the
-v0.3 damage model). DNA `Metroid DNA k` items map to `ITEM_RANDO_ARTIFACT_k`
+display, death counter, Raven Beak damage table, nerf power bombs). Energy
+settings (Energy Tank/Part counts, Energy Per Tank) ARE exposed and now feed
+the faithful HP damage model — see the "faithful v0.3 HP damage model" update
+below; only the environmental/energy-drain half of the damage model is still
+deferred. (This paragraph is an older status entry; at the time energy was
+unexposed and damage collapsed to suit ownership — no longer true.) DNA
+`Metroid DNA k` items map to `ITEM_RANDO_ARTIFACT_k`
 and ride the normal item paths; non-actor (boss/EMMI) pickups are keyed by
 `pickup_lua_callback`. 233 tests pass (182 apworld + 51 scripts; 1 pre-existing
 vendor-fixture test needs the open-dread-rando checkout). Apworld now slugged

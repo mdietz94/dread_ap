@@ -102,6 +102,12 @@ Drapes. The compiler caught this; the wiki confirms it.
   Varia OR Gravity; Cold → Gravity OR Varia; raw Damage → True
   (player has enough HP assumed); OOB → False (don't encourage
   unintended routes). No E-Tank counting yet.
+  > **SUPERSEDED (PR #114, the faithful HP model).** Damage is no longer
+  > suit-only. `damage_threshold` atoms now carry a real `hp_needed`, checked
+  > against `99 + energy_per_tank*EnergyTank + (energy_per_tank/4)*EnergyPart`;
+  > Energy Tank/Part are progression-classified so AP's fill can satisfy them.
+  > Listed suits still short-circuit. See CLAUDE.md's "faithful v0.3 HP damage
+  > model" entry. (Historical note — describes the original v0.1 behavior.)
 
 - **Events evaluate as Trivial in the lambda compiler.** The compiler
   preserves event nodes in the AST so M2 can switch them to real
@@ -376,6 +382,8 @@ Strikethrough = eliminated by M2.
    passes with any 1 Missile Tank. Defer to v0.3.
 4. **Damage thresholds ignored.** A 30-damage cold room with no suit
    passes (we model only suit ownership, not HP). Defer to v0.3.
+   > **RESOLVED (PR #114).** HP is now modeled: damage gates check the real
+   > energy budget and Energy Tank/Part are progression. No longer suit-only.
 5. **Tricks at level 2+ are impossible.** Gate B (TrickLevel UI option)
    will unlock the higher tiers.
 
