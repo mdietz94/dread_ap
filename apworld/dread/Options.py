@@ -190,6 +190,18 @@ class NerfPowerBombs(DefaultOnToggle):
     display_name = "Nerf Power Bombs"
 
 
+class LightsOut(Toggle):
+    """"Lights Out" race mode: hide the in-game map so you navigate from memory.
+    Unlike the HUD toggles above this is NOT a patcher/RomFS setting (open-dread-
+    rando has no map-hide option) — it is a pure runtime cosmetic applied by our
+    bootstrap's ``lua/lights_out.lua`` (hides the HUD minimap and pause-menu map
+    via ``GUI.SetProperties(..., {Visible=false})``), gated by ``RL.LightsOut``
+    which the client sets from this slot_data flag at connect. OFF ⇒ the flag is
+    false and the Lua hook stays inert, so existing seeds are unaffected.
+    Template default: OFF."""
+    display_name = "Lights Out"
+
+
 class XStartsReleased(Toggle):
     """Release the X Parasites from Elun at the very start of the game,
     matching Randovania's `default_x_released`. With this ON, the X are loose
@@ -518,6 +530,7 @@ class _DreadOptionsBase(PerGameCommonOptions):
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
+    lights_out: LightsOut
     x_starts_released: XStartsReleased
     progressive_suit: ProgressiveSuit
     progressive_spin: ProgressiveSpin

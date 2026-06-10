@@ -391,6 +391,17 @@ def test_item_amounts_default_to_randovania_values():
 
 
 @pytestmark_runtime
+def test_lights_out_flows_into_slot_data():
+    """The "Lights Out" option must ride slot_data (client-only; the client
+    reads it to enable the runtime map-hide). Off by default, true when set."""
+    world, _ = _build_world()
+    assert world.fill_slot_data()["lights_out"] is False
+
+    world_on, _ = _build_world(lights_out=True)
+    assert world_on.fill_slot_data()["lights_out"] is True
+
+
+@pytestmark_runtime
 def test_trick_levels_in_slot_data():
     """Per-trick effective levels must ride slot_data so external trackers (e.g.
     PopTracker) can pre-populate their difficulty dials to match the seed."""

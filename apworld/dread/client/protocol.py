@@ -524,6 +524,19 @@ def build_kill_player_lua() -> str:
     return "RL.KillPlayer(); return ''"
 
 
+def build_lights_out_lua() -> str:
+    """Lua that enables "Lights Out" race mode: set ``RL.LightsOut`` so the
+    bootstrap's per-scenario hook (our non-vendored ``lua/lights_out.lua``) hides
+    the in-game map, and apply it immediately to the current scenario so the user
+    doesn't have to reload. ``RL.ApplyLightsOut`` is a no-op until the flag is
+    set and nil-safe per map object, so this is safe to fire any time after
+    bootstrap (the ``and`` guard skips the call on a ROM where the extra failed
+    to install)."""
+    return ("RL.LightsOut=true; "
+            "if RL.ApplyLightsOut then RL.ApplyLightsOut() end; "
+            "return ''")
+
+
 def _lua_string(value: str) -> str:
     """Render a Python string as a double-quoted Lua string literal (escaping
     backslashes and quotes — same convention as ``_to_lua_table``)."""
