@@ -36,10 +36,35 @@ BASE_HP = 99
 VANILLA_ENERGY_PER_TANK = 100
 PARTS_PER_TANK = 4
 
+# Faithful v0.3 ammo model. The baked ``sum`` atoms carry the vanilla starting
+# capacity in ``base`` and the vanilla per-tank yield in each term's
+# ``per_unit`` (missiles: base 15, +2/Missile Tank, +10/Missile+ Tank; power
+# bombs: base 0, +2/Power Bomb launcher item, +2/Power Bomb Tank). The
+# ``threshold`` is the route's raw ammo demand and is independent of the user's
+# options. ``ammo_amounts`` (a dict, see ``compile_to_lambda``) lets a slot
+# rescale ``base``/``per_unit`` to its own ``starting_missiles`` /
+# ``*_tank_ammo`` / ``starting_power_bombs`` settings, so those knobs feed
+# LOGIC instead of being pure difficulty. Keys are the resource lines below;
+# values are (base_key, {item_name: per_unit_key}). An absent key keeps the
+# graph's baked value.
+AMMO_BASE_KEYS = {
+    "Missile Tank": "missile_base",
+    "Missile+ Tank": "missile_base",
+    "Power Bomb": "pb_base",
+    "Power Bomb Tank": "pb_base",
+}
+AMMO_PER_UNIT_KEYS = {
+    "Missile Tank": "missile_tank_per_unit",
+    "Missile+ Tank": "missile_plus_tank_per_unit",
+    "Power Bomb": "power_bomb_per_unit",
+    "Power Bomb Tank": "power_bomb_tank_per_unit",
+}
+
 
 def compile_to_lambda(
     ast: dict, player: int, trick_levels: dict[str, int] | None = None,
     graph_mode: bool = False, energy_per_tank: int = VANILLA_ENERGY_PER_TANK,
+    ammo_amounts: dict[str, int] | None = None,
 ) -> Predicate:
     """Translate a compiled rule AST into a Predicate.
 
@@ -58,6 +83,14 @@ def compile_to_lambda(
     much HP and each Energy Part 1/4 of it; the baked ``hp_needed`` values are
     raw damage amounts (independent of this knob), so a player who lowers
     ``energy_per_tank`` correctly needs more tanks/parts to clear the same gate.
+
+    ``ammo_amounts`` similarly rescales ``sum`` (missile / power-bomb capacity)
+    atoms to the slot's ammo settings — see ``AMMO_BASE_KEYS`` /
+    ``AMMO_PER_UNIT_KEYS``. Recognized keys: ``missile_base`` (starting missile
+    capacity), ``missile_tank_per_unit``, ``missile_plus_tank_per_unit``,
+    ``pb_base`` (starting power bombs), ``power_bomb_per_unit`` (launcher grant),
+    ``power_bomb_tank_per_unit``. Absent keys keep the graph's baked vanilla
+    value. The ``threshold`` (raw ammo demand of the route) is never rescaled.
     """
     t = ast["type"]
 
@@ -86,9 +119,21 @@ def compile_to_lambda(
         return _const_true if level <= eff else _const_false
 
     if t == "sum":
-        terms = tuple((tr["name"], int(tr["per_unit"])) for tr in ast["terms"])
+        amounts = ammo_amounts or {}
         base = int(ast["base"])
         thr = int(ast["threshold"])
+        terms_list = []
+        for tr in ast["terms"]:
+            nm = tr["name"]
+            per = int(tr["per_unit"])
+            bkey = AMMO_BASE_KEYS.get(nm)
+            if bkey is not None and bkey in amounts:
+                base = int(amounts[bkey])
+            pkey = AMMO_PER_UNIT_KEYS.get(nm)
+            if pkey is not None and pkey in amounts:
+                per = int(amounts[pkey])
+            terms_list.append((nm, per))
+        terms = tuple(terms_list)
         def _sum_pred(state, _p=player, _terms=terms, _base=base, _thr=thr):
             total = _base
             for name, per in _terms:
@@ -115,7 +160,7 @@ def compile_to_lambda(
 
     if t == "and":
         children = [compile_to_lambda(c, player, trick_levels, graph_mode,
-                                      energy_per_tank)
+                                      energy_per_tank, ammo_amounts)
                     for c in ast["items"]]
         if not children:
             return _const_true
@@ -125,7 +170,7 @@ def compile_to_lambda(
 
     if t == "or":
         children = [compile_to_lambda(c, player, trick_levels, graph_mode,
-                                      energy_per_tank)
+                                      energy_per_tank, ammo_amounts)
                     for c in ast["items"]]
         if not children:
             return _const_false

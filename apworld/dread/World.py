@@ -99,6 +99,74 @@ def _energy_progression_counts(
     parts = min(part_count, math.ceil(remaining / per_part))
     return tanks, parts
 
+
+# Faithful v0.3 ammo model (missiles + power bombs). The native logic graph emits
+# ``sum`` atoms for ammo capacity (missiles: base 15 + 2/Missile Tank +
+# 10/Missile+ Tank; power bombs: base 0 + 2/Power Bomb launcher + 2/Power Bomb
+# Tank) plus, separately, a plain ``Missile Tank>=1`` atom standing in for
+# Randovania's MissileLauncher "can fire a missile at all" unlock. We empirically
+# walked logic_graph.json (see the ammo retro): EVERY missile ``sum`` threshold
+# above MAX_BINDING_MISSILE_CAP and every PB threshold above MAX_BINDING_PB_CAP is
+# OR'd with a non-sum alternative that the advancement sweep can reach, so the
+# only capacity actually on the critical path is these caps. (Re-derive with
+# scripts/tests/test_extract_dread_rules.py::test_max_binding_ammo_cap +
+# scripts/analyze_ammo_binding.py if upstream logic changes.)
+#
+# The launcher unlock (Missile Tank>=1) is already satisfied by the PRECOLLECTED
+# Missile Tank in BASE_STARTING_ITEMS, so at the vanilla defaults (start 15
+# missiles / 2 PB) NO findable tank is required at all — base capacity already
+# meets the caps. We only need findable progression copies when the user lowers
+# the starting ammo or per-tank yield enough that base+precollected falls short
+# of a cap. This is STRICTLY FEWER advancement Missile Tanks than the old static
+# cap of 3, so fill health improves.
+MAX_BINDING_MISSILE_CAP = 15   # largest sole-binding missile capacity in logic
+MAX_BINDING_PB_CAP = 2         # largest sole-binding power-bomb capacity in logic
+PRECOLLECTED_MISSILE_TANKS = 1  # BASE_STARTING_ITEMS includes one Missile Tank
+
+
+def _ammo_progression_counts(
+    starting_missiles: int, missile_tank_ammo: int, missile_plus_tank_ammo: int,
+    missile_tank_count: int, missile_plus_tank_count: int,
+    starting_power_bombs: int, power_bomb_tank_ammo: int, power_bomb_tank_count: int,
+) -> tuple[int, int, int]:
+    """How many findable Missile Tank / Missile+ Tank / Power Bomb Tank copies
+    must be ``progression`` so the advancement sweep can clear the worst
+    sole-binding ammo capacity gate at this slot's ammo settings.
+
+    Missiles: the precollected Missile Tank contributes
+    ``PRECOLLECTED_MISSILE_TANKS * missile_tank_ammo`` on top of
+    ``starting_missiles``; we credit findable Missile Tanks first (largest pool,
+    cheapest swap headroom), then Missile+ Tanks, until base+credits reach
+    ``MAX_BINDING_MISSILE_CAP``. Power bombs: the Power Bomb launcher (a findable
+    progression item) grants ``starting_power_bombs``; we credit PB Tanks until
+    base+credits reach ``MAX_BINDING_PB_CAP``.
+
+    Caps at the available pool counts. If even the full pool can't reach a cap
+    (e.g. zeroed starting ammo AND zero per-tank yield), all copies are
+    progression and that capacity route drops out of logic — AP accessibility
+    stays sound, exactly as for the energy model. The MissileLauncher unlock
+    (Missile Tank>=1) is covered by the precollected copy, not by these counts."""
+    import math
+    # Missiles
+    have_m = int(starting_missiles) + PRECOLLECTED_MISSILE_TANKS * int(missile_tank_ammo)
+    need_m = MAX_BINDING_MISSILE_CAP - have_m
+    mt = 0
+    mpt = 0
+    if need_m > 0 and int(missile_tank_ammo) > 0:
+        mt = min(int(missile_tank_count), math.ceil(need_m / int(missile_tank_ammo)))
+        need_m -= mt * int(missile_tank_ammo)
+    if need_m > 0 and int(missile_plus_tank_ammo) > 0:
+        mpt = min(int(missile_plus_tank_count),
+                  math.ceil(need_m / int(missile_plus_tank_ammo)))
+    # Power bombs
+    need_pb = MAX_BINDING_PB_CAP - int(starting_power_bombs)
+    pbt = 0
+    if need_pb > 0 and int(power_bomb_tank_ammo) > 0:
+        pbt = min(int(power_bomb_tank_count),
+                  math.ceil(need_pb / int(power_bomb_tank_ammo)))
+    return mt, mpt, pbt
+
+
 # Number of in-game Nav Station hint plaques baked into the starter template.
 # _generate_nav_hints fills up to this many with real AP placement hints;
 # patcher_pipeline._apply_nav_hints maps them onto the template plaques and
@@ -200,11 +268,13 @@ class DreadWorld(World):
         # spawn, with the full starting kit) stays vanilla and fill can bootstrap.
         if door_on:
             from .DoorRando import roll_assignments
+            from .graph_logic import ammo_amounts_from_options
             self._dock_assignments = roll_assignments(
                 graph, self.random, mode="randomized",
                 starting_items=base_items, trick_levels=tl,
                 start_comp=self._start_comp, transport_matching=tm,
-                energy_per_tank=int(self.options.energy_per_tank.value))
+                energy_per_tank=int(self.options.energy_per_tank.value),
+                ammo_amounts=ammo_amounts_from_options(self.options))
 
     def create_regions(self) -> None:
         # Events are graph regions; AP's BFS must re-derive event-gated
@@ -228,15 +298,58 @@ class DreadWorld(World):
         from Options import OptionError
 
         o = self.options
-        # Sanity guard: PB gates become unreachable if neither the main pickup
-        # nor any tank can grant ammo. Rules currently collapse ammo to >=1
-        # (CLAUDE.md v0.3 deferred), so AP fill won't catch this — we raise
-        # here at generation time instead.
-        if (int(o.power_bomb_tank_count.value) == 0
-                and int(o.starting_power_bombs.value) == 0):
+        # Sanity guards (faithful v0.3 ammo model): a config that can never reach
+        # the binding ammo capacity makes the ammo-gated locations unreachable.
+        # AP's fill would still raise a (cryptic) FillError; we raise a clearer
+        # OptionError up front pointing at the knobs to fix.
+        #
+        # Power bombs: PB gates need >= MAX_BINDING_PB_CAP. The only PB capacity
+        # sources are the launcher's starting_power_bombs and PB Tanks; if neither
+        # can contribute, the gates are unreachable.
+        if (int(o.starting_power_bombs.value) < MAX_BINDING_PB_CAP
+                and (int(o.power_bomb_tank_count.value) == 0
+                     or int(o.power_bomb_tank_ammo.value) == 0)):
             raise OptionError(
-                "power_bomb_tank_count=0 with starting_power_bombs=0 makes "
-                "Power Bomb gates unreachable. Set at least one to >=1."
+                "Power Bomb capacity can never reach the in-logic requirement "
+                f"({MAX_BINDING_PB_CAP}): starting_power_bombs="
+                f"{int(o.starting_power_bombs.value)} and no PB Tank capacity "
+                "(power_bomb_tank_count or power_bomb_tank_ammo is 0). Raise "
+                "starting_power_bombs, or give Power Bomb Tanks a nonzero count "
+                "and ammo."
+            )
+        # Missiles: missile gates need >= MAX_BINDING_MISSILE_CAP. Sources are
+        # starting_missiles + the precollected Missile Tank + findable tanks.
+        max_missiles = (
+            int(o.starting_missiles.value)
+            + (PRECOLLECTED_MISSILE_TANKS + int(o.missile_tank_count.value))
+            * int(o.missile_tank_ammo.value)
+            + int(o.missile_plus_tank_count.value)
+            * int(o.missile_plus_tank_ammo.value)
+        )
+        if max_missiles < MAX_BINDING_MISSILE_CAP:
+            raise OptionError(
+                "Missile capacity can never reach the in-logic requirement "
+                f"({MAX_BINDING_MISSILE_CAP}): the most missiles obtainable is "
+                f"{max_missiles} (starting_missiles + all tanks at their ammo "
+                "values). Raise starting_missiles or missile_tank_ammo / "
+                "missile_plus_tank_ammo."
+            )
+        # Zero starting missile capacity (starting_missiles=0 AND
+        # missile_tank_ammo=0, so the precollected Missile Tank also grants 0)
+        # forces ALL missile capacity through the 12 Missile+ Tanks — but the
+        # earliest missile gates then require a *found* Missile+ Tank that itself
+        # sits behind missile gates. That self-gate is unsolvable for fill at any
+        # accessibility (verified across seeds). This mirrors the known-
+        # unsupported energy_tank_count=0 extreme (CLAUDE.md v0.3). Any nonzero
+        # starting_missiles OR missile_tank_ammo bootstraps the early sphere and
+        # is fine.
+        if (int(o.starting_missiles.value) == 0
+                and int(o.missile_tank_ammo.value) == 0):
+            raise OptionError(
+                "starting_missiles=0 with missile_tank_ammo=0 leaves no early "
+                "missile capacity (the abundant Missile Tank pool grants 0), so "
+                "the missile-gated start sphere can't bootstrap. Give "
+                "starting_missiles or missile_tank_ammo a nonzero value."
             )
 
         # Option-driven counts override items.json pool_count for tanks.
@@ -285,6 +398,26 @@ class DreadWorld(World):
         )
         chain_progression_n["Energy Tank"] = etank_prog
         chain_progression_n["Energy Part"] = epart_prog
+
+        # Faithful ammo model (v0.3): make enough Missile / Missile+ / Power Bomb
+        # Tank copies progression that AP's advancement sweep can clear the worst
+        # sole-binding ammo capacity gate at this slot's ammo settings. See
+        # _ammo_progression_counts + MAX_BINDING_MISSILE_CAP / MAX_BINDING_PB_CAP.
+        # At vanilla defaults this is (0, 0, 0) — the precollected Missile Tank
+        # plus starting capacity already meet the binding caps, so no findable
+        # tank is required (strictly fewer advancement copies than the old static
+        # cap of 3/1/1, which improves fill health). It only grows when the user
+        # lowers starting ammo / per-tank yield.
+        mt_prog, mpt_prog, pbt_prog = _ammo_progression_counts(
+            int(o.starting_missiles.value), int(o.missile_tank_ammo.value),
+            int(o.missile_plus_tank_ammo.value),
+            int(o.missile_tank_count.value), int(o.missile_plus_tank_count.value),
+            int(o.starting_power_bombs.value), int(o.power_bomb_tank_ammo.value),
+            int(o.power_bomb_tank_count.value),
+        )
+        chain_progression_n["Missile Tank"] = mt_prog
+        chain_progression_n["Missile+ Tank"] = mpt_prog
+        chain_progression_n["Power Bomb Tank"] = pbt_prog
         # NOTE: we deliberately do NOT raise when the full energy pool can't reach
         # the worst no-suit threshold (e.g. very low energy_per_tank, or a small
         # tank count). Those high-HP gates are ALWAYS inside an OR with a
@@ -300,38 +433,28 @@ class DreadWorld(World):
         # at amount=1, only the FIRST N copies get the row's classification —
         # the rest fall back to "useful" (logic-irrelevant but still placed in
         # reachable spots where possible).
-        #   - Missile+ Tank: 336 amount=1 refs, NOT precollected. The first
-        #     copy is logic-gating; the other 11 are ammo capacity.
         #   - Flash Shift Upgrade / Speed Booster Upgrade: default to 0 in the
         #     pool (the chains are baked into the main pickup); when shuffled
         #     their progression count is dynamic — see chain_progression_n.
-        #   - Missile Tank: all its logic atoms are amount=1, satisfied by the
-        #     PRECOLLECTED copy (BASE_STARTING_ITEMS), which is advancement
-        #     because create_item reads items.json's class, NOT this cap. Its
-        #     `sum` missile-capacity gates have a real binding of only 17 (= 15
-        #     base + the precollected copy's 2): every higher threshold (up to
-        #     203) is OR'd with a weapon alternative that's always reachable, so
-        #     NO findable Missile Tank is logically required (verified 0
-        #     unreachable with this cap at 0, across all trick levels). Leaving
-        #     all 60 findable copies advancement starved AP's fill_restrictive
-        #     of swap space (advancement items must land in reachable spots),
-        #     making generation fragile and slow. Cap to a small safety margin
-        #     and let the rest be `useful` (non-advancement → placeable
-        #     anywhere). The precollected copy keeps state.has("Missile Tank")
-        #     true. (create_filler() force-classes its junk `filler` for the
-        #     same reason — get_filler_item_name returns Missile Tank.) See
+        #   - Missile Tank / Missile+ Tank / Power Bomb Tank: dynamic ammo model
+        #     (chain_progression_n above). The MissileLauncher unlock (a plain
+        #     Missile Tank>=1 atom) is satisfied by the PRECOLLECTED Missile Tank
+        #     (BASE_STARTING_ITEMS), which is advancement because create_item
+        #     reads items.json's class, NOT this cap. The `sum` capacity gates
+        #     bind only up to MAX_BINDING_MISSILE_CAP / MAX_BINDING_PB_CAP; every
+        #     higher threshold is OR'd with a reachable alternative, so at vanilla
+        #     ammo settings _ammo_progression_counts returns (0,0,0) and the rest
+        #     are `useful` (pure capacity, placeable anywhere). Leaving all 60
+        #     findable Missile Tanks advancement would starve AP's fill_restrictive
+        #     of swap space. (create_filler() force-classes its junk `filler` for
+        #     the same reason — get_filler_item_name returns Missile Tank.) See
         #     test_missile_tank_classification.
-        MIXED_CLASSIFICATION_FIRST_N = {
-            "Missile+ Tank": 1,
-            "Missile Tank": 3,
-            # Energy Tank / Energy Part progression counts are dynamic (depend on
-            # energy_per_tank) and live in chain_progression_n — see the faithful
-            # HP model above. NOT listed here.
-            # PBAmmo sum gates top out at threshold=2 (= 1 PB Tank's worth),
-            # so only the first copy needs to be progression. The remaining
-            # 12 are pure ammo capacity.
-            "Power Bomb Tank": 1,
-        }
+        # Energy Tank / Energy Part (HP model) AND Missile Tank / Missile+ Tank /
+        # Power Bomb Tank (ammo model) progression counts are all dynamic (they
+        # depend on energy_per_tank / starting + per-tank ammo) and live in
+        # chain_progression_n above. None are listed here — this static table is
+        # now only for items whose binding is option-independent.
+        MIXED_CLASSIFICATION_FIRST_N: dict[str, int] = {}
 
         non_event_locations = sum(
             1 for l in location_table if l.pickup_type != "event"

@@ -22,9 +22,14 @@ needed surface. Together they pin the user-visible behavior:
 
   - Default counts (no options) reproduce the Randovania starter pool.
   - Setting EnergyTankCount=N puts exactly N Energy Tanks in the pool.
-  - ``power_bomb_tank_count=0 + starting_power_bombs=0`` raises OptionError.
+  - An ammo config that can never reach the binding capacity raises OptionError
+    (PB: starting_power_bombs<2 with no tank capacity; missiles: no source can
+    reach MAX_BINDING_MISSILE_CAP).
   - MissileTankCount=0 means no Missile Tanks (incl. filler) — falls back to
     Energy Part / Power Bomb Tank.
+  - The faithful ammo model classifies just enough Missile / Missile+ / Power
+    Bomb Tanks progression for the binding caps (0 at vanilla, scaling up as
+    starting/per-tank ammo drops).
 """
 from __future__ import annotations
 
@@ -426,41 +431,55 @@ def test_default_pool_has_randovania_counts():
 
 @pytestmark_runtime
 def test_missile_tank_classification():
-    """The PRECOLLECTED Missile Tank must be advancement; the findable copies
-    need not be.
+    """The PRECOLLECTED Missile Tank must be advancement; at vanilla ammo
+    settings NO findable Missile Tank needs to be.
 
-    Every compiled atom on Missile Tank is amount=1, so the single precollected
-    copy (BASE_STARTING_ITEMS) satisfies them all from turn 0 — and it IS
-    advancement because create_item reads items.json's classification, not the
-    MIXED cap. (Regression guard for the original bug: a *useful* precollected
-    copy never enters prog_items, so state.has("Missile Tank") would be
-    permanently False, making ~36 locations unreachable.)
+    The MissileLauncher unlock is a plain ``Missile Tank>=1`` atom, satisfied by
+    the single precollected copy (BASE_STARTING_ITEMS) — which IS advancement
+    because create_item reads items.json's classification, not the dynamic cap.
+    (Regression guard: a *useful* precollected copy never enters prog_items, so
+    state.has("Missile Tank") would be permanently False, making ~36 locations
+    unreachable.)
 
-    The 60 findable copies, by contrast, carry no logic weight: the binding
-    missile-capacity `sum` gate is only 17 (= 15 base + the precollected copy's
-    2); every higher threshold is OR'd with a weapon alternative. Leaving all 60
-    advancement starved fill_restrictive of swap space (fragile/slow
-    generation). So only a small margin stays advancement; the rest are
-    non-advancement (`useful` from the cap + `filler` from padding)."""
+    The faithful ammo model (_ammo_progression_counts) makes findable Missile
+    Tanks progression only as far as needed to reach MAX_BINDING_MISSILE_CAP (15)
+    given the slot's starting + per-tank ammo. At vanilla (start 15, +2/tank, one
+    precollected) base capacity already meets the cap, so it returns 0 findable
+    progression copies — strictly fewer than the old static cap of 3, which frees
+    fill swap space. The rest are non-advancement (`useful` + padding `filler`)."""
     from BaseClasses import ItemClassification
     world, mw = _build_world()
     world.create_items()
 
-    # Precollected copy: advancement — the actual logic requirement.
+    # Precollected copy: advancement — the launcher-unlock requirement.
     pre = [it for it in mw.precollected_items if it.name == "Missile Tank"]
     assert pre, "Missile Tank must be precollected"
     assert all(it.advancement for it in pre), \
         "precollected Missile Tank must be advancement (else state.has is blind)"
 
-    # Findable copies: a small advancement margin, the rest non-advancement.
+    # Findable copies at vanilla ammo: zero advancement (cap met by base+precollect).
     mt = [it for it in mw.itempool if it.name == "Missile Tank"]
     assert mt, "no findable Missile Tank copies"
     adv = sum(1 for it in mt if it.advancement)
-    assert adv == 3, f"expected 3 advancement findable Missile Tanks, got {adv}"
+    assert adv == 0, f"expected 0 advancement findable Missile Tanks at vanilla, got {adv}"
     assert all(it.classification in (ItemClassification.useful,
                                      ItemClassification.filler)
-               for it in mt if not it.advancement), \
-        "non-margin Missile Tanks must be useful/filler (non-advancement)"
+               for it in mt), \
+        "vanilla findable Missile Tanks must be useful/filler (non-advancement)"
+
+
+@pytestmark_runtime
+def test_missile_tank_classification_scales_with_low_starting_ammo():
+    """Lower starting_missiles → the ammo model must promote enough findable
+    Missile Tanks to progression to reach MAX_BINDING_MISSILE_CAP (15).
+
+    start 0, +2/tank, precollected copy = 2 capacity → need 13 more → 7 findable
+    tanks at 2 each (ceil(13/2)). Faithful option→logic scaling."""
+    world, mw = _build_world(starting_missiles=0)
+    world.create_items()
+    mt = [it for it in mw.itempool if it.name == "Missile Tank"]
+    adv = sum(1 for it in mt if it.advancement)
+    assert adv == 7, f"expected 7 advancement findable Missile Tanks, got {adv}"
 
 
 @pytestmark_runtime
@@ -491,10 +510,14 @@ def test_pulse_radar_off_is_findable_and_useful():
 
 
 @pytestmark_runtime
-def test_missile_plus_tank_first_is_progression_rest_useful():
-    """Missile+ Tank has 336 amount=1 logic refs but is NOT precollected — the
-    FIRST copy is logic-gating, the rest are pure ammo. MIXED_CLASSIFICATION_
-    FIRST_N["Missile+ Tank"]=1 enforces that split."""
+def test_missile_plus_tank_classification_faithful_ammo():
+    """Missile+ Tank progression count is dynamic (faithful ammo model). At
+    vanilla ammo the missile capacity cap (15) is already met by base + the
+    precollected Missile Tank, and the credit order prefers cheap Missile Tanks,
+    so ZERO Missile+ Tanks are progression — all are pure-capacity `useful`.
+
+    Power Bomb Tank likewise: the launcher grants the vanilla 2 PB (= the binding
+    cap), so no PB Tank is progression at vanilla."""
     from BaseClasses import ItemClassification
     world, mw = _build_world()
     world.create_items()
@@ -505,12 +528,29 @@ def test_missile_plus_tank_first_is_progression_rest_useful():
     useful_n = sum(
         1 for it in mpt if it.classification == ItemClassification.useful
     )
-    assert progression_n == 1, (
-        f"Missile+ Tank: expected exactly 1 progression copy, got {progression_n}"
+    assert progression_n == 0, (
+        f"Missile+ Tank: expected 0 progression copies at vanilla, got {progression_n}"
     )
-    assert useful_n == len(mpt) - 1, (
-        f"Missile+ Tank: expected {len(mpt) - 1} useful copies, got {useful_n}"
+    assert useful_n == len(mpt), (
+        f"Missile+ Tank: expected all {len(mpt)} useful, got {useful_n}"
     )
+    pbt = [it for it in mw.itempool if it.name == "Power Bomb Tank"]
+    pbt_prog = sum(1 for it in pbt if it.advancement)
+    assert pbt_prog == 0, (
+        f"Power Bomb Tank: expected 0 progression at vanilla, got {pbt_prog}"
+    )
+
+
+@pytestmark_runtime
+def test_power_bomb_tank_classification_scales_with_low_starting_pb():
+    """starting_power_bombs=0 → the launcher grants 0 PB, so the ammo model must
+    promote PB Tanks to reach MAX_BINDING_PB_CAP (2). At +1/tank that's 2 tanks.
+    (power_bomb_tank_count default 13 leaves headroom; this is a faithful scale.)"""
+    world, mw = _build_world(starting_power_bombs=0, power_bomb_tank_ammo=1)
+    world.create_items()
+    pbt = [it for it in mw.itempool if it.name == "Power Bomb Tank"]
+    adv = sum(1 for it in pbt if it.advancement)
+    assert adv == 2, f"expected 2 advancement Power Bomb Tanks, got {adv}"
 
 
 def test_upgrade_pool_count_is_zero(items):
@@ -683,6 +723,58 @@ def test_zero_power_bombs_combo_raises():
     world, _ = _build_world(power_bomb_tank_count=0, starting_power_bombs=0)
     with pytest.raises(OptionError):
         world.create_items()
+
+
+@pytestmark_runtime
+def test_zero_missile_capacity_combo_raises():
+    """starting_missiles=0 AND missile_tank_ammo=0 AND missile_plus_tank_ammo=0
+    means no source can ever reach MAX_BINDING_MISSILE_CAP — the missile gates
+    are unreachable. The faithful model raises a clear OptionError up front
+    rather than letting AP emit a cryptic FillError."""
+    from Options import OptionError
+    world, _ = _build_world(
+        starting_missiles=0, missile_tank_ammo=0, missile_plus_tank_ammo=0)
+    with pytest.raises(OptionError):
+        world.create_items()
+
+
+@pytestmark_runtime
+def test_zero_early_missile_capacity_self_gate_raises():
+    """starting_missiles=0 AND missile_tank_ammo=0 (precollected tank grants 0)
+    leaves no early missile capacity — the start sphere self-gates on a found
+    Missile+ Tank that itself sits behind missile gates. Unsolvable for fill at
+    any accessibility, so we raise OptionError up front. (missile_plus_tank_ammo
+    stays at its default here, so this is the early-bootstrap guard, distinct
+    from the never-reaches-cap guard above.)"""
+    from Options import OptionError
+    world, _ = _build_world(starting_missiles=0, missile_tank_ammo=0)
+    with pytest.raises(OptionError):
+        world.create_items()
+
+
+@pytestmark_runtime
+def test_inert_missile_tank_with_starting_capacity_ok():
+    """missile_tank_ammo=0 alone (default starting_missiles=15 >= the binding
+    cap) is fine — base capacity carries, tanks are pure unlock/flavor. Must NOT
+    raise and the ammo model promotes 0 findable tanks (cap already met)."""
+    world, mw = _build_world(missile_tank_ammo=0)
+    world.create_items()
+    mt_adv = sum(1 for it in mw.itempool
+                 if it.name == "Missile Tank" and it.advancement)
+    assert mt_adv == 0
+
+
+@pytestmark_runtime
+def test_low_starting_missiles_still_generates_pool():
+    """starting_missiles=0 with normal tank ammo is solvable: the ammo model
+    just promotes more Missile Tanks to progression. create_items must NOT raise
+    and must produce the full pool."""
+    world, mw = _build_world(starting_missiles=0)
+    world.create_items()
+    assert len(mw.itempool) > 0
+    mt_adv = sum(1 for it in mw.itempool
+                 if it.name == "Missile Tank" and it.advancement)
+    assert mt_adv == 7  # ceil((15-2)/2) findable tanks promoted
 
 
 @pytestmark_runtime

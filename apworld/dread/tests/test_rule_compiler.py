@@ -265,6 +265,79 @@ def test_sum_power_bomb_shape():
     assert pred(StubState({"Power Bomb": 1, "Power Bomb Tank": 2})) is True  # 6
 
 
+# ---- sum option scaling (faithful v0.3 ammo) ----
+
+def test_sum_ammo_amounts_override_base():
+    """ammo_amounts['missile_base'] replaces the baked missile base (15).
+    Lowering starting_missiles to 0 makes a thr=15 gate need real tanks."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2}],
+           "base": 15, "threshold": 15}
+    # vanilla: base 15 alone meets thr 15.
+    assert compile_to_lambda(ast, player=1)(StubState({})) is True
+    # starting_missiles=0: base 0 → need 8 tanks at 2 each (16 >= 15).
+    pred = compile_to_lambda(ast, player=1, ammo_amounts={"missile_base": 0})
+    assert pred(StubState({})) is False
+    assert pred(StubState({"Missile Tank": 7})) is False   # 14 < 15
+    assert pred(StubState({"Missile Tank": 8})) is True    # 16 >= 15
+
+
+def test_sum_ammo_amounts_override_per_unit():
+    """ammo_amounts per-unit keys replace each term's baked yield. With
+    missile_tank_ammo=5, one tank now adds 5 not 2."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2},
+                     {"name": "Missile+ Tank", "per_unit": 10}],
+           "base": 15, "threshold": 30}
+    pred = compile_to_lambda(ast, player=1, ammo_amounts={
+        "missile_base": 0,
+        "missile_tank_per_unit": 5,
+        "missile_plus_tank_per_unit": 20,
+    })
+    assert pred(StubState({"Missile Tank": 5})) is False   # 25 < 30
+    assert pred(StubState({"Missile Tank": 6})) is True    # 30
+    assert pred(StubState({"Missile+ Tank": 2})) is True   # 40
+
+
+def test_sum_ammo_amounts_zero_per_unit_makes_tanks_inert():
+    """missile_tank_ammo=0 → tanks add nothing; only base satisfies the gate.
+    Mirrors the faithful 'tanks give no capacity' difficulty config."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2}],
+           "base": 15, "threshold": 20}
+    pred = compile_to_lambda(ast, player=1, ammo_amounts={
+        "missile_base": 15, "missile_tank_per_unit": 0})
+    assert pred(StubState({"Missile Tank": 99})) is False   # base 15 only
+
+
+def test_sum_ammo_amounts_pb_launcher_per_unit():
+    """Power Bomb launcher grant rides power_bomb_per_unit (=starting_power_bombs)
+    and PB tanks ride power_bomb_tank_per_unit; base stays 0 so a tank without
+    the launcher reads only tank capacity (the launcher AND lives a level up)."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Power Bomb", "per_unit": 2},
+                     {"name": "Power Bomb Tank", "per_unit": 2}],
+           "base": 0, "threshold": 2}
+    pred = compile_to_lambda(ast, player=1, ammo_amounts={
+        "pb_base": 0, "power_bomb_per_unit": 2, "power_bomb_tank_per_unit": 1})
+    assert pred(StubState({"Power Bomb": 1})) is True       # launcher grants 2
+    assert pred(StubState({"Power Bomb Tank": 1})) is False  # 1 < 2
+    assert pred(StubState({"Power Bomb Tank": 2})) is True   # 2
+
+
+def test_sum_threshold_never_rescaled_by_amounts():
+    """The route's raw demand (threshold) is invariant under ammo_amounts —
+    only base/per_unit move. A thr=40 gate stays thr=40."""
+    ast = {"type": "sum",
+           "terms": [{"name": "Missile Tank", "per_unit": 2}],
+           "base": 15, "threshold": 40}
+    pred = compile_to_lambda(ast, player=1, ammo_amounts={
+        "missile_base": 15, "missile_tank_per_unit": 2})
+    # 15 + 12*2 = 39 < 40 ; 13 tanks = 41 >= 40
+    assert pred(StubState({"Missile Tank": 12})) is False
+    assert pred(StubState({"Missile Tank": 13})) is True
+
+
 # ---- damage_threshold (v0.3 HP budget) ----
 
 def test_damage_threshold_suit_shortcircuits():
