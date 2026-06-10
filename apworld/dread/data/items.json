@@ -275,7 +275,7 @@
     "patcher_item_id": "ITEM_LIFE_SHARDS",
     "quantity": 1,
     "pool_count": 16,
-    "classification": "filler",
+    "classification": "progression",
     "model_name": "item_energyfragment"
   },
   {

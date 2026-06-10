@@ -53,6 +53,39 @@ def test_graph_schema_and_shape(graph):
 
 
 @graph_required
+def test_max_no_suit_threshold_matches_world_constant(graph):
+    """The faithful HP model in World.py sizes the energy progression pool from
+    MAX_NO_SUIT_HP (the largest no-suit damage_threshold in logic). If upstream
+    logic raises that ceiling past the constant, the default pool may no longer
+    provision enough advancement energy — catch it here so the constant (and the
+    test_energy_is_progression_visible_to_logic budget) stay honest."""
+    import re
+    world_src = (ROOT / "World.py").read_text()
+    m = re.search(r"MAX_NO_SUIT_HP\s*=\s*(\d+)", world_src)
+    assert m, "MAX_NO_SUIT_HP constant not found in World.py"
+    declared = int(m.group(1))
+
+    def walk(ast, acc):
+        if not isinstance(ast, dict):
+            return
+        if ast.get("type") == "damage_threshold" and not ast.get("suit_options"):
+            acc.append(ast["hp_needed"])
+        for c in ast.get("items", []):
+            walk(c, acc)
+
+    acc = []
+    for _src, _dst, ast in graph["entrances"]:
+        walk(ast, acc)
+    walk(graph["victory_condition"], acc)
+    actual_max = max(acc) if acc else 0
+    assert actual_max <= declared, (
+        f"graph has a no-suit threshold {actual_max} > MAX_NO_SUIT_HP "
+        f"{declared}; bump the constant in World.py and re-verify the default "
+        f"energy pool still covers it."
+    )
+
+
+@graph_required
 def test_every_pickup_maps_to_an_ap_location(graph):
     # Read names straight from locations.json so this runs without the AP runtime
     # (importing dread.Locations pulls BaseClasses, absent in CI).
@@ -144,6 +177,27 @@ runtime = pytest.mark.skipif(
     {"accessibility": "minimal"},
     {"trick_level": 5},
     {"required_artifacts": 12},
+    # Faithful HP model: the real damage thresholds must be satisfiable across
+    # trick levels and accessibility. Beginner (trick_level 1) is the binding
+    # case (fewest suitless-trick shortcuts, so the no-suit HP gates bind).
+    {"trick_level": 1, "accessibility": "full"},
+    {"trick_level": 1, "accessibility": "minimal"},
+    # Energy extremes. Low per-tank (each tank worth less HP, so each damage gate
+    # needs more energy). The worst no-suit HP gates (up to 1150) are always
+    # OR'd with a Combat/Knowledge-trick or Power Bomb alternative, so a thin
+    # energy budget doesn't strand a location — verified solvable at full
+    # accessibility even at 50/tank and a reduced tank count.
+    {"energy_per_tank": 50},
+    {"energy_per_tank": 50, "trick_level": 1},
+    {"energy_tank_count": 4},
+    # NOTE: energy_tank_count: 0 is a known-unsupported extreme. With no tanks
+    # the 16 parts (499 HP max) are ALL progression and can self-gate (a damage
+    # route needing many parts may sit behind that route), so neither `full` nor
+    # `minimal` reliably generates. Documented in the v0.3 report; not asserted
+    # here. Users wanting low energy should lower energy_per_tank, not zero tanks.
+    # High counts: larger advancement energy pool — checks pool pressure /
+    # trim behavior under full accessibility.
+    {"energy_tank_count": 12, "energy_part_count": 24},
 ])
 def test_graph_generation_is_solvable(opts):
     from test.general import setup_multiworld, gen_steps

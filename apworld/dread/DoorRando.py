@@ -70,9 +70,15 @@ SHIELD_IDS_PER_SCENARIO = 100  # open-dread-rando's per-scenario shield-id pool
 SHIELD_BUDGET_MARGIN = 10      # headroom kept below the hard cap
 
 
-def _eval(ast: dict, items: dict, events: set, tl: dict) -> bool:
+def _eval(ast: dict, items: dict, events: set, tl: dict,
+          energy_per_tank: int = 100) -> bool:
     """Evaluate a (dock-resolved) rule AST against an item multiset, a set of
-    triggered events, and trick levels. Mirrors compile_to_lambda semantics."""
+    triggered events, and trick levels. Mirrors compile_to_lambda semantics.
+
+    ``energy_per_tank`` scales the damage_threshold HP budget to match
+    Rules.compile_to_lambda (faithful v0.3 model). The start-door guard only
+    ever calls this with the starting kit (no Energy Tanks), so it's effectively
+    inert here, but kept consistent with the compiler."""
     t = ast.get("type")
     if t == "trivial":
         return True
@@ -89,19 +95,23 @@ def _eval(ast: dict, items: dict, events: set, tl: dict) -> bool:
                                  for x in ast["terms"]) >= ast["threshold"]
     if t == "damage_threshold":
         return (any(items.get(s, 0) > 0 for s in ast["suit_options"])
-                or 99 + 100 * items.get("Energy Tank", 0)
-                + 25 * items.get("Energy Part", 0) >= ast["hp_needed"])
+                or 99 + energy_per_tank * items.get("Energy Tank", 0)
+                + (energy_per_tank / 4) * items.get("Energy Part", 0)
+                >= ast["hp_needed"])
     if t == "and":
-        return all(_eval(c, items, events, tl) for c in ast["items"])
+        return all(_eval(c, items, events, tl, energy_per_tank)
+                   for c in ast["items"])
     if t == "or":
-        return any(_eval(c, items, events, tl) for c in ast["items"])
+        return any(_eval(c, items, events, tl, energy_per_tank)
+                   for c in ast["items"])
     return False
 
 
 def early_reachable(graph: dict, items: dict, tl: dict,
                     start_comp: int | None = None,
                     use_events: bool = True,
-                    transport_matching: dict | None = None) -> tuple[set, dict]:
+                    transport_matching: dict | None = None,
+                    energy_per_tank: int = 100) -> tuple[set, dict]:
     """Regions reachable from the start with VANILLA doors + the given items +
     trick levels. Returns (reachable_comps, side_id->(src,dst)).
 
@@ -141,7 +151,8 @@ def early_reachable(graph: dict, items: dict, tl: dict,
         while frontier:
             u = frontier.pop()
             for v, ast in adj.get(u, []):
-                if v not in reach and _eval(ast, items, triggered, tl):
+                if v not in reach and _eval(ast, items, triggered, tl,
+                                            energy_per_tank):
                     reach.add(v)
                     frontier.append(v)
         if not use_events:
@@ -176,6 +187,7 @@ def roll_assignments(
     graph: dict, rng, mode: str = "randomized",
     starting_items: dict | None = None, trick_levels: dict | None = None,
     start_comp: int | None = None, transport_matching: dict | None = None,
+    energy_per_tank: int = 100,
 ) -> dict[str, str]:
     """Return ``{side_id: weakness}`` for door rando. ``mode`` other than a
     randomizing mode yields ``{}`` = vanilla doors.
@@ -203,7 +215,8 @@ def roll_assignments(
     if starting_items is not None:
         reach, side_comp = early_reachable(
             graph, starting_items, trick_levels or {}, start_comp,
-            transport_matching=transport_matching)
+            transport_matching=transport_matching,
+            energy_per_tank=energy_per_tank)
         protected = {sid for sid, (c0, c1) in side_comp.items()
                      if c0 in reach or c1 in reach}
 

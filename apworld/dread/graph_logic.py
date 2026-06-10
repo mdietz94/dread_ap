@@ -93,6 +93,7 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
     mw = world.multiworld
     player = world.player
     tl = effective_trick_levels(world.options)
+    ept = int(world.options.energy_per_tank.value)
     assign = dock_assignments or {}
     dock_sides = g["dock_sides"]
     wreq = g["weakness_requirements"]
@@ -133,7 +134,8 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
             continue
         ent = regions[csrc].connect(
             regions[cdst], f"e{i}",
-            rule=compile_to_lambda(resolved, player, tl, graph_mode=True))
+            rule=compile_to_lambda(resolved, player, tl, graph_mode=True,
+                                   energy_per_tank=ept))
         for en in _event_atoms(resolved):
             if en in ev_region:
                 indirect.append((ev_region[en], ent))
@@ -171,12 +173,14 @@ def set_graph_rules(world) -> None:
     player = world.player
     mw = world.multiworld
     tl = effective_trick_levels(world.options)
+    ept = int(world.options.energy_per_tank.value)
 
     if getattr(mw.worlds[player], "explicit_indirect_conditions", True):
         for ev_region, ent in getattr(world, "_graph_indirect", []):
             mw.register_indirect_condition(ev_region, ent)
 
-    victory = compile_to_lambda(world._graph_victory, player, tl, graph_mode=True)
+    victory = compile_to_lambda(world._graph_victory, player, tl, graph_mode=True,
+                                energy_per_tank=ept)
     n_dna = int(world.options.required_artifacts.value)
     if n_dna > 0:
         dna = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))
