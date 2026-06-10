@@ -228,7 +228,9 @@ def compile_requirement(req: dict, ctx: CompileContext) -> Predicate:
         if d["type"] == "events":
             return lambda state: state.has(event_item_name(d["name"]), ctx.player)
         if d["type"] == "damage":
-            # damage requirements collapse to suit ownership in v0.1
+            # v0.1 plan: collapse damage to suit ownership.
+            # SUPERSEDED (PR #114): damage is now a real HP threshold checked
+            # against the energy budget (Energy Tank/Part are progression).
             return compile_damage(d, ctx)
     if t == "template":
         return compile_requirement(ctx.templates[req["data"]], ctx)
@@ -352,7 +354,7 @@ behind ≥1 unique item.
 2. **Template recursion** — expand all templates **before** lambda compilation, otherwise expansion happens once per lambda invocation. Cache aggressively.
 3. **Bidirectional doors** — connection requirements are usually symmetric but not always (one-way drops, climb-walls). Read both directions before assuming.
 4. **Trick gating** — default ALL tricks to False. Don't accidentally include "advanced glitched" paths as required. The wire-up test "Plasma Beam requires Morph Ball" must not fail because the compiler picked up a ledge-warp trick path that's hidden behind tricks=False.
-5. **Damage resources** — `{"type": "damage", "name": "Lava", "amount": 30}` etc. For v0.1, map to suit ownership: any heat/lava resource → `state.has("Varia Suit") or state.has("Gravity Suit")`. Water → Gravity Suit. Damage amount is ignored.
+5. **Damage resources** — `{"type": "damage", "name": "Lava", "amount": 30}` etc. For v0.1, map to suit ownership: any heat/lava resource → `state.has("Varia Suit") or state.has("Gravity Suit")`. Water → Gravity Suit. Damage amount is ignored. **SUPERSEDED (PR #114):** the amount is no longer ignored — damage compiles to a `damage_threshold` checked against the real energy budget (`99 + energy_per_tank*EnergyTank + (energy_per_tank/4)*EnergyPart`), with listed suits still short-circuiting; Energy Tank/Part are progression-classified.
 6. **Events as items** — they need to enter the AP item pool to be holdable in `state.has`. `World.create_items` adds them; `set_rules` calls `place_locked_item` on the event location.
 7. **Cross-area travel** — Dread's areas connect via teleporters/transports. Find them in each area's node graph (`node_type: "dock"` with `default_connection.area` ≠ current area). Wire them as Regions connections in `Regions.py`.
 8. **Starting location** — Samus starts in Artaria at `StartPoint0` in `s010_cave`. The `valid_starting_location: true` field in nodes is your hint. Other areas have no native starting points; reachability for Burenia must traverse via Artaria → cross-area dock → Burenia.

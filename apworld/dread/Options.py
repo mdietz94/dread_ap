@@ -273,11 +273,16 @@ class ArtifactPlacement(Choice):
 
 
 # ---------------------------------------------------------------------------
-# Item pool composition — mirrors Dreadvania's per-pickup count knobs. None
-# of these affect AP logic today (rules currently collapse ammo to >=1 and
-# damage to suit ownership — CLAUDE.md v0.3 deferred), so they are purely
-# pool-shape / difficulty options. Defaults match the Randovania starter
-# preset, so omitting them in YAML reproduces vanilla behavior.
+# Item pool composition — mirrors Dreadvania's per-pickup count knobs.
+# The ENERGY knobs DO feed AP logic now (faithful HP damage model): Energy Tank
+# Count, Energy Part Count, and Energy Per Tank determine how much energy is
+# classified progression and the HP budget damage gates are checked against, so
+# lowering them can make routes that survive raw damage unreachable. The MISSILE
+# / POWER BOMB count knobs feed ammo `sum` atoms, but every higher ammo
+# threshold is OR'd with a reachable weapon alternative, so in practice the
+# binding ammo requirement is "have >=1" — they are effectively pool-shape /
+# difficulty options. Defaults match the Randovania starter preset, so omitting
+# them in YAML reproduces vanilla behavior.
 # ---------------------------------------------------------------------------
 
 class EnergyTankCount(Range):
@@ -337,9 +342,10 @@ class StartingPowerBombs(Range):
 
 class StartingMissiles(Range):
     """Samus's starting missile capacity (and starting ammo count). Vanilla
-    Randovania starter: 15. A pure difficulty knob — does not affect AP
-    logic, which currently treats ammo as a binary (have/don't-have any
-    missile-grant)."""
+    Randovania starter: 15. A pure difficulty knob — does not affect AP logic:
+    the missile-capacity `sum` gates use a fixed baked starting base (15), and
+    every higher missile threshold is OR'd with a reachable alternative, so the
+    binding ammo requirement is satisfiable with any one missile source."""
     display_name = "Starting Missiles"
     range_start = 0
     range_end = 99
