@@ -46,10 +46,16 @@ def test_translate_damage_heat_emits_threshold():
 
 
 def test_translate_damage_lava_emits_threshold():
+    # In Dread ONLY Gravity Suit negates lava. Randovania's damage_reductions
+    # table gives Lava+Varia a 0.75x multiplier (a reduction, NOT a free pass)
+    # and Lava+Gravity 0.0x (full negation); the logic DB never offers Varia as
+    # a direct lava pass. So Varia must NOT appear here — a Varia-only player
+    # clears a lava gate on the HP budget like any suitless player, matching RDV.
     ast = edr.translate_damage("Lava", 300)
     assert ast["type"] == "damage_threshold"
     assert ast["hp_needed"] == 300
-    assert "Varia Suit" in ast["suit_options"]
+    assert ast["suit_options"] == ["Gravity Suit"]
+    assert "Varia Suit" not in ast["suit_options"]
 
 
 def test_translate_damage_cold_emits_threshold():

@@ -76,6 +76,8 @@ even if part 2 runs long.
 
 - Ammo counting (per the retro, defer to v0.3).
 - Damage thresholds beyond the existing "suit ownership" collapse.
+  (Out of scope for M2 — since DONE in PR #114: damage is now a real HP
+  threshold checked against the energy budget, no longer suit-only.)
 - Rebuilding the compiler from scratch. Only extend where called out.
 - Touching the wire layer (`apworld/dread/client/*`).
 - Touching the patcher adapter (`scripts/build_patcher_json.py`).
