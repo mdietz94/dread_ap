@@ -273,11 +273,14 @@ class ArtifactPlacement(Choice):
 
 
 # ---------------------------------------------------------------------------
-# Item pool composition — mirrors Dreadvania's per-pickup count knobs. None
-# of these affect AP logic today (rules currently collapse ammo to >=1 and
-# damage to suit ownership — CLAUDE.md v0.3 deferred), so they are purely
-# pool-shape / difficulty options. Defaults match the Randovania starter
-# preset, so omitting them in YAML reproduces vanilla behavior.
+# Item pool composition — mirrors Dreadvania's per-pickup count knobs. These now
+# FEED AP LOGIC (faithful v0.3 model): Energy Tank/Part counts feed the HP damage
+# budget, and Missile / Missile+ / Power Bomb Tank counts feed the ammo-capacity
+# `sum` gates (the worst binding capacity is small — 15 missiles / 2 PB — so at
+# vanilla defaults base capacity already covers it and no findable tank is
+# required; lowering the counts/amounts promotes tanks to progression as needed).
+# Defaults match the Randovania starter preset, so omitting them in YAML
+# reproduces vanilla logic + behavior.
 # ---------------------------------------------------------------------------
 
 class EnergyTankCount(Range):

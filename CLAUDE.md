@@ -579,13 +579,19 @@ Tests: `test_rule_compiler` (sum option scaling + threshold invariance),
 `test_graph_logic` (ammo-stressing solvability matrix + cap pin),
 `test_extract_dread_rules` (sum translation unchanged).
 
-Outstanding (non-blocking for v0.1): the environmental/energy-drain half of v0.3
-(heat/cold/lava DOT — needs the runtime damage model); door/elevator
-randomization (door-lock rando shipped; this is the remaining transport polish).
-Real-hardware (or Ryujinx)
-end-to-end run is the next manual gate — but now an *integration smoke* (does the
-bootstrap load on the live ROM/2.1.0, does an item pop, does a check register),
-NOT a semantics probe: the counter/cutscene questions are settled from source.
+Outstanding (non-blocking for v0.1): the v0.3 damage/ammo model is now essentially
+complete — HP-threshold damage (faithful, see above), ammo counting (this change),
+and environmental/energy-drain damage (investigated and found to be at RDV parity:
+per-gate max-HP is a sound, conservative approximation of RDV's path-cumulative
+resolver for Dread, plus a Lava-suit correctness fix — landed separately). Door-lock
+and transport (elevator/shuttle) randomization are SHIPPED (`DoorRando.py` /
+`TransportRando.py`, exposed as the `door_lock_rando` / `transport_rando` options).
+
+The real-hardware end-to-end integration smoke is DONE: validated on real hardware
+(and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop, and checks
+register. The manual validation gate is cleared; the counter/cutscene semantics
+were already settled from source. Remaining items are flavor polish (e.g. RDV's
+"highly dangerous logic" toggle is not exposed).
 
 Kivy GUI: SHIPPED. `client/gui.py` defines `DreadManager(GameManager)` (lazy-
 imported by `DreadContext.run_gui`, so Kivy is never pulled at apworld/generation
