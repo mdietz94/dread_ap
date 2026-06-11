@@ -314,3 +314,40 @@ def test_rdv_item_mapping_resolves_to_valid_ap_items_or_none():
             continue
         assert ap_name in valid, \
             f"RDV_ITEM_TO_AP[{rdv_name!r}] = {ap_name!r} not in items.json"
+
+
+# ---- start_comps actor resolution ----
+
+def test_start_comp_prefers_start_point_actor_name():
+    """valid_starting_location nodes carry two actor fields:
+    - actor_name: the interactive entity (save station / map room) embedded
+      in a wall — spawning Samus there via Game.LoadScenario causes wall collisions
+    - start_point_actor_name: the weight-activated platform where Samus stands
+
+    The graph builder must use start_point_actor_name for the patcher actor so
+    /warp and the ROM starting_location both point at the correct spawn position.
+    Falls back to actor_name only when start_point_actor_name is absent."""
+    def resolve(ex: dict) -> str | None:
+        return ex.get("start_point_actor_name") or ex.get("actor_name")
+
+    # Cataris access point: has both — must pick the platform
+    assert resolve({
+        "actor_name": "accesspoint",
+        "start_point_actor_name": "accesspoint_platform",
+    }) == "accesspoint_platform"
+
+    # Dairon save station: has both — must pick the platform
+    assert resolve({
+        "actor_name": "savestation_000",
+        "start_point_actor_name": "savestation_000_platform",
+    }) == "savestation_000_platform"
+
+    # Artaria StartPoint0: only start_point_actor_name (no actor_name)
+    assert resolve({
+        "start_point_actor_name": "StartPoint0",
+    }) == "StartPoint0"
+
+    # Hypothetical fallback: only actor_name present
+    assert resolve({
+        "actor_name": "some_entity",
+    }) == "some_entity"
