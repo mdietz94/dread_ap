@@ -1247,10 +1247,16 @@ def emit_graph(
             events.append([comp[key], n["event_name"]])
         if n.get("valid_starting_location"):
             region = key[0]
+            ex = n.get("extra", {})
+            # Use start_point_actor_name (the weight-activated platform where
+            # Samus actually stands) for Game.LoadScenario — NOT actor_name
+            # (the save station / map room entity, which is embedded in a wall).
+            # Same pattern as transport endpoints: start_point vs actor.
+            actor = ex.get("start_point_actor_name") or ex.get("actor_name")
             start_comps["::".join(key)] = {
                 "comp": comp[key],
                 "patcher": {"scenario": scenario_of.get(region),
-                            "actor": n.get("extra", {}).get("actor_name")},
+                            "actor": actor},
             }
 
     start = header.starting_location
