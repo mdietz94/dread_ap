@@ -269,8 +269,13 @@ class DreadWorld(World):
         if door_on:
             from .DoorRando import roll_assignments
             from .graph_logic import ammo_amounts_from_options
+            from .Options import DoorLockRando
+            door_mode = ("types"
+                         if int(self.options.door_lock_rando.value)
+                         == DoorLockRando.option_door_types
+                         else "individual")
             self._dock_assignments = roll_assignments(
-                graph, self.random, mode="randomized",
+                graph, self.random, mode=door_mode,
                 starting_items=base_items, trick_levels=tl,
                 start_comp=self._start_comp, transport_matching=tm,
                 energy_per_tank=int(self.options.energy_per_tank.value),

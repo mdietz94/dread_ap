@@ -31,15 +31,26 @@ class StartingArea(Choice):
 
 
 class DoorLockRando(Choice):
-    """Randomize the weapon/tool needed to open each door (Randovania-style).
-    'off' keeps vanilla doors. 'randomized' reassigns every eligible door a
-    random weapon type — both sides of a door always match. The access logic
-    accounts for the new requirements (a door may now demand e.g. Wave Beam or
-    Power Bombs), and items are placed so the seed stays solvable. Enabling this
-    uses the native region-graph logic model."""
+    """Randomize the weapon/tool needed to open each door. Modes mirror
+    Randovania's DockRandoMode (https://github.com/randovania/randovania/blob/main/randovania/layout/base/dock_rando_configuration.py):
+
+      * 'vanilla' — original door locks, nothing randomized.
+      * 'individual_doors' — Randovania "Individual Doors" (DockRandoMode.DOCKS):
+        every eligible door rolls its own random weapon type, independently.
+      * 'door_types' — Randovania "Door Types" (DockRandoMode.WEAKNESSES):
+        randomizes all doors BY TYPE, turning every door of one vanilla type into
+        the same new type world-wide (a consistent global remap).
+
+    Both sides of a door always match. The access logic accounts for the new
+    requirements (a door may now demand e.g. Wave Beam or Power Bombs) and items
+    are placed so the seed stays solvable. Either randomizing mode uses the
+    native region-graph logic model. Legacy names 'off'/'randomized' still work."""
     display_name = "Door Lock Randomizer"
-    option_off = 0
-    option_randomized = 1
+    option_vanilla = 0
+    option_individual_doors = 1
+    option_door_types = 2
+    alias_off = 0           # back-compat: pre-rename YAMLs used off/randomized
+    alias_randomized = 1
     default = 0
 
 
