@@ -546,3 +546,51 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
     assert missile["resources"][0][0]["quantity"] == 0
     assert missile["caption"] == "Sent Big Button to ButtonPusher"
     assert missile["model"] == ["itemsphere"]
+
+
+def test_transport_room_names_merge_into_camera_dict():
+    """Transport rando: room-name overrides rewrite ONLY the named transport
+    collision cameras, leaving other room names intact."""
+    from build_patcher_json import merge_overrides  # noqa: E402
+
+    template = {
+        "configuration_identifier": "VANILLA",
+        "layout_uuid": "00000000-0000-0000-0000-000000000000",
+        "pickups": [],
+        "cosmetic_patches": {"lua": {"camera_names_dict": {
+            "s010_cave": {
+                "collision_camera_034": "Transport to Dairon",   # will be rewritten
+                "collision_camera_050": "Some Other Room",        # untouched
+            },
+        }}},
+    }
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "deadbeef",
+        "starting_area": 0,
+        "placements": [],
+        "transport_room_names": {
+            "s010_cave": {"collision_camera_034": "Transport to Ghavoran - Early Supers"},
+        },
+    }
+    merged = merge_overrides(template, placements_to_overrides(placements))
+    cam = merged["cosmetic_patches"]["lua"]["camera_names_dict"]["s010_cave"]
+    assert cam["collision_camera_034"] == "Transport to Ghavoran - Early Supers"
+    assert cam["collision_camera_050"] == "Some Other Room"
+
+
+def test_no_transport_room_names_leaves_camera_dict_untouched():
+    """Transport rando off (empty overrides) ⇒ camera_names_dict byte-identical."""
+    from build_patcher_json import merge_overrides  # noqa: E402
+
+    cam_in = {"s010_cave": {"collision_camera_034": "Transport to Dairon"}}
+    template = {
+        "configuration_identifier": "VANILLA",
+        "layout_uuid": "00000000-0000-0000-0000-000000000000",
+        "pickups": [],
+        "cosmetic_patches": {"lua": {"camera_names_dict": cam_in}},
+    }
+    placements = {"slot_name": "Samus", "seed_id": "deadbeef",
+                  "starting_area": 0, "placements": []}
+    merged = merge_overrides(template, placements_to_overrides(placements))
+    assert merged["cosmetic_patches"]["lua"]["camera_names_dict"] == cam_in

@@ -44,12 +44,52 @@ def graph():
 
 @graph_required
 def test_graph_schema_and_shape(graph):
-    assert graph["graph_schema_version"] == 3
+    assert graph["graph_schema_version"] == 4
     assert graph["n_regions"] > 0
     assert len(graph["pickups"]) == 149
     assert graph["entrances"]
     # Victory may reference event atoms (compiled in graph_mode to
     # can_reach_region("Event:X")) — no item-only constraint needed here.
+
+
+@graph_required
+def test_transports_carry_source_cc(graph):
+    """v4 schema: every transport endpoint records its source room's collision
+    camera, so transport rando can rewrite the room-name-display label."""
+    tr = graph["transports"]
+    assert tr, "expected transport endpoints in the graph"
+    for sid, meta in tr.items():
+        cc = meta.get("source_cc")
+        assert cc and cc.startswith("collision_camera"), (sid, cc)
+        assert meta.get("transporter_name"), sid
+
+
+@graph_required
+def test_matching_to_room_names(graph):
+    """A shuffled matching renames every transport's source room to point at its
+    new destination; an empty matching (rando off) yields no overrides."""
+    import random
+    from dread.TransportRando import roll_matching, matching_to_room_names
+
+    assert matching_to_room_names({}, graph) == {}
+
+    m = roll_matching(graph, random.Random(7), "randomized")
+    names = matching_to_room_names(m, graph)
+    # One entry per transport endpoint, all "Transport to <dest>".
+    total = sum(len(v) for v in names.values())
+    assert total == len(graph["transports"])
+    for scen, cc_map in names.items():
+        for cc, label in cc_map.items():
+            assert label.startswith("Transport to ")
+            # The label names the NEW destination's transporter, matching the
+            # elevators config's connection_name for the same source.
+    # Cross-check one moved ride: its label is its resolved dest's name.
+    tr = graph["transports"]
+    for sid, dest in m.items():
+        src = tr[sid]
+        expected = f"Transport to {tr[dest]['transporter_name']}"
+        assert names[src["scenario"]][src["source_cc"]] == expected
+        break
 
 
 @graph_required

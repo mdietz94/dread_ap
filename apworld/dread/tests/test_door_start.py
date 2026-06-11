@@ -311,6 +311,41 @@ def test_transport_rando_generates():
 
 
 @runtime
+def test_transport_rando_rewrites_room_names():
+    """A transport-rando seed emits room-name overrides that flow into the
+    patcher's camera_names_dict, so each shuffled ride's source room shows its
+    NEW destination instead of the vanilla one."""
+    from test.general import setup_multiworld, gen_steps
+    from dread.World import DreadWorld
+    from dread.patcher_pipeline import (
+        build_patcher_input_from_placements, load_starter_template,
+    )
+
+    mw = setup_multiworld(DreadWorld, gen_steps, seed=2,
+                          options={"transport_rando": 1})
+    world = mw.worlds[1]
+    payload = world._build_placements_payload()
+    names = payload["transport_room_names"]
+    assert names, "transport rando should produce room-name overrides"
+
+    # At least one source room now names a different destination than vanilla.
+    template = load_starter_template()
+    vanilla = template["cosmetic_patches"]["lua"]["camera_names_dict"]
+    changed = [
+        (scen, cc) for scen, cc_map in names.items() for cc, label in cc_map.items()
+        if vanilla.get(scen, {}).get(cc) != label
+    ]
+    assert changed, "expected at least one transport room renamed vs vanilla"
+
+    # And the override lands in the final patcher input.
+    merged = build_patcher_input_from_placements(payload)
+    cam = merged["cosmetic_patches"]["lua"]["camera_names_dict"]
+    for scen, cc_map in names.items():
+        for cc, label in cc_map.items():
+            assert cam[scen][cc] == label
+
+
+@runtime
 def test_all_rando_compose():
     _generate({"door_lock_rando": 1, "transport_rando": 1, "starting_area": 2})
 
