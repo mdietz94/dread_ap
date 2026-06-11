@@ -201,20 +201,37 @@ def _physical_doors(dock_sides: dict) -> list[list[str]]:
 
 
 def roll_assignments(
-    graph: dict, rng, mode: str = "randomized",
+    graph: dict, rng, mode: str = "individual",
     starting_items: dict | None = None, trick_levels: dict | None = None,
     start_comp: int | None = None, transport_matching: dict | None = None,
     energy_per_tank: int = 100, ammo_amounts: dict | None = None,
 ) -> dict[str, str]:
-    """Return ``{side_id: weakness}`` for door rando. ``mode`` other than a
-    randomizing mode yields ``{}`` = vanilla doors.
+    """Return ``{side_id: weakness}`` for door rando. ``mode`` names mirror
+    Randovania's ``DockRandoMode``:
+
+      * ``"vanilla"`` / ``"off"`` / ``None`` → ``{}`` (no randomization).
+      * ``"individual"`` (alias ``"randomized"``) — Randovania **Individual Doors**
+        (``DockRandoMode.DOCKS``): each physical door rolls its target weakness
+        independently.
+      * ``"types"`` (aliases ``"door_types"`` / ``"weaknesses"``) — Randovania
+        **Door Types** (``DockRandoMode.WEAKNESSES``): roll ONE target per source
+        weakness up front, then every door of that vanilla type becomes the same
+        target world-wide (a consistent global remap).
 
     ``starting_items``/``trick_levels`` drive the start-door guard: doors
     reachable from spawn with the starting kit stay VANILLA so fill can
     bootstrap (see module docstring). Without them the guard is skipped (every
-    eligible door randomized) — only safe for analysis, not real generation."""
+    eligible door randomized) — only safe for analysis, not real generation.
+
+    Two safety bounds apply in BOTH modes (see module docstring): the BASIC-type
+    target pool and the per-scenario shield budget. In ``"types"`` mode the
+    global remap is best-effort per those bounds — a door whose type-target is
+    locally incompatible, or whose scenario can't afford the extra shield, stays
+    VANILLA rather than breaking the bound (so a dense scenario can leave a few
+    doors of a remapped type unchanged)."""
     if mode in ("off", "vanilla", None):
         return {}
+    by_type = mode in ("types", "door_types", "weaknesses")
 
     dr = graph["door_rando"]
     dock_sides = graph["dock_sides"]
@@ -248,6 +265,16 @@ def roll_assignments(
     def _shielded(weakness: str) -> bool:
         return door_type.get(weakness) in SHIELDED_DOOR_TYPES
 
+    # "Door Types" mode: one global source-type -> target mapping, rolled once
+    # up front from the shared BASIC pool. Every door of a given vanilla weakness
+    # then receives the same target (subject to the per-door incompat / budget
+    # bounds applied below). ``change_from`` is already sorted in the graph, so
+    # the roll order — and thus the assignment — is deterministic for a seed.
+    type_map: dict[str, str] = {}
+    if by_type and pool:
+        for src in dr.get("change_from", []):
+            type_map[src] = rng.choice(pool)
+
     assign: dict[str, str] = {}
     for group in _physical_doors(dock_sides):
         if any(sid in protected for sid in group):
@@ -255,17 +282,29 @@ def roll_assignments(
         incompat: set[str] = set()
         for sid in group:
             incompat.update(dock_sides[sid].get("incompatible_weaknesses", []))
-        choices = [w for w in pool if w not in incompat]
         scenario = dock_sides[group[0]]["patcher"]["scenario"]
-        src_shielded = _shielded(dock_sides[group[0]]["default_weakness"])
-        # A target that ADDS a shield (unshielded door -> shielded type) costs 2
-        # ids. If this scenario can't afford it, drop shielded targets so the
-        # door stays cheap (or vanilla, if nothing's left).
-        if not src_shielded and shield_used.get(scenario, 0) + 2 > cap:
-            choices = [w for w in choices if not _shielded(w)]
-        if not choices:
-            continue
-        weakness = rng.choice(choices)
+        src_weakness = dock_sides[group[0]]["default_weakness"]
+        src_shielded = _shielded(src_weakness)
+        if by_type:
+            # Apply the global type remap; skip (leave vanilla) if this type's
+            # target is locally incompatible or the scenario can't afford its
+            # shield — never break a safety bound to honor the remap.
+            weakness = type_map.get(src_weakness)
+            if weakness is None or weakness in incompat:
+                continue
+            if (_shielded(weakness) and not src_shielded
+                    and shield_used.get(scenario, 0) + 2 > cap):
+                continue
+        else:
+            choices = [w for w in pool if w not in incompat]
+            # A target that ADDS a shield (unshielded door -> shielded type) costs
+            # 2 ids. If this scenario can't afford it, drop shielded targets so the
+            # door stays cheap (or vanilla, if nothing's left).
+            if not src_shielded and shield_used.get(scenario, 0) + 2 > cap:
+                choices = [w for w in choices if not _shielded(w)]
+            if not choices:
+                continue
+            weakness = rng.choice(choices)
         if _shielded(weakness) and not src_shielded:
             shield_used[scenario] = shield_used.get(scenario, 0) + 2
         elif src_shielded and not _shielded(weakness):

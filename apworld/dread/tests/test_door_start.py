@@ -126,6 +126,47 @@ def test_roll_assignments_respects_shield_budget():
     assert assign["A"] == "Power Beam Door", "budget should refuse a new shield"
 
 
+def test_roll_assignments_door_types_global_consistency():
+    """'types' mode (RDV "Door Types") remaps BY TYPE: every door of one vanilla
+    weakness becomes the SAME target world-wide, across distinct physical doors."""
+    from dread.DoorRando import roll_assignments
+    wdt = {"Wave Beam Door": "wave_beam",
+           "Power Beam Door": "power_beam",
+           "Plasma Beam Door": "plasma_beam"}
+
+    def side(actor, wk, pair):
+        return {"patcher": {"scenario": "s010_cave", "actor": actor},
+                "dock_type": "door", "default_weakness": wk,
+                "paired_side_id": pair}
+
+    graph = {
+        "dock_sides": {  # two Power Beam doors (D1, D2) + one Wave Beam door (D3)
+            "A": side("D1", "Power Beam Door", "B"),
+            "B": side("D1", "Power Beam Door", "A"),
+            "C": side("D2", "Power Beam Door", "Cx"),
+            "Cx": side("D2", "Power Beam Door", "C"),
+            "E": side("D3", "Wave Beam Door", "Ex"),
+            "Ex": side("D3", "Wave Beam Door", "E"),
+        },
+        "door_rando": {
+            "change_from": ["Power Beam Door", "Wave Beam Door"],
+            "change_to": list(wdt),
+            "weakness_door_type": wdt,
+            "locked_weakness": "Access Permanently Closed",
+            "vanilla_shield_ids": {},
+        },
+    }
+    for seed in range(10):
+        assign = roll_assignments(graph, random.Random(seed), mode="types")
+        assert assign, "expected a non-empty assignment"
+        pb = {assign[s] for s in ("A", "B", "C", "Cx") if s in assign}
+        wv = {assign[s] for s in ("E", "Ex") if s in assign}
+        assert len(pb) <= 1, f"Power Beam doors disagree under type remap: {pb}"
+        assert len(wv) <= 1, f"Wave Beam doors disagree under type remap: {wv}"
+        # both Power Beam physical doors are remapped together
+        assert ("A" in assign) == ("C" in assign)
+
+
 @graph_required
 def test_roll_assignments_two_sided(graph):
     """Paired door sides always receive the same weakness."""
@@ -292,6 +333,18 @@ def _generate(opts):
 @runtime
 def test_door_rando_generates():
     _generate({"door_lock_rando": 1})
+
+
+@runtime
+def test_door_types_rando_generates():
+    """RDV "Door Types" mode (value 2 / 'door_types') produces a solvable seed."""
+    _generate({"door_lock_rando": 2})
+
+
+@runtime
+def test_door_lock_rando_legacy_alias():
+    """The pre-rename 'randomized' name still resolves (back-compat alias)."""
+    _generate({"door_lock_rando": "randomized"})
 
 
 @runtime
