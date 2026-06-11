@@ -940,6 +940,10 @@ class DreadWorld(World):
             "door_patches": self._door_patches(),
             # Transport rando: open-dread-rando elevators config. Empty when off.
             "elevators": self._elevators(),
+            # Transport rando: room-name-display overrides so the in-game room
+            # name of each shuffled ride's source room reflects its NEW
+            # destination instead of the vanilla one. Empty when off.
+            "transport_room_names": self._transport_room_names(),
             # More-starting-areas: resolved spawn {scenario, actor} for a
             # non-Artaria start, else None (patcher uses the Artaria default).
             "start_location_override": getattr(self, "_start_patcher", None),
@@ -960,6 +964,14 @@ class DreadWorld(World):
         from .TransportRando import matching_to_elevators
         from .graph_logic import load_graph
         return matching_to_elevators(matching, load_graph())
+
+    def _transport_room_names(self) -> dict:
+        matching = getattr(self, "_transport_matching", None)
+        if not matching:
+            return {}
+        from .TransportRando import matching_to_room_names
+        from .graph_logic import load_graph
+        return matching_to_room_names(matching, load_graph())
 
     def pre_output(self) -> None:
         """Generate the in-game Nav Station hint text.

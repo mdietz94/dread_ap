@@ -306,6 +306,9 @@ def placements_to_overrides(
         "door_patches": placements.get("door_patches", []),
         # Transport rando: open-dread-rando elevators config.
         "elevators": placements.get("elevators", []),
+        # Transport rando: room-name-display overrides ({scenario: {cc: name}}),
+        # merged into the cosmetic camera_names_dict by merge_overrides.
+        "transport_room_names": placements.get("transport_room_names", {}),
     }
 
 
@@ -423,6 +426,20 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
     elevators = overrides.get("elevators")
     if elevators:
         out["elevators"] = elevators
+
+    # Transport rando: rewrite the room-name-display label of each shuffled
+    # ride's source room ({scenario: {collision_camera: name}}). Merged at the
+    # collision-camera level so non-transport room names stay intact, and only
+    # the transport entries flip from their vanilla destination to the new one.
+    # Empty ⇒ leave the template's camera_names_dict byte-identical. (Whether the
+    # label is actually shown is still governed by enable_room_name_display /
+    # the Room Name Display option — this only corrects the text.)
+    transport_room_names = overrides.get("transport_room_names")
+    if transport_room_names:
+        cam = out.setdefault("cosmetic_patches", {}).setdefault("lua", {}) \
+                 .setdefault("camera_names_dict", {})
+        for scenario, cc_map in transport_room_names.items():
+            cam.setdefault(scenario, {}).update(cc_map)
 
     # Cosmetic / combat leaves. Only fields actually supplied are written;
     # an absent key leaves the template default untouched (so a pre-this-change

@@ -26,7 +26,7 @@ from ._data_loader import load_json
 from .Rules import compile_to_lambda
 from .Tricks import effective_trick_levels
 
-EXPECTED_GRAPH_SCHEMA = 3
+EXPECTED_GRAPH_SCHEMA = 4
 
 
 def load_graph() -> dict:

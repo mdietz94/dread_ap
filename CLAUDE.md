@@ -632,6 +632,28 @@ energy-drain damage (at RDV parity — see above). Door-lock and transport
 (elevator/shuttle) randomization are SHIPPED (`DoorRando.py` / `TransportRando.py`,
 exposed as the `door_lock_rando` / `transport_rando` options).
 
+UPDATE (transport room-name display): transport rando now rewrites the in-game
+room-name-display label of each shuffled ride's SOURCE room so it names the NEW
+destination instead of the vanilla one (previously it leaked the vanilla
+"Transport to <old dest>", because the cosmetic `camera_names_dict` is keyed by
+collision camera and was passed through untouched). Graph schema bumped 3→4:
+each `transports` entry now carries `source_cc` (the source room's
+collision-camera id, from the sub-area `extra.asset_id`). `TransportRando.
+matching_to_room_names` builds `{scenario: {cc: "Transport to <dest
+transporter_name>"}}` for ALL transport endpoints (resolved dest = matching-or-
+vanilla), mirroring Randovania's `_build_teleporter_name_dict` — `transporter_name`
+(e.g. "Dairon - Superheated") is the same string the map-icon `connection_name`
+uses, so the room name and map icon stay in sync. `World._transport_room_names`
+threads it into the placements payload; `patcher_pipeline.merge_overrides` merges
+it into `cosmetic_patches.lua.camera_names_dict` at the collision-camera level
+(non-transport room names untouched; empty ⇒ byte-identical, so non-rando seeds
+are unchanged). It only corrects the TEXT — whether the label shows is still
+governed by the Room Name Display option (NOT force-enabled, unlike Randovania
+which force-shows transport names when room names are off). Tests:
+`test_graph_logic` (source_cc presence + `matching_to_room_names`),
+`test_seed_to_patcher` (camera-dict merge + empty no-op), `test_door_start`
+(`test_transport_rando_rewrites_room_names`, full World→payload→patcher path).
+
 The real-hardware end-to-end integration smoke is DONE: validated on real hardware
 (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop, and checks
 register. The manual validation gate is cleared; the counter/cutscene semantics

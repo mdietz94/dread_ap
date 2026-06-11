@@ -1040,7 +1040,7 @@ GlobalKey = tuple                  # (region, sub_area, node)
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
-GRAPH_SCHEMA_VERSION = 3
+GRAPH_SCHEMA_VERSION = 4   # v4: transports carry source_cc (room-name rewrite)
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
 # (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel
@@ -1130,10 +1130,17 @@ def emit_graph(
     scenario_of = {region: ad["extra"].get("scenario_id")
                    for region, ad in areas.items()}
 
+    # (region, sub_area) -> collision-camera id (the sub-area's asset_id). Used
+    # to key a transport endpoint to its room-name-display entry — the room name
+    # GUI dict is keyed by collision camera, so transport rando needs this to
+    # rewrite the "Transport to <dest>" label of each shuffled ride's source room.
+    area_cc: dict[tuple[str, str], str] = {}
+
     nodes: dict = {}
     conn_edges: list = []           # (u, v, ast)
     for region, ad in areas.items():
         for sub_name, sub in ad["areas"].items():
+            area_cc[(region, sub_name)] = sub.get("extra", {}).get("asset_id")
             for n_name, n in sub["nodes"].items():
                 key = (region, sub_name, n_name)
                 nodes[key] = n
@@ -1181,6 +1188,9 @@ def emit_graph(
                 "actor": ex.get("actor_name"),
                 "start_point": ex.get("start_point_actor_name"),
                 "transporter_name": ex.get("transporter_name", ""),
+                # Collision camera of THIS endpoint's room, for the room-name
+                # display rewrite under transport rando.
+                "source_cc": area_cc.get((region, sub_name)),
             }
             continue
         # Eligible per Randovania's door dock_rando: the door's CURRENT weakness
@@ -1230,6 +1240,7 @@ def emit_graph(
             "actor": meta["actor"],
             "start_point": meta["start_point"],
             "transporter_name": meta["transporter_name"],
+            "source_cc": meta["source_cc"],
         }
 
     pickups: list = []              # [comp, ap_location_name]

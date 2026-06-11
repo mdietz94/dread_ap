@@ -108,3 +108,38 @@ def matching_to_elevators(matching: dict[str, str], graph: dict) -> list[dict[st
             "connection_name": dmeta.get("transporter_name", ""),
         })
     return out
+
+
+def matching_to_room_names(matching: dict[str, str], graph: dict) -> dict[str, dict[str, str]]:
+    """Build the room-name-display override for shuffled transports.
+
+    Returns ``{scenario: {collision_camera: "Transport to <dest>"}}`` for EVERY
+    transport endpoint (not just the moved ones), so a transport-rando seed reads
+    consistently — the unmoved rides keep their name, the moved ones point at
+    their new destination. Mirrors Randovania's
+    ``DreadPatchDataFactory._build_teleporter_name_dict``: each source room's
+    collision camera maps to ``"Transport to {dest endpoint transporter_name}"``,
+    and ``transporter_name`` (e.g. "Dairon - Superheated") is the same string the
+    map-icon label uses (``connection_name``), so the two stay in sync.
+
+    Empty ``matching`` (rando off, or the connected-matching roll gave up and fell
+    back to vanilla) ⇒ ``{}`` so the template's vanilla names pass through
+    untouched."""
+    if not matching:
+        return {}
+    tr = graph["transports"]
+    out: dict[str, dict[str, str]] = {}
+    for sid, src in tr.items():
+        cc = src.get("source_cc")
+        scen = src.get("scenario")
+        if not cc or not scen:
+            continue
+        dest = matching.get(sid) or src["default_dest"]
+        dmeta = tr.get(dest)
+        if dmeta is None:
+            continue
+        name = dmeta.get("transporter_name") or ""
+        if not name:
+            continue
+        out.setdefault(scen, {})[cc] = f"Transport to {name}"
+    return out
