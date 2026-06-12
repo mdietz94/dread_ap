@@ -44,7 +44,7 @@ def graph():
 
 @graph_required
 def test_graph_schema_and_shape(graph):
-    assert graph["graph_schema_version"] == 4
+    assert graph["graph_schema_version"] == 5
     assert graph["n_regions"] > 0
     assert len(graph["pickups"]) == 149
     assert graph["entrances"]
