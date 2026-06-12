@@ -215,17 +215,20 @@ def test_translate_negated_event_is_trivial():
 
 
 def test_translate_misc_resolves_against_config():
-    """misc resources are static config flags resolved against our values:
-    DoorLocks off → non-negated impossible, negated trivial; NerfPowerBombs on
-    → non-negated trivial, negated impossible."""
+    """misc resources: DoorLocks is kept symbolic (resolved at generation time);
+    other flags (NerfPowerBombs etc.) are resolved at compile time."""
     hdr = _empty_header()
 
     def misc(name, negate):
         return translate_requirement({"type": "resource", "data": {
             "type": "misc", "name": name, "amount": 1, "negate": negate}}, hdr)
 
-    assert misc("DoorLocks", False) == IMPOSSIBLE
-    assert misc("DoorLocks", True) == TRIVIAL
+    # DoorLocks emits a symbolic atom, not trivial/impossible.
+    assert misc("DoorLocks", False) == {"type": "misc", "name": "DoorLocks",
+                                        "negate": False}
+    assert misc("DoorLocks", True) == {"type": "misc", "name": "DoorLocks",
+                                       "negate": True}
+    # Other flags still resolved compile-time.
     assert misc("NerfPowerBombs", False) == TRIVIAL
     assert misc("NerfPowerBombs", True) == IMPOSSIBLE
 

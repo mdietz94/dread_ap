@@ -431,3 +431,71 @@ def test_damage_threshold_in_graph():
     text = path.read_text()
     assert '"damage_threshold"' in text, "no damage_threshold nodes in graph"
     assert '"sum"' in text, "no sum nodes in graph"
+
+
+def test_misc_door_lock_off_no_door_rando():
+    """misc DoorLocks negate=True ('NOT DoorLocks') is True when door rando is off."""
+    ast = {"type": "misc", "name": "DoorLocks", "negate": True}
+    pred = compile_to_lambda(ast, player=1, door_lock_rando=False)
+    assert pred(StubState({})) is True
+
+
+def test_misc_door_lock_off_with_door_rando():
+    """misc DoorLocks negate=True ('NOT DoorLocks') is False when door rando is on."""
+    ast = {"type": "misc", "name": "DoorLocks", "negate": True}
+    pred = compile_to_lambda(ast, player=1, door_lock_rando=True)
+    assert pred(StubState({})) is False
+
+
+def test_misc_door_lock_on_with_door_rando():
+    """misc DoorLocks negate=False ('DoorLocks') is True when door rando is on."""
+    ast = {"type": "misc", "name": "DoorLocks", "negate": False}
+    pred = compile_to_lambda(ast, player=1, door_lock_rando=True)
+    assert pred(StubState({})) is True
+
+
+def test_misc_propagates_through_and():
+    """door_lock_rando propagates through AND nodes."""
+    ast = {"type": "and", "items": [
+        {"type": "item", "name": "Slide", "amount": 1},
+        {"type": "misc", "name": "DoorLocks", "negate": True},
+    ]}
+    with_rando = compile_to_lambda(ast, player=1, door_lock_rando=True)
+    without_rando = compile_to_lambda(ast, player=1, door_lock_rando=False)
+    s = StubState({"Slide": 1})
+    assert without_rando(s) is True   # Slide + NOT DoorLocks holds
+    assert with_rando(s) is False     # NOT DoorLocks fails when door rando is on
+
+
+def test_thermal_device_rule_requires_morph_with_door_rando():
+    """Artaria Thermal Device: Start Point → upper door requires Morph Ball when
+    door rando is active (NOT DoorLocks is False).
+
+    Modelled from the raw RDV node: Missiles AND (Morph OR (NOT DoorLocks AND ...))
+    With door rando ON the second disjunct collapses to impossible, leaving just
+    Missiles AND Morph Ball — so the fill cannot place Morph Ball at that location
+    (it would be a circular dependency)."""
+    missiles_and_morph_or_no_door_lock = {
+        "type": "and", "items": [
+            {"type": "item", "name": "Missile Tank", "amount": 1},
+            {"type": "or", "items": [
+                {"type": "item", "name": "Morph Ball", "amount": 1},
+                {"type": "and", "items": [
+                    {"type": "misc", "name": "DoorLocks", "negate": True},
+                    {"type": "item", "name": "Missile Tank", "amount": 2},
+                ]},
+            ]},
+        ],
+    }
+    with_rando = compile_to_lambda(missiles_and_morph_or_no_door_lock,
+                                   player=1, door_lock_rando=True)
+    without_rando = compile_to_lambda(missiles_and_morph_or_no_door_lock,
+                                      player=1, door_lock_rando=False)
+    missiles = StubState({"Missile Tank": 15})
+    missiles_and_morph = StubState({"Missile Tank": 15, "Morph Ball": 1})
+
+    # Without door rando: just missiles suffice (NOT DoorLocks path is open).
+    assert without_rando(missiles) is True
+    # With door rando ON: Morph Ball required.
+    assert with_rando(missiles) is False
+    assert with_rando(missiles_and_morph) is True
