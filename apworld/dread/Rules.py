@@ -120,9 +120,29 @@ def compile_to_lambda(
         return _const_true if level <= eff else _const_false
 
     if t == "misc":
-        # DoorLocks: per-seed config resolved at generation time.
+        # DoorLocks: a Randovania misc resource that is True when door-lock rando
+        # is active. It appears (always as ``NOT DoorLocks``) on 81 vanilla-only
+        # CONNECTION shortcuts — NOT on the randomizable doors themselves, which
+        # are modelled as ``dock`` atoms (resolved per-roll in graph_logic).
+        #
+        # Crucially, our DoorRando only ever patches the 453 ``dock_sides`` (the
+        # doors with engine actors). The connections carrying a ``DoorLocks``
+        # atom are NOT among them (verified: zero of the 81 run parallel to a
+        # ``dock`` edge), so those physical doors stay VANILLA-OPEN even when
+        # door rando is on. Therefore ``NOT DoorLocks`` is always passable for
+        # us and ``DoorLocks`` is effectively always False — independent of the
+        # door_lock_rando option.
+        #
+        # An earlier fix resolved this against door_lock_rando (treating the
+        # shortcuts as severed when rando is on). That made every door-rando seed
+        # unsolvable: it walled off the Cataris Underlava cluster (and other
+        # pockets) whose ONLY graph entry is a ``NOT DoorLocks`` edge, with no
+        # randomized-door alternative to replace it. The over-reach it meant to
+        # cure (Morph Ball placed at Artaria Thermal Device) was a non-issue —
+        # that door is likewise non-randomized, so the vanilla path is real.
         negate = bool(ast.get("negate", False))
-        holds = (not door_lock_rando) if negate else door_lock_rando
+        door_locks_active = False  # these connections' doors are never randomized
+        holds = (not door_locks_active) if negate else door_locks_active
         return _const_true if holds else _const_false
 
     if t == "sum":

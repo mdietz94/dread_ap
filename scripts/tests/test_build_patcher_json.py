@@ -228,6 +228,7 @@ def test_cosmetic_combat_overrides_applied():
         "cosmetic_combat": {
             "bShowEnemyLife": True,
             "enable_room_name_display": "WITH_FADE",
+            "show_dna_in_hud": True,
             "raven_beak_damage_table_handling": "consistent_high",
             "nerf_power_bombs": False,
             "default_x_released": True,
@@ -240,6 +241,9 @@ def test_cosmetic_combat_overrides_applied():
     assert ai["bShowPlayerDamage"] is True
     assert out["cosmetic_patches"]["lua"]["custom_init"]["enable_room_name_display"] == "WITH_FADE"
     assert out["cosmetic_patches"]["lua"]["custom_init"]["enable_death_counter"] is True
+    # show_dna_in_hud is ADDED to custom_init (the template may omit it; newer
+    # open-dread-rando indexes it directly, so we must always write it).
+    assert out["cosmetic_patches"]["lua"]["custom_init"]["show_dna_in_hud"] is True
     assert out["game_patches"]["raven_beak_damage_table_handling"] == "consistent_high"
     assert out["game_patches"]["nerf_power_bombs"] is False
     assert out["game_patches"]["default_x_released"] is True
