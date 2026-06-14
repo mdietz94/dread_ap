@@ -159,6 +159,25 @@ class DeathLink(Toggle):
     display_name = "Death Link"
 
 
+class RemoteItems(Toggle):
+    """Route ALL of this slot's own items through the Archipelago server (like
+    Randovania's co-op), instead of granting them locally from the seed.
+
+    With this ON, picking up one of your own items grants nothing in-game on the
+    spot; the server echoes it back over the wire and the client delivers it
+    (idempotent, cursor-tracked). The win: your items survive a checkpoint reload
+    or a fresh save — the client re-delivers everything you've already checked
+    from the server, so you never have to re-collect. It also enables true co-op
+    on one slot. The cost: a small (~poll-tick) delay between touching a pickup
+    and the grant. Off by default (items grant instantly from the seed).
+
+    NOTE: launch the client from the generated ``.dreadap`` so it sets the
+    correct ``items_handling`` before connecting; a manual ``--connect`` without
+    the ``.dreadap`` falls back to local handling and the client will warn if it
+    detects a mismatch with the seed."""
+    display_name = "Remote Items"
+
+
 class StartWithPulseRadar(DefaultOnToggle):
     """Whether Samus starts with Pulse Radar (the hidden-block / breakable
     reveal ability). ON reproduces the Randovania starter preset. Turning it
@@ -584,6 +603,7 @@ class _DreadOptionsBase(PerGameCommonOptions):
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
     death_link: DeathLink
+    remote_items: RemoteItems
     start_with_pulse_radar: StartWithPulseRadar
     show_boss_lifebar: ShowBossLifebar
     show_enemy_life: ShowEnemyLife
