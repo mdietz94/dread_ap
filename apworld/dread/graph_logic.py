@@ -26,7 +26,7 @@ from ._data_loader import load_json
 from .Rules import compile_to_lambda
 from .Tricks import effective_trick_levels
 
-EXPECTED_GRAPH_SCHEMA = 4
+EXPECTED_GRAPH_SCHEMA = 5
 
 
 def load_graph() -> dict:
@@ -122,6 +122,7 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
     tl = effective_trick_levels(world.options)
     ept = int(world.options.energy_per_tank.value)
     amm = ammo_amounts_from_options(world.options)
+    dlr = int(world.options.door_lock_rando.value) != 0
     assign = dock_assignments or {}
     dock_sides = g["dock_sides"]
     wreq = g["weakness_requirements"]
@@ -163,7 +164,8 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
         ent = regions[csrc].connect(
             regions[cdst], f"e{i}",
             rule=compile_to_lambda(resolved, player, tl, graph_mode=True,
-                                   energy_per_tank=ept, ammo_amounts=amm))
+                                   energy_per_tank=ept, ammo_amounts=amm,
+                                   door_lock_rando=dlr))
         for en in _event_atoms(resolved):
             if en in ev_region:
                 indirect.append((ev_region[en], ent))

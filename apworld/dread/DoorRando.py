@@ -72,7 +72,8 @@ SHIELD_BUDGET_MARGIN = 10      # headroom kept below the hard cap
 
 def _eval(ast: dict, items: dict, events: set, tl: dict,
           energy_per_tank: int = 100,
-          ammo_amounts: dict | None = None) -> bool:
+          ammo_amounts: dict | None = None,
+          is_door_rando: bool = False) -> bool:
     """Evaluate a (dock-resolved) rule AST against an item multiset, a set of
     triggered events, and trick levels. Mirrors compile_to_lambda semantics.
 
@@ -82,7 +83,10 @@ def _eval(ast: dict, items: dict, events: set, tl: dict,
     ever calls this with the starting kit (no Energy/Missile/PB Tanks), so the
     per-tank scaling is effectively inert here, but kept consistent with the
     compiler (a low ``starting_missiles``/``starting_power_bombs`` still lowers
-    the base capacity correctly)."""
+    the base capacity correctly).
+
+    ``is_door_rando`` mirrors ``door_lock_rando`` in compile_to_lambda: resolves
+    ``{"type": "misc", "name": "DoorLocks"}`` atoms at evaluation time."""
     from .Rules import AMMO_BASE_KEYS, AMMO_PER_UNIT_KEYS
     amounts = ammo_amounts or {}
     t = ast.get("type")
@@ -96,6 +100,10 @@ def _eval(ast: dict, items: dict, events: set, tl: dict,
         return ast["name"] in events
     if t == "trick":
         return ast["level"] <= tl.get(ast["name"], 0)
+    if t == "misc":
+        negate = bool(ast.get("negate", False))
+        holds = (not is_door_rando) if negate else is_door_rando
+        return holds
     if t == "sum":
         base = ast["base"]
         total = 0
@@ -115,10 +123,12 @@ def _eval(ast: dict, items: dict, events: set, tl: dict,
                 + (energy_per_tank / 4) * items.get("Energy Part", 0)
                 >= ast["hp_needed"])
     if t == "and":
-        return all(_eval(c, items, events, tl, energy_per_tank, ammo_amounts)
+        return all(_eval(c, items, events, tl, energy_per_tank, ammo_amounts,
+                         is_door_rando)
                    for c in ast["items"])
     if t == "or":
-        return any(_eval(c, items, events, tl, energy_per_tank, ammo_amounts)
+        return any(_eval(c, items, events, tl, energy_per_tank, ammo_amounts,
+                         is_door_rando)
                    for c in ast["items"])
     return False
 

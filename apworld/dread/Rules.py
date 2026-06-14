@@ -65,6 +65,7 @@ def compile_to_lambda(
     ast: dict, player: int, trick_levels: dict[str, int] | None = None,
     graph_mode: bool = False, energy_per_tank: int = VANILLA_ENERGY_PER_TANK,
     ammo_amounts: dict[str, int] | None = None,
+    door_lock_rando: bool = False,
 ) -> Predicate:
     """Translate a compiled rule AST into a Predicate.
 
@@ -118,6 +119,12 @@ def compile_to_lambda(
         eff = (trick_levels or {}).get(ast["name"], 0)
         return _const_true if level <= eff else _const_false
 
+    if t == "misc":
+        # DoorLocks: per-seed config resolved at generation time.
+        negate = bool(ast.get("negate", False))
+        holds = (not door_lock_rando) if negate else door_lock_rando
+        return _const_true if holds else _const_false
+
     if t == "sum":
         amounts = ammo_amounts or {}
         base = int(ast["base"])
@@ -160,7 +167,8 @@ def compile_to_lambda(
 
     if t == "and":
         children = [compile_to_lambda(c, player, trick_levels, graph_mode,
-                                      energy_per_tank, ammo_amounts)
+                                      energy_per_tank, ammo_amounts,
+                                      door_lock_rando)
                     for c in ast["items"]]
         if not children:
             return _const_true
@@ -170,7 +178,8 @@ def compile_to_lambda(
 
     if t == "or":
         children = [compile_to_lambda(c, player, trick_levels, graph_mode,
-                                      energy_per_tank, ammo_amounts)
+                                      energy_per_tank, ammo_amounts,
+                                      door_lock_rando)
                     for c in ast["items"]]
         if not children:
             return _const_false

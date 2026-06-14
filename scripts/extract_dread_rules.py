@@ -141,13 +141,23 @@ _POWER_BOMB_BASE_CAPACITY = 0
 
 # Randovania 'misc' resources are static per-seed CONFIG booleans (door-lock
 # rando, transport rando, "highly dangerous logic", power-bomb limits, etc.) —
-# NOT collectible state. We resolve them at compile time against our patcher
+# NOT collectible state. Most are resolved at compile time against our patcher
 # config so a negated misc requirement is exact ("config flag is off → NOT-flag
 # holds") instead of the old conservative "negation is impossible". Values mirror
 # the bundled starter preset: no door/transport rando, no highly-dangerous
 # logic, power bombs nerfed, beams/missiles as separate items.
+#
+# EXCEPTION — "DoorLocks": this flag toggles per-seed (the door_lock_rando
+# option).  Baking it at compile time caused unbeatable seeds: the Artaria
+# Thermal Device pickup's rule (Missiles AND (Morph OR NOT-DoorLocks AND …))
+# collapsed to "just Missiles" with DoorLocks=False, so the fill placed Morph
+# Ball at that very location, creating a circular dependency.  DoorLocks is
+# therefore kept SYMBOLIC — emitted as {"type": "misc", "name": "DoorLocks",
+# "negate": …} in the logic_graph.json AST and resolved at generation time in
+# Rules.compile_to_lambda (and DoorRando._eval) against the slot's actual
+# door_lock_rando option.
 MISC_RESOURCE_VALUES: dict[str, bool] = {
-    "DoorLocks": False,
+    # "DoorLocks" intentionally absent — kept symbolic, see above
     "Teleporters": False,
     "HighDanger": False,
     "NerfPowerBombs": True,
@@ -360,6 +370,11 @@ def translate_requirement(
         # misc = static per-seed config flag. Resolve against our config
         # (negation is exact here — it's not collectible state).
         if rtype == "misc":
+            # DoorLocks is per-seed (door_lock_rando option) — kept symbolic so
+            # compile_to_lambda can resolve it at generation time.
+            if rname == "DoorLocks":
+                return {"type": "misc", "name": "DoorLocks",
+                        "negate": negate}
             val = MISC_RESOURCE_VALUES.get(rname)
             if val is None:
                 print(f"  WARN: unknown misc resource {rname!r}; assuming present",
@@ -1040,7 +1055,7 @@ GlobalKey = tuple                  # (region, sub_area, node)
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
-GRAPH_SCHEMA_VERSION = 4   # v4: transports carry source_cc (room-name rewrite)
+GRAPH_SCHEMA_VERSION = 5   # v5: DoorLocks kept symbolic (misc atom in AST)
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
 # (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel

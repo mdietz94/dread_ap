@@ -96,6 +96,10 @@ def binding_caps(graph: dict) -> tuple[int, int]:
                 return node["threshold"] <= cap
             if t == "damage_threshold":
                 return True
+            if t == "misc":
+                # DoorLocks: analyze under no-door-rando (vanilla) assumptions.
+                # NOT DoorLocks (negate=True) → True; DoorLocks (negate=False) → False.
+                return bool(node.get("negate", False))
             if t == "and":
                 return all(ev(c, events) for c in node["items"])
             if t == "or":
