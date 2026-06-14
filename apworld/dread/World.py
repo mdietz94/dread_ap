@@ -26,8 +26,9 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
+import settings as ap_settings
 from BaseClasses import Item, ItemClassification, Region, Tutorial
 from worlds.AutoWorld import World, WebWorld
 
@@ -174,6 +175,19 @@ def _ammo_progression_counts(
 NAV_HINT_COUNT = 11
 
 
+class DreadSettings(ap_settings.Group):
+    class DreadvaniaPath(ap_settings.OptionalUserFilePath):
+        """Path to the Python interpreter that has open-dread-rando installed.
+
+        Leave blank to let the client auto-detect it at startup.
+        Example: C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python311\\python.exe
+        """
+        description = "dreadvania Python executable"
+        is_exe = True
+
+    dreadvania_python: DreadvaniaPath = DreadvaniaPath("")
+
+
 class DreadWebWorld(WebWorld):
     theme = "ocean"
     tutorials = [
@@ -194,6 +208,9 @@ class DreadWorld(World):
     game = GAME_NAME
     options_dataclass = DreadOptions
     options: DreadOptions
+
+    settings_key = "dread_options"
+    settings: ClassVar[DreadSettings]
 
     item_name_to_id = item_name_to_id
     location_name_to_id = location_name_to_id

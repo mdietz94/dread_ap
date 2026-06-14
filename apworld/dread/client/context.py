@@ -70,37 +70,18 @@ def _expand(path: str) -> str:
     return os.path.expandvars(os.path.expanduser(path))
 
 
-def _user_config_path() -> Path:
-    """Per-user config location for the Dread client.
+def _settings_dreadvania_python() -> Optional[str]:
+    """Read ``dreadvania_python`` from host.yaml via AP's settings framework.
 
-    Windows: ``%APPDATA%\\dread_ap\\config.json``.
-    Other:   ``~/.config/dread_ap/config.json``.
+    Returns the configured path string, or ``None`` if unset or the settings
+    module is unavailable (e.g. unit-test isolation without a full AP install).
     """
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-    return base / "dread_ap" / "config.json"
-
-
-def _load_user_config() -> dict:
-    path = _user_config_path()
-    if not path.is_file():
-        return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        log.warning("ignoring unreadable %s: %s", path, exc)
-        return {}
-
-
-def _save_user_config(cfg: dict) -> None:
-    path = _user_config_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    except OSError as exc:
-        log.warning("could not persist %s: %s", path, exc)
+        import settings as ap_settings
+        val = str(ap_settings.get_settings()["dread_options"]["dreadvania_python"])
+        return val if val else None
+    except Exception:
+        return None
 
 
 def _field(obj: Any, name: str, idx: int) -> Any:
@@ -327,9 +308,7 @@ class DreadContext(CommonContext):
         # See [[dread-deathlink-apis]].
         self._last_death_count: Optional[int] = None
         self._suppress_death_until: float = 0.0
-        self.dreadvania_python: Optional[str] = _load_user_config().get(
-            "dreadvania_python"
-        )
+        self.dreadvania_python: Optional[str] = _settings_dreadvania_python()
         self.patcher_python_status: str = ""
 
     # ---- CommonContext overrides --------------------------------------
@@ -848,11 +827,7 @@ class DreadContext(CommonContext):
         path, message = await asyncio.to_thread(_resolve)
         self.patcher_python_status = message
         if path:
-            if path != self.dreadvania_python:
-                self.dreadvania_python = path
-                cfg = _load_user_config()
-                cfg["dreadvania_python"] = path
-                _save_user_config(cfg)
+            self.dreadvania_python = path
             self.state.set_patcher_python(f"ready ({Path(path).name})")
             _ap_log.info(message)
         else:
