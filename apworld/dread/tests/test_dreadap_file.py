@@ -87,3 +87,24 @@ def test_launch_args_with_server_and_password():
         slot_name="Samus", server_address="ap.gg:38281", password="pw"))
     assert args == ["--name", "Samus", "--connect", "ap.gg:38281",
                     "--password", "pw"]
+
+
+def test_remote_items_roundtrips():
+    d = DreadapFile(slot_name="Samus", remote_items=True)
+    parsed = parse_dreadap(d.to_json())
+    assert parsed.remote_items is True
+
+
+def test_remote_items_defaults_false():
+    assert DreadapFile(slot_name="Samus").remote_items is False
+    # An older file with no remote_items key parses to False (additive field).
+    parsed = parse_dreadap(json.dumps(
+        {"game": "Metroid Dread", "version": 1, "slot_name": "X"}))
+    assert parsed.remote_items is False
+
+
+def test_launch_args_include_remote_items_flag():
+    args = dreadap_to_launch_args(DreadapFile(slot_name="Samus", remote_items=True))
+    assert "--remote-items" in args
+    # Off ⇒ flag omitted.
+    assert "--remote-items" not in dreadap_to_launch_args(DreadapFile(slot_name="Samus"))

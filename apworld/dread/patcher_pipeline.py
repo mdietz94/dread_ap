@@ -198,6 +198,12 @@ def placements_to_overrides(
     seed_id = placements.get("seed_id", "")
     starting_area_idx = placements.get("starting_area", 0)
     starting_items = placements.get("starting_items", {})
+    # Remote items: when on, OWN items grant nothing locally (a quantity-0
+    # placeholder, exactly like a cross-slot item) — the AP server echoes each
+    # one back over the wire for cursor-tracked delivery. Cosmetics (model,
+    # caption, map icon) stay the real own-item ones so the pickup still LOOKS
+    # like the item it grants. See RemoteItems in Options.py.
+    remote_items = bool(placements.get("remote_items", False))
 
     # A graph-resolved spawn (more-starting-areas) overrides the index table.
     start_override = placements.get("start_location_override")
@@ -243,7 +249,11 @@ def placements_to_overrides(
             # verbatim. See DreadWorld._build_placements_payload.
             prog_stages = p.get("progression_stages")
             if prog_stages:
-                pickup_resources[key] = prog_stages
+                # Remote items: grant nothing locally (the wire delivers the full
+                # progression); keep the real models/caption/icon so it still
+                # looks like the item.
+                pickup_resources[key] = ([[dict(CROSS_SLOT_PLACEHOLDER)]]
+                                         if remote_items else prog_stages)
                 ap_item_name = p.get("ap_item_name", "")
                 if ap_item_name:
                     pickup_captions[key] = f"{ap_item_name} acquired."
@@ -261,8 +271,11 @@ def placements_to_overrides(
             # Expand to the full resource stage — single resource for most
             # items, but the Main Power Bomb grants the unlock flag + capacity
             # pair (see pickup_resource_stage), without which the player gets a
-            # 0/0-ammo power bomb that shows as "?" in the menu.
-            pickup_resources[key] = [pickup_resource_stage(patcher_item_id, quantity)]
+            # 0/0-ammo power bomb that shows as "?" in the menu. Under remote
+            # items the grant is a quantity-0 placeholder (the wire delivers it).
+            pickup_resources[key] = (
+                [[dict(CROSS_SLOT_PLACEHOLDER)]] if remote_items
+                else [pickup_resource_stage(patcher_item_id, quantity)])
             # Overwrite the template's stale caption so the in-game popup names
             # the AP-placed item, not the starter-preset's vanilla one (e.g. a
             # pedestal now holding a Missile Tank shouldn't still say "Flash

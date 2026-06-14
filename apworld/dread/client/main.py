@@ -55,6 +55,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help=f"UDP discovery port (default: {DEFAULT_DISCOVERY_PORT})")
     p.add_argument("--expected-mod-ver", default="",
                    help="If set, reject HELLO from Switches whose mod_ver doesn't match (default: any)")
+    p.add_argument("--remote-items", action="store_true",
+                   help="Receive this slot's own items from the server (set "
+                        "automatically from a remote-items .dreadap)")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -77,6 +80,7 @@ async def main(args: argparse.Namespace) -> None:
         bridge_port=args.bridge_port,
         discovery_port=args.discovery_port,
         expected_mod_ver=args.expected_mod_ver,
+        remote_items=args.remote_items,
     )
     if args.name:
         ctx.auth = args.name

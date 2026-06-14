@@ -921,6 +921,15 @@ class DreadWorld(World):
             # Switch so lua/lights_out.lua hides the in-game map. Not consumed by
             # the patcher (open-dread-rando has no map-hide leaf).
             "lights_out": bool(o.lights_out.value),
+            # Remote items (Randovania-coop style): when ON, OWN items are NOT
+            # baked into the seed — placements_to_overrides emits a quantity-0
+            # placeholder for them so local pickup grants nothing, and the server
+            # echoes each own item back over the wire for cursor-tracked delivery.
+            # Consumed BOTH by the patcher (placeholder resources) and the client
+            # (items_handling + a slot_data-vs-handling consistency check). Also
+            # written to the .dreadap so the client sets items_handling before it
+            # connects (slot_data arrives too late for the Connect packet).
+            "remote_items": bool(o.remote_items.value),
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,
@@ -1159,6 +1168,9 @@ class DreadWorld(World):
         DreadapFile(
             slot_name=slot_name,
             seed_name=seed_id,
+            # Lets the client set items_handling before connecting (slot_data is
+            # too late for the Connect packet). Mirrors slot_data["remote_items"].
+            remote_items=bool(payload.get("remote_items", False)),
         ).write(out_dir / f"{base}.dreadap")
 
         # Legacy placements JSON for the CLI patcher path.

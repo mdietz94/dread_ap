@@ -251,6 +251,10 @@ class DreadContext(CommonContext):
 
     command_processor = DreadClientCommandProcessor
     game = GAME_NAME
+    # 0b001 = receive items from OTHER worlds. 0b011 additionally receives this
+    # slot's OWN items from the server (remote items / co-op). The constructor
+    # raises it to 0b011 when remote_items is set (from the .dreadap / CLI), so
+    # the Connect packet declares the right handling BEFORE slot_data arrives.
     items_handling = 0b001
 
     def __init__(
@@ -263,6 +267,7 @@ class DreadContext(CommonContext):
         bridge_port: int = BRIDGE_DEFAULT_PORT,
         discovery_port: int = DEFAULT_DISCOVERY_PORT,
         expected_mod_ver: str = "",
+        remote_items: bool = False,
     ):
         super().__init__(server_address, password)
         self.state = state
@@ -271,6 +276,14 @@ class DreadContext(CommonContext):
         self.bridge_port = bridge_port
         self.discovery_port = discovery_port
         self._expected_mod_ver = expected_mod_ver
+        # Remote items: receive our OWN items from the server too. Set on the
+        # INSTANCE (overriding the class default) so the Connect packet carries
+        # the right items_handling. _on_connected re-checks this against
+        # slot_data and warns on a mismatch (e.g. manual connect without the
+        # remote-items .dreadap).
+        self._remote_items = bool(remote_items)
+        if self._remote_items:
+            self.items_handling = 0b011
 
         # Bridge + discovery responder created at start_bridge() time.
         self._bridge: Optional[BridgeServer] = None
@@ -528,6 +541,23 @@ class DreadContext(CommonContext):
                 str(name): int(qty)
                 for name, qty in (sd.get("item_amounts") or {}).items()
             }
+            # Consistency check: the seed's remote-items setting must match the
+            # items_handling we declared at Connect (set from the .dreadap).
+            # items_handling can't be changed after Connect, so on a mismatch we
+            # can only warn — the cure is to relaunch from the .dreadap (or pass
+            # --remote-items). A wrong handling silently breaks own-item delivery
+            # (placeholder pickups grant nothing AND the server won't echo), so
+            # surface it loudly.
+            seed_remote = bool(sd.get("remote_items", False))
+            if seed_remote != self._remote_items:
+                log.error(
+                    "Remote-items MISMATCH: this seed was generated with "
+                    "remote_items=%s but the client connected with remote_items=%s. "
+                    "Your own items will NOT be delivered correctly. Relaunch the "
+                    "client from the generated .dreadap (or %s) and reconnect.",
+                    seed_remote, self._remote_items,
+                    "pass --remote-items" if seed_remote else "omit --remote-items",
+                )
         # Mirror the seed's DeathLink choice into the AP connection tag. Sends a
         # ConnectUpdate (we're already Connected here), which is the supported
         # way to toggle the tag post-connect.

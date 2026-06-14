@@ -81,7 +81,7 @@ async def _free_port() -> int:
     return port
 
 
-async def _setup(state: BridgeState | None = None):
+async def _setup(state: BridgeState | None = None, remote_items: bool = False):
     """Build DreadContext + BridgeServer + FakeDreadGame, wire them up, wait
     for HELLO_ACK + bootstrap, then cancel the bridge's spawned poll task so
     the test drives timing.
@@ -93,7 +93,8 @@ async def _setup(state: BridgeState | None = None):
     bridge_port = await _free_port()
     ctx = DreadContext(None, None, state=state, datapackage=dp,
                        bridge_port=bridge_port,
-                       discovery_port=0)  # 0 = disable discovery in tests
+                       discovery_port=0,  # 0 = disable discovery in tests
+                       remote_items=remote_items)
     ctx.send_msgs = unittest.mock.AsyncMock()  # type: ignore[method-assign]
     # Only start the BridgeServer — skip the DiscoveryResponder in tests by
     # not calling start_bridge(). We bind it manually.
@@ -142,6 +143,37 @@ async def _drive(ctx: DreadContext, fake: FakeDreadGame, target: int, max_polls:
 
 
 # ---- tests ----------------------------------------------------------------
+
+def test_remote_items_constructor_sets_items_handling():
+    """remote_items raises items_handling to 0b011 (receive OWN items too) so the
+    Connect packet declares it before slot_data arrives; default stays 0b001."""
+    dp = DataPackage(apworld_data_dir=DATA)
+    local = DreadContext(None, None, state=BridgeState(), datapackage=dp,
+                         discovery_port=0)
+    assert local.items_handling == 0b001
+    assert local._remote_items is False
+
+    remote = DreadContext(None, None, state=BridgeState(), datapackage=dp,
+                          discovery_port=0, remote_items=True)
+    assert remote.items_handling == 0b011
+    assert remote._remote_items is True
+
+
+@pytest.mark.asyncio
+async def test_remote_items_delivers_own_item_over_wire():
+    """With remote_items on, an OWN item arriving via ReceivedItems is delivered
+    to the game exactly like a cross-world item (same RL.ReceivePickup path)."""
+    ctx, dp, fake = await _setup(remote_items=True)
+    try:
+        assert ctx.items_handling == 0b011
+        missile = _ap_id_for(dp, "Missile Tank")
+        await ctx._on_received_items({"index": 0, "items": [_network_item(missile)]})
+        await _drive(ctx, fake, target=1)
+        assert fake.received_pickups == 1
+        assert fake.inventory_of(MISSILE_ITEM) == 2
+    finally:
+        await _teardown(ctx, fake)
+
 
 @pytest.mark.asyncio
 async def test_full_session_happy_path():

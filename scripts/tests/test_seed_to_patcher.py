@@ -90,6 +90,69 @@ _PROG_BEAM_STAGES = [
 _PROG_BEAM_MODELS = ["powerup_widebeam", "powerup_plasmabeam", "powerup_wavebeam"]
 
 
+def test_remote_items_own_pickup_is_placeholder_with_kept_cosmetics():
+    """remote_items ON: an own item grants nothing locally (quantity-0
+    placeholder) but keeps its real caption / model / map icon, so the pickup
+    still looks like the item the wire will deliver."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "remote_items": True,
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0,
+                 patcher_model="powerup_chargebeam"),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    key = "s010_cave/ItemSphere_ChargeBeam"
+    assert out["pickup_resources"][key] == [[dict(CROSS_SLOT_PLACEHOLDER)]]
+    # Cosmetics preserved (it still looks like Charge Beam).
+    assert out["pickup_captions"][key] == "Charge Beam acquired."
+    assert out["pickup_models"][key] == ["powerup_chargebeam"]
+    assert out["pickup_map_icons"][key] == {"icon_id": "powerup_chargebeam"}
+
+
+def test_remote_items_progressive_own_pickup_is_placeholder():
+    """remote_items ON: an own PROGRESSIVE item also grants nothing locally; the
+    wire delivers the full progression. Cosmetics (models/icon/caption) kept."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "12345678",
+        "starting_area": 0,
+        "starting_items": {},
+        "remote_items": True,
+        "placements": [
+            _own_progressive("Artaria: Beam", "s010_cave", "ItemSphere_ChargeBeam",
+                             "Progressive Beam", _PROG_BEAM_STAGES,
+                             _PROG_BEAM_MODELS, "PROGRESSIVE_BEAM", 0),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    key = "s010_cave/ItemSphere_ChargeBeam"
+    assert out["pickup_resources"][key] == [[dict(CROSS_SLOT_PLACEHOLDER)]]
+    assert out["pickup_models"][key] == _PROG_BEAM_MODELS
+    assert out["pickup_captions"][key] == "Progressive Beam acquired."
+
+
+def test_remote_items_off_keeps_real_grant():
+    """remote_items absent/false: own items grant their real resources."""
+    placements = {
+        "slot_name": "Samus", "seed_id": "12345678", "starting_area": 0,
+        "starting_items": {},
+        "placements": [
+            _own("Artaria: Charge Beam Room", "s010_cave", "ItemSphere_ChargeBeam",
+                 "Charge Beam", "ITEM_WEAPON_CHARGE_BEAM", 1, 0),
+        ],
+    }
+    out = placements_to_overrides(placements)
+    res = out["pickup_resources"]["s010_cave/ItemSphere_ChargeBeam"]
+    assert res != [[dict(CROSS_SLOT_PLACEHOLDER)]]
+    assert res[0][0]["item_id"] == "ITEM_WEAPON_CHARGE_BEAM"
+
+
 def test_progressive_item_emits_multistage_resources_models_icon():
     """An own-slot progressive placement threads its full multi-stage resources,
     per-tier model list, and progressive map-icon id into the overrides."""

@@ -45,6 +45,12 @@ class DreadapFile:
     seed_name: str = ""
     server_address: str = ""
     password: str = ""
+    # Remote items: the seed was built with own items routed through the server
+    # (quantity-0 placeholders in the romfs). The client must set items_handling
+    # to receive its own items BEFORE connecting (slot_data arrives too late for
+    # the Connect packet), so the flag rides the .dreadap. Additive + optional —
+    # an older client simply ignores it and falls back to local handling.
+    remote_items: bool = False
     game: str = GAME_NAME
     version: int = DREADAP_SCHEMA_VERSION
 
@@ -56,6 +62,7 @@ class DreadapFile:
             "seed_name": self.seed_name,
             "server_address": self.server_address,
             "password": self.password,
+            "remote_items": self.remote_items,
         }
 
     def to_json(self) -> str:
@@ -128,6 +135,7 @@ def parse_dreadap(text_or_path: str | Path) -> DreadapFile:
         seed_name=str(d.get("seed_name") or ""),
         server_address=str(d.get("server_address") or ""),
         password=str(d.get("password") or ""),
+        remote_items=bool(d.get("remote_items", False)),
         game=game,
         version=version,
     )
@@ -144,4 +152,6 @@ def dreadap_to_launch_args(d: DreadapFile) -> list[str]:
         out += ["--connect", d.server_address]
     if d.password:
         out += ["--password", d.password]
+    if d.remote_items:
+        out += ["--remote-items"]
     return out
