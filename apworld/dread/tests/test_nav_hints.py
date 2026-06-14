@@ -180,3 +180,54 @@ def test_nav_hints_no_duplicate_locations():
     # Texts must be distinct (each derives from a distinct location).
     texts = [h["text"] for h in hints]
     assert len(texts) == len(set(texts))
+
+
+def _dna_scenario(n_dna: int):
+    """Player-1 placement that includes n_dna Metroid DNA items scattered across
+    both worlds, plus enough filler to exercise the rest of the plaques."""
+    from BaseClasses import Item, ItemClassification as IC
+
+    def item(name, player):
+        return Item(name, IC.progression, hash(name) & 0xFFFF, player)
+
+    p1_locs: list[_Loc] = []
+    p2_locs: list[_Loc] = []
+    for k in range(1, n_dna + 1):
+        dst = p1_locs if k % 2 else p2_locs
+        pl = 1 if k % 2 else 2
+        dst.append(_Loc(f"Boss Spot {k}", pl, 5000 + k, item(f"Metroid DNA {k}", 1)))
+    # Some non-DNA filler so the remaining plaques have material.
+    for i in range(6):
+        p1_locs.append(_Loc(f"Artaria: Filler{i}", 1, 6000 + i, item(f"Upgrade {i}", 1)))
+    return {1: p1_locs, 2: p2_locs}
+
+
+@pytestmark_runtime
+def test_hint_all_dna_surfaces_every_dna_location():
+    """hint_all_dna ON: every required Metroid DNA's location is hinted (within
+    the plaque budget)."""
+    from dread.World import NAV_HINT_COUNT
+
+    world, _ = _make_world(_dna_scenario(5))
+    world.options.required_artifacts.value = 5
+    world.options.hint_all_dna.value = 1
+    hints = world._generate_nav_hints()
+
+    dna_hints = [h["text"] for h in hints if "Metroid DNA" in h["text"]]
+    for k in range(1, 6):
+        assert any(f"Metroid DNA {k}{{c0}}" in t for t in dna_hints), \
+            f"Metroid DNA {k} location not hinted"
+    assert len(hints) == NAV_HINT_COUNT
+
+
+@pytestmark_runtime
+def test_hint_all_dna_off_does_not_force_dna_hints():
+    """hint_all_dna OFF: DNA is not force-hinted (only the usual mixed hints,
+    which may include a DNA item incidentally but not all of them)."""
+    world, _ = _make_world(_dna_scenario(5))
+    world.options.required_artifacts.value = 5
+    world.options.hint_all_dna.value = 0
+    hints = world._generate_nav_hints()
+    forced = [h["text"] for h in hints
+              if h["text"].startswith("Your {c1}Metroid DNA")]
+    assert len(forced) < 5, "OFF must not force every DNA location hint"

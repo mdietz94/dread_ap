@@ -8,8 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, make_dataclass
 
-from Options import Choice, DefaultOnToggle, PerGameCommonOptions, Range, Toggle
+from Options import (
+    Choice, DefaultOnToggle, OptionSet, PerGameCommonOptions, Range, Toggle,
+)
 
+from .DoorRando import (
+    ALL_DOOR_WEAKNESS_NAMES, DEFAULT_CHANGE_DOORS_TO, DEFAULT_DOORS_TO_CHANGE,
+)
 from .Tricks import FOLLOW_GLOBAL, VISIBLE_TRICKS
 
 
@@ -52,6 +57,28 @@ class DoorLockRando(Choice):
     alias_off = 0           # back-compat: pre-rename YAMLs used off/randomized
     alias_randomized = 1
     default = 0
+
+
+class DoorsToChange(OptionSet):
+    """Door Lock Randomizer — which vanilla door types are eligible to be
+    randomized (Randovania's "Doors to Change"). Doors of any type NOT listed
+    keep their vanilla lock. Only matters when Door Lock Randomizer is on.
+    Default mirrors Randovania's default set."""
+    display_name = "Doors to Change"
+    valid_keys = sorted(ALL_DOOR_WEAKNESS_NAMES)
+    default = frozenset(DEFAULT_DOORS_TO_CHANGE)
+
+
+class ChangeDoorsTo(OptionSet):
+    """Door Lock Randomizer — the pool of lock types a randomized door may
+    become (Randovania's "Change Doors To"). Only matters when Door Lock
+    Randomizer is on. NOTE: this apworld can only render the "basic" weapon-beam
+    lock types safely; exotic shields and "Access Permanently Closed" are not
+    placed even if listed (they would brick the door / crash the load). Default
+    is the safe basic set."""
+    display_name = "Change Doors To"
+    valid_keys = sorted(ALL_DOOR_WEAKNESS_NAMES)
+    default = frozenset(DEFAULT_CHANGE_DOORS_TO)
 
 
 class TransportRando(Choice):
@@ -173,6 +200,14 @@ class EnableDeathCounter(DefaultOnToggle):
     display_name = "Death Counter"
 
 
+class ShowDnaInHud(DefaultOnToggle):
+    """Show a running count of collected Metroid DNA on the HUD (only appears
+    when the DNA goal is active, i.e. Required Metroid DNA > 0). Maps to
+    open-dread-rando's ``show_dna_in_hud`` cosmetic patch. Default ON — handy
+    for tracking the collection goal."""
+    display_name = "Show DNA In HUD"
+
+
 class RoomNameDisplay(Choice):
     """When to show the current room's name on-screen. 'never' hides it;
     'always' keeps it pinned; 'with_fade' shows it briefly on room entry
@@ -228,46 +263,51 @@ class XStartsReleased(Toggle):
 # Progressive items — mirror Randovania's Dread progressive groups. Each toggle
 # replaces a group's individual tier items with a single "Progressive X" item
 # (shipped in as many copies as there are tiers) that grants the next tier on
-# each collection. OFF by default: omitting them reproduces today's pool, where
-# every tier is shuffled as its own findable item. Enabling a group is pool-size
-# neutral — N tier items out, N progressive copies in — and does not change
-# solvability (the access logic still sees the same tier atoms; see
-# World.collect / World.remove).
+# each collection. ON by default: this matches Randovania's starter preset,
+# whose default placement shuffles all six groups progressively (verified from
+# data/starter_preset_patcher.json — every tiered pickup is a multi-stage
+# resource). Turning a group OFF reverts it to per-tier individual shuffling.
+# Either way is pool-size neutral — N tier items out, N progressive copies in —
+# and does not change solvability (the access logic still sees the same tier
+# atoms; see World.collect / World.remove). Progressive Bomb is safe re: the
+# Kraid "needs a real Bomb, not Cross Bomb" rule because progression always
+# grants regular Bomb (tier 1) before Cross Bomb (tier 2).
 # ---------------------------------------------------------------------------
 
-class ProgressiveSuit(Toggle):
+class ProgressiveSuit(DefaultOnToggle):
     """Shuffle one Progressive Suit (Varia Suit → Gravity Suit) instead of the
-    two suits separately."""
+    two suits separately. Default ON (Randovania parity)."""
     display_name = "Progressive Suit"
 
 
-class ProgressiveSpin(Toggle):
+class ProgressiveSpin(DefaultOnToggle):
     """Shuffle one Progressive Spin (Spin Boost → Space Jump) instead of the
-    two spin upgrades separately."""
+    two spin upgrades separately. Default ON (Randovania parity)."""
     display_name = "Progressive Spin"
 
 
-class ProgressiveChargeBeam(Toggle):
+class ProgressiveChargeBeam(DefaultOnToggle):
     """Shuffle one Progressive Charge Beam (Charge Beam → Diffusion Beam)
-    instead of the two separately."""
+    instead of the two separately. Default ON (Randovania parity)."""
     display_name = "Progressive Charge Beam"
 
 
-class ProgressiveBeam(Toggle):
+class ProgressiveBeam(DefaultOnToggle):
     """Shuffle one Progressive Beam (Wide → Plasma → Wave Beam) instead of the
-    three beams separately."""
+    three beams separately. Default ON (Randovania parity)."""
     display_name = "Progressive Beam"
 
 
-class ProgressiveMissile(Toggle):
+class ProgressiveMissile(DefaultOnToggle):
     """Shuffle one Progressive Missile (Super Missile → Ice Missile) instead of
-    the two separately."""
+    the two separately. Default ON (Randovania parity)."""
     display_name = "Progressive Missile"
 
 
-class ProgressiveBomb(Toggle):
+class ProgressiveBomb(DefaultOnToggle):
     """Shuffle one Progressive Bomb (Bomb → Cross Bomb) instead of the two
-    separately."""
+    separately. Default ON (Randovania parity). Safe for the Kraid fight: tier 1
+    is always the regular Bomb, so you can never be left with only Cross Bomb."""
     display_name = "Progressive Bomb"
 
 
@@ -293,6 +333,16 @@ class ArtifactPlacement(Choice):
     option_prefer_bosses = 0
     option_anywhere = 1
     default = 0
+
+
+class HintAllDna(DefaultOnToggle):
+    """Make the in-game Network Stations reveal where ALL of your required
+    Metroid DNA are located (their location is named, like Randovania's Dairon /
+    Itorash DNA hints). When OFF, the stations show only the usual mixed
+    placement hints and the objective screen just states how many DNA you need.
+    Only meaningful when Required Metroid DNA > 0. Default ON (Randovania
+    parity)."""
+    display_name = "Hint All Metroid DNA"
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +578,8 @@ class FlashShiftUpgradeRequiresMainItem(DefaultOnToggle):
 class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
     door_lock_rando: DoorLockRando
+    doors_to_change: DoorsToChange
+    change_doors_to: ChangeDoorsTo
     transport_rando: TransportRando
     include_boss_pickups: IncludeBossPickups
     trick_level: TrickLevel
@@ -538,6 +590,7 @@ class _DreadOptionsBase(PerGameCommonOptions):
     show_enemy_damage: ShowEnemyDamage
     show_player_damage: ShowPlayerDamage
     enable_death_counter: EnableDeathCounter
+    show_dna_in_hud: ShowDnaInHud
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
@@ -551,6 +604,7 @@ class _DreadOptionsBase(PerGameCommonOptions):
     progressive_bomb: ProgressiveBomb
     required_artifacts: RequiredArtifacts
     artifact_placement: ArtifactPlacement
+    hint_all_dna: HintAllDna
     energy_tank_count: EnergyTankCount
     energy_part_count: EnergyPartCount
     missile_tank_count: MissileTankCount

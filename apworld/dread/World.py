@@ -279,7 +279,9 @@ class DreadWorld(World):
                 starting_items=base_items, trick_levels=tl,
                 start_comp=self._start_comp, transport_matching=tm,
                 energy_per_tank=int(self.options.energy_per_tank.value),
-                ammo_amounts=ammo_amounts_from_options(self.options))
+                ammo_amounts=ammo_amounts_from_options(self.options),
+                doors_to_change=set(self.options.doors_to_change.value),
+                change_doors_to=set(self.options.change_doors_to.value))
 
     def create_regions(self) -> None:
         # Events are graph regions; AP's BFS must re-derive event-gated
@@ -893,6 +895,7 @@ class DreadWorld(World):
             "bShowEnemyDamage": bool(o.show_enemy_damage.value),
             "bShowPlayerDamage": bool(o.show_player_damage.value),
             "enable_death_counter": bool(o.enable_death_counter.value),
+            "show_dna_in_hud": bool(o.show_dna_in_hud.value),
             "enable_room_name_display": o.room_name_display.current_key.upper(),
             "raven_beak_damage_table_handling": o.raven_beak_damage_table.current_key,
             "nerf_power_bombs": bool(o.nerf_power_bombs.value),
@@ -1032,6 +1035,25 @@ class DreadWorld(World):
         used: set[tuple[int, str]] = set()  # (player, location name) already hinted
         hints: list[dict[str, Any]] = []
 
+        # "Hint All Metroid DNA": lead with a guaranteed hint for every required
+        # DNA's location (mirrors Randovania's Dairon/Itorash DNA hints). Each
+        # Metroid DNA item is unique to this slot and the goal, so surfacing all
+        # of them is the high-value information a player wants from the stations.
+        n_dna = int(self.options.required_artifacts.value)
+        if n_dna > 0 and bool(self.options.hint_all_dna.value):
+            dna_names = {f"Metroid DNA {k}" for k in range(1, n_dna + 1)}
+            dna_locs = sorted(
+                (loc for loc in mine_anywhere if loc.item.name in dna_names),
+                key=lambda loc: loc.item.name,
+            )
+            for loc in dna_locs:
+                key = (loc.player, loc.name)
+                if key in used:
+                    continue
+                used.add(key)
+                hints.append({"text": f"Your {{c1}}{loc.item.name}{{c0}} "
+                                      f"is at {place(loc)}."})
+
         def take_location_hint() -> dict[str, Any] | None:
             for loc in loc_pool:
                 key = (loc.player, loc.name)
@@ -1058,8 +1080,15 @@ class DreadWorld(World):
                 return {"text": text}
             return None
 
-        n_item = NAV_HINT_COUNT // 2
-        n_loc = NAV_HINT_COUNT - n_item
+        # DNA hints (if any) take the front; fill the REMAINING plaque budget
+        # with the usual mixed location/item hints so the total never exceeds the
+        # plaque count (every generated hint past NAV_HINT_COUNT is dropped by
+        # _apply_nav_hints, which would otherwise shuffle a DNA hint out of view).
+        forced = hints[:NAV_HINT_COUNT]   # guard the 12-DNA / 11-plaque edge
+        hints = forced[:]
+        remaining = NAV_HINT_COUNT - len(hints)
+        n_item = remaining // 2
+        n_loc = remaining - n_item
         for _ in range(n_loc):
             h = take_location_hint()
             if h:
@@ -1075,8 +1104,11 @@ class DreadWorld(World):
                 break
             hints.append(h)
 
-        rng.shuffle(hints)
-        return hints
+        # Shuffle only the non-forced tail so every DNA hint stays within the
+        # shown plaque budget (order among plaques is otherwise cosmetic).
+        tail = hints[len(forced):]
+        rng.shuffle(tail)
+        return forced + tail
 
     def fill_slot_data(self) -> dict[str, Any]:
         # Bundle the full placements payload so the in-client /patch command

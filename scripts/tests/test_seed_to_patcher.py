@@ -306,8 +306,9 @@ def test_own_slot_item_without_model_leaves_map_icon_untouched():
 
 def test_cross_slot_item_emits_unknown_custom_icon():
     """A foreign item's map icon becomes the neutral "?" (base_icon ``unknown``)
-    labelled with the item name — it must not keep advertising the Dread item
-    the starter preset baked at this spot."""
+    labelled with the RECIPIENT and item name — it must name who the off-world
+    pickup is for, and must not keep advertising the Dread item the starter
+    preset baked at this spot."""
     placements = {
         "slot_name": "Samus",
         "seed_id": "12345678",
@@ -320,7 +321,8 @@ def test_cross_slot_item_emits_unknown_custom_icon():
     }
     out = placements_to_overrides(placements)
     assert out["pickup_map_icons"]["s010_cave/ItemSphere_ChargeBeam"] == {
-        "custom_icon": {"label": "THE BIG BUTTON", "base_icon": CROSS_SLOT_MAP_BASE_ICON}
+        "custom_icon": {"label": "BUTTONPUSHER'S THE BIG BUTTON",
+                        "base_icon": CROSS_SLOT_MAP_BASE_ICON}
     }
 
 

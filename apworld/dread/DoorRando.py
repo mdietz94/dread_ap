@@ -69,6 +69,52 @@ SHIELDED_DOOR_TYPES = frozenset({
 SHIELD_IDS_PER_SCENARIO = 100  # open-dread-rando's per-scenario shield-id pool
 SHIELD_BUDGET_MARGIN = 10      # headroom kept below the hard cap
 
+# Human-readable door weakness names (Randovania's GUI labels) → door_type, for
+# the ``doors_to_change`` / ``change_doors_to`` option sets. Mirrors the graph's
+# ``door_rando.weakness_door_type``; kept static here so Options.py can build the
+# choices without loading the (large) logic graph at import time.
+WEAKNESS_DOOR_TYPE: dict[str, str] = {
+    "Access Open": "frame",
+    "Access Permanently Closed": "closed",
+    "Power Beam Door": "power_beam",
+    "Charge Beam Door": "charge_beam",
+    "Wide Beam Door": "wide_beam",
+    "Plasma Beam Door": "plasma_beam",
+    "Wave Beam Door": "wave_beam",
+    "Missile Door": "missile",
+    "Super Missile Door": "super_missile",
+    "Sensor Lock Door": "phantom_cloak",
+    "Grapple Beam Door": "grapple_beam",
+    "Phase Shift Door": "phase_shift",
+    "Ice Missile Door": "ice_missile",
+    "Diffusion Beam Door": "diffusion_beam",
+    "Storm Missile Door": "storm_missile",
+    "Bomb Door": "bomb",
+    "Cross Bomb Door": "cross_bomb",
+    "Power Bomb Door": "power_bomb",
+}
+
+# Every door weakness name a player may list in an option set (the union of
+# Randovania's change_from + change_to universes).
+ALL_DOOR_WEAKNESS_NAMES: frozenset = frozenset(WEAKNESS_DOOR_TYPE)
+
+# Default ``doors_to_change`` — Randovania's default "Doors to Change" set
+# (door_rando.change_from). Exotic / already-locked doors stay vanilla.
+DEFAULT_DOORS_TO_CHANGE: frozenset = frozenset({
+    "Access Open", "Charge Beam Door", "Grapple Beam Door", "Missile Door",
+    "Plasma Beam Door", "Power Beam Door", "Sensor Lock Door",
+    "Super Missile Door", "Wave Beam Door", "Wide Beam Door",
+})
+
+# Default ``change_doors_to`` — the target weaknesses we can place. Restricted to
+# BASIC_DOOR_TYPES (the set open-dread-rando renders without the exotic-shield
+# asset hazards — see the module docstring). This deliberately EXCLUDES "Access
+# Permanently Closed" and the exotic shields that Randovania's full pool offers,
+# so the default never bricks a door behind an unrenderable / impassable lock.
+DEFAULT_CHANGE_DOORS_TO: frozenset = frozenset(
+    name for name, dt in WEAKNESS_DOOR_TYPE.items() if dt in BASIC_DOOR_TYPES
+)
+
 
 def _eval(ast: dict, items: dict, events: set, tl: dict,
           energy_per_tank: int = 100,
@@ -101,9 +147,14 @@ def _eval(ast: dict, items: dict, events: set, tl: dict,
     if t == "trick":
         return ast["level"] <= tl.get(ast["name"], 0)
     if t == "misc":
+        # DoorLocks: see the long note in Rules.compile_to_lambda. These atoms
+        # ride vanilla-only connection shortcuts whose physical doors our
+        # DoorRando never patches, so the doors stay open and ``NOT DoorLocks``
+        # is always passable (DoorLocks effectively always False) — independent
+        # of whether door rando is active for this seed.
         negate = bool(ast.get("negate", False))
-        holds = (not is_door_rando) if negate else is_door_rando
-        return holds
+        door_locks_active = False
+        return (not door_locks_active) if negate else door_locks_active
     if t == "sum":
         base = ast["base"]
         total = 0
@@ -215,6 +266,7 @@ def roll_assignments(
     starting_items: dict | None = None, trick_levels: dict | None = None,
     start_comp: int | None = None, transport_matching: dict | None = None,
     energy_per_tank: int = 100, ammo_amounts: dict | None = None,
+    doors_to_change: set | None = None, change_doors_to: set | None = None,
 ) -> dict[str, str]:
     """Return ``{side_id: weakness}`` for door rando. ``mode`` names mirror
     Randovania's ``DockRandoMode``:
@@ -238,7 +290,14 @@ def roll_assignments(
     global remap is best-effort per those bounds — a door whose type-target is
     locally incompatible, or whose scenario can't afford the extra shield, stays
     VANILLA rather than breaking the bound (so a dense scenario can leave a few
-    doors of a remapped type unchanged)."""
+    doors of a remapped type unchanged).
+
+    ``doors_to_change`` (weakness NAMES) restricts which vanilla door types are
+    eligible to be randomized — a door whose ``default_weakness`` isn't in the
+    set stays vanilla. ``change_doors_to`` (weakness NAMES) restricts the target
+    pool. Both mirror Randovania's "Doors to Change" / "Change Doors To" config;
+    ``None`` means "no extra restriction" (every renderable type is eligible).
+    The BASIC-type render bound still applies on top of ``change_doors_to``."""
     if mode in ("off", "vanilla", None):
         return {}
     by_type = mode in ("types", "door_types", "weaknesses")
@@ -248,11 +307,16 @@ def roll_assignments(
     locked = dr.get("locked_weakness")
     # Assignable pool: change_to minus the locking weakness (v1 keeps every door
     # passable), restricted to BASIC_DOOR_TYPES (the exotic shields are dropped —
-    # see module docstring) and to weaknesses we can render to a patcher
-    # door_type at all.
+    # see module docstring), to the user's ``change_doors_to`` selection, and to
+    # weaknesses we can render to a patcher door_type at all.
     door_type = dr["weakness_door_type"]
     pool = [w for w in dr["change_to"]
-            if w != locked and door_type.get(w) in BASIC_DOOR_TYPES]
+            if w != locked and door_type.get(w) in BASIC_DOOR_TYPES
+            and (change_doors_to is None or w in change_doors_to)]
+
+    def _changeable(weakness: str) -> bool:
+        """Is a door of this vanilla weakness eligible to be randomized?"""
+        return doors_to_change is None or weakness in doors_to_change
 
     # Start-door guard: protect doors on the early (start-reachable) frontier.
     protected: set[str] = set()
@@ -283,17 +347,22 @@ def roll_assignments(
     type_map: dict[str, str] = {}
     if by_type and pool:
         for src in dr.get("change_from", []):
-            type_map[src] = rng.choice(pool)
+            if _changeable(src):
+                type_map[src] = rng.choice(pool)
 
     assign: dict[str, str] = {}
     for group in _physical_doors(dock_sides):
         if any(sid in protected for sid in group):
             continue
+        scenario = dock_sides[group[0]]["patcher"]["scenario"]
+        src_weakness = dock_sides[group[0]]["default_weakness"]
+        # Honor "Doors to Change": a door of a deselected vanilla type stays
+        # vanilla (in both modes).
+        if not _changeable(src_weakness):
+            continue
         incompat: set[str] = set()
         for sid in group:
             incompat.update(dock_sides[sid].get("incompatible_weaknesses", []))
-        scenario = dock_sides[group[0]]["patcher"]["scenario"]
-        src_weakness = dock_sides[group[0]]["default_weakness"]
         src_shielded = _shielded(src_weakness)
         if by_type:
             # Apply the global type remap; skip (leave vanilla) if this type's

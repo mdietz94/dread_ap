@@ -107,6 +107,7 @@ COSMETIC_COMBAT_PATHS: dict[str, tuple[str, ...]] = {
     "bShowEnemyDamage": ("cosmetic_patches", "config", "AIManager", "bShowEnemyDamage"),
     "bShowPlayerDamage": ("cosmetic_patches", "config", "AIManager", "bShowPlayerDamage"),
     "enable_death_counter": ("cosmetic_patches", "lua", "custom_init", "enable_death_counter"),
+    "show_dna_in_hud": ("cosmetic_patches", "lua", "custom_init", "show_dna_in_hud"),
     "enable_room_name_display": ("cosmetic_patches", "lua", "custom_init", "enable_room_name_display"),
     "raven_beak_damage_table_handling": ("game_patches", "raven_beak_damage_table_handling"),
     "nerf_power_bombs": ("game_patches", "nerf_power_bombs"),
@@ -150,7 +151,8 @@ def layout_uuid_from_seed(seed_id: str, slot_name: str) -> str:
     return f"{chars[0:8]}-{chars[8:12]}-{chars[12:16]}-{chars[16:20]}-{chars[20:32]}"
 
 
-def _map_icon_override(is_own: bool, model: str, ap_item_name: str) -> Optional[dict]:
+def _map_icon_override(is_own: bool, model: str, ap_item_name: str,
+                       recipient: str = "") -> Optional[dict]:
     """Map-screen icon override for one placement.
 
     Mirrors Randovania's own Dread exporter (``patch_data_factory.
@@ -160,9 +162,12 @@ def _map_icon_override(is_own: bool, model: str, ap_item_name: str) -> Optional[
       * own item with a concrete model    → ``{"icon_id": <model>}``
       * own item rendered as the orb      → ``{"custom_icon": {"label": NAME}}``
         (e.g. Metroid DNA, whose ``model_name`` is ``itemsphere``)
-      * cross-slot item (always the orb)  → ``{"custom_icon": {"label": NAME,
-        "base_icon": "unknown"}}`` — the "?" glyph, matching Randovania's
-        off-world treatment.
+      * cross-slot item (always the orb)  → ``{"custom_icon": {"label":
+        "RECIPIENT'S NAME", "base_icon": "unknown"}}`` — the "?" glyph, matching
+        Randovania's off-world treatment. The label NAMES THE RECIPIENT slot so
+        the map says who an off-world pickup is for (Randovania shows the player
+        on its off-world icons too); the in-world caption already does the same
+        ("Sent <item> to <recipient>").
 
     The starter preset bakes Randovania's OWN placement icon at every map spot,
     so after AP shuffling each minimap icon lies: a relocated Missile Tank still
@@ -171,13 +176,14 @@ def _map_icon_override(is_own: bool, model: str, ap_item_name: str) -> Optional[
     honest. Returns ``None`` when there's nothing to override (own item whose
     model we don't know — older payloads / the offline CLI flow) so the
     template's icon is left untouched, exactly like the model path."""
-    label = (ap_item_name or "").upper()
+    name = (ap_item_name or "").upper()
     if not is_own:
+        label = f"{recipient.upper()}'S {name}" if recipient else name
         return {"custom_icon": {"label": label, "base_icon": CROSS_SLOT_MAP_BASE_ICON}}
     if not model:
         return None
     if model == CROSS_SLOT_MODEL[0]:  # the neutral orb ("itemsphere")
-        return {"custom_icon": {"label": label}}
+        return {"custom_icon": {"label": name}}
     return {"icon_id": model}
 
 
@@ -283,7 +289,8 @@ def placements_to_overrides(
             pickup_resources[key] = [[dict(CROSS_SLOT_PLACEHOLDER)]]
             pickup_captions[key] = f"Sent {ap_item_name} to {recipient}"
             pickup_models[key] = list(CROSS_SLOT_MODEL)
-            pickup_map_icons[key] = _map_icon_override(False, "", ap_item_name)
+            pickup_map_icons[key] = _map_icon_override(False, "", ap_item_name,
+                                                       recipient=recipient)
 
     if layout_uuid is None:
         layout_uuid = layout_uuid_from_seed(str(seed_id), slot_name)

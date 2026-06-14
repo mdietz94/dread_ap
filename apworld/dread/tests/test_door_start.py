@@ -91,6 +91,36 @@ def test_roll_assignments_drops_exotic_door_types():
             assert wdt[w] in BASIC_DOOR_TYPES, f"exotic type leaked: {w}"
 
 
+def test_roll_assignments_change_doors_to_restricts_targets(graph):
+    """``change_doors_to`` confines every assigned weakness to the selected set."""
+    from dread.DoorRando import roll_assignments
+    allowed = {"Missile Door", "Super Missile Door"}
+    assign = roll_assignments(graph, random.Random(3), mode="individual",
+                              change_doors_to=allowed)
+    assert assign, "expected some doors to be randomized"
+    assert set(assign.values()) <= allowed
+
+
+def test_roll_assignments_doors_to_change_restricts_sources(graph):
+    """``doors_to_change`` leaves doors of unselected vanilla types vanilla, so
+    fewer doors change than an unrestricted roll."""
+    from dread.DoorRando import roll_assignments
+    only_power = {"Power Beam Door"}
+    restricted = roll_assignments(graph, random.Random(3), mode="individual",
+                                  doors_to_change=only_power)
+    unrestricted = roll_assignments(graph, random.Random(3), mode="individual")
+    # Every changed door's canonical source type is the selected one (the door
+    # is keyed by its group's first side's default_weakness).
+    ds = graph["dock_sides"]
+    seen_groups = set()
+    for sid in restricted:
+        pair = ds[sid].get("paired_side_id")
+        key = frozenset({sid, pair}) if pair else frozenset({sid})
+        seen_groups.add(key)
+    assert restricted, "Power Beam doors should still randomize"
+    assert len(restricted) < len(unrestricted)
+
+
 class _FirstRNG:
     """choice() always returns the first option — surfaces a filtering failure
     (a shielded target placed first would be picked if the budget didn't drop it)."""

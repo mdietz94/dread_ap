@@ -825,10 +825,15 @@ def test_max_tank_counts_fit_after_trim():
 # ---- progressive items ----------------------------------------------------
 
 @pytestmark_runtime
-def test_progressive_off_default_keeps_individual_tiers():
-    """Defaults (all progressive toggles off): the individual tier items are in
-    the pool and no Progressive X item is."""
-    world, mw = _build_world()
+def test_progressive_off_keeps_individual_tiers():
+    """With every progressive toggle explicitly OFF, the individual tier items
+    are in the pool and no Progressive X item is. (Defaults are now ON — RDV
+    parity — so this turns them off explicitly.)"""
+    world, mw = _build_world(
+        progressive_suit=False, progressive_spin=False,
+        progressive_charge_beam=False, progressive_beam=False,
+        progressive_missile=False, progressive_bomb=False,
+    )
     world.create_items()
     names = {it.name for it in mw.itempool}
     for tier in ("Wide Beam", "Plasma Beam", "Wave Beam",

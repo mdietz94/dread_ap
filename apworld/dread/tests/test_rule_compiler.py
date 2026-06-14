@@ -433,49 +433,54 @@ def test_damage_threshold_in_graph():
     assert '"sum"' in text, "no sum nodes in graph"
 
 
-def test_misc_door_lock_off_no_door_rando():
-    """misc DoorLocks negate=True ('NOT DoorLocks') is True when door rando is off."""
+# DoorLocks semantics: the 81 ``NOT DoorLocks`` connection shortcuts ride
+# physical doors our DoorRando never patches (it only touches the 453
+# ``dock_sides``), so those doors stay vanilla-open and ``NOT DoorLocks`` is
+# always passable — INDEPENDENT of door_lock_rando. (An earlier model severed
+# them when rando was on, which made every door-rando seed unsolvable by walling
+# off pockets whose only graph entry is such a shortcut. See the long note in
+# Rules.compile_to_lambda.)
+
+def test_misc_not_door_lock_passable_regardless_of_rando():
+    """'NOT DoorLocks' is passable whether or not door rando is active — the
+    connection's door is never randomized by DoorRando."""
     ast = {"type": "misc", "name": "DoorLocks", "negate": True}
-    pred = compile_to_lambda(ast, player=1, door_lock_rando=False)
-    assert pred(StubState({})) is True
+    assert compile_to_lambda(ast, player=1, door_lock_rando=False)(StubState({})) is True
+    assert compile_to_lambda(ast, player=1, door_lock_rando=True)(StubState({})) is True
 
 
-def test_misc_door_lock_off_with_door_rando():
-    """misc DoorLocks negate=True ('NOT DoorLocks') is False when door rando is on."""
-    ast = {"type": "misc", "name": "DoorLocks", "negate": True}
-    pred = compile_to_lambda(ast, player=1, door_lock_rando=True)
-    assert pred(StubState({})) is False
-
-
-def test_misc_door_lock_on_with_door_rando():
-    """misc DoorLocks negate=False ('DoorLocks') is True when door rando is on."""
+def test_misc_door_lock_atom_false_regardless_of_rando():
+    """Bare 'DoorLocks' (non-negated) is always False — these doors aren't
+    randomized in our model, so the resource never holds."""
     ast = {"type": "misc", "name": "DoorLocks", "negate": False}
-    pred = compile_to_lambda(ast, player=1, door_lock_rando=True)
-    assert pred(StubState({})) is True
+    assert compile_to_lambda(ast, player=1, door_lock_rando=False)(StubState({})) is False
+    assert compile_to_lambda(ast, player=1, door_lock_rando=True)(StubState({})) is False
 
 
 def test_misc_propagates_through_and():
-    """door_lock_rando propagates through AND nodes."""
+    """'NOT DoorLocks' inside an AND leaves the other terms binding and stays
+    passable in both door-rando states."""
     ast = {"type": "and", "items": [
         {"type": "item", "name": "Slide", "amount": 1},
         {"type": "misc", "name": "DoorLocks", "negate": True},
     ]}
     with_rando = compile_to_lambda(ast, player=1, door_lock_rando=True)
     without_rando = compile_to_lambda(ast, player=1, door_lock_rando=False)
-    s = StubState({"Slide": 1})
-    assert without_rando(s) is True   # Slide + NOT DoorLocks holds
-    assert with_rando(s) is False     # NOT DoorLocks fails when door rando is on
+    assert without_rando(StubState({"Slide": 1})) is True
+    assert with_rando(StubState({"Slide": 1})) is True   # Slide gates; door stays open
+    assert with_rando(StubState({})) is False            # missing Slide still fails
 
 
-def test_thermal_device_rule_requires_morph_with_door_rando():
-    """Artaria Thermal Device: Start Point → upper door requires Morph Ball when
-    door rando is active (NOT DoorLocks is False).
+def test_thermal_device_rule_reachable_via_vanilla_door_under_rando():
+    """Artaria Thermal Device: its upper-door shortcut is a ``NOT DoorLocks``
+    connection whose door our DoorRando never locks, so the missiles-only vanilla
+    path stays open even with door rando active — Morph Ball is NOT forced.
 
-    Modelled from the raw RDV node: Missiles AND (Morph OR (NOT DoorLocks AND ...))
-    With door rando ON the second disjunct collapses to impossible, leaving just
-    Missiles AND Morph Ball — so the fill cannot place Morph Ball at that location
-    (it would be a circular dependency)."""
-    missiles_and_morph_or_no_door_lock = {
+    Modelled from the raw RDV node: Missiles AND (Morph OR (NOT DoorLocks AND ...)).
+    The ``NOT DoorLocks`` disjunct holds in both states, so missiles alone reach
+    it either way (the placement that a prior model flagged as 'circular' is in
+    fact valid — the door is open in-game)."""
+    rule = {
         "type": "and", "items": [
             {"type": "item", "name": "Missile Tank", "amount": 1},
             {"type": "or", "items": [
@@ -487,15 +492,9 @@ def test_thermal_device_rule_requires_morph_with_door_rando():
             ]},
         ],
     }
-    with_rando = compile_to_lambda(missiles_and_morph_or_no_door_lock,
-                                   player=1, door_lock_rando=True)
-    without_rando = compile_to_lambda(missiles_and_morph_or_no_door_lock,
-                                      player=1, door_lock_rando=False)
+    with_rando = compile_to_lambda(rule, player=1, door_lock_rando=True)
+    without_rando = compile_to_lambda(rule, player=1, door_lock_rando=False)
     missiles = StubState({"Missile Tank": 15})
-    missiles_and_morph = StubState({"Missile Tank": 15, "Morph Ball": 1})
-
-    # Without door rando: just missiles suffice (NOT DoorLocks path is open).
+    # Missiles alone suffice with OR without door rando (vanilla door is open).
     assert without_rando(missiles) is True
-    # With door rando ON: Morph Ball required.
-    assert with_rando(missiles) is False
-    assert with_rando(missiles_and_morph) is True
+    assert with_rando(missiles) is True
