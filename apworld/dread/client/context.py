@@ -75,13 +75,25 @@ def _settings_dreadvania_python() -> Optional[str]:
 
     Returns the configured path string, or ``None`` if unset or the settings
     module is unavailable (e.g. unit-test isolation without a full AP install).
+
+    ``dreadvania_python`` is an ``OptionalUserFilePath``, which AP resolves
+    relative to its user-data directory. A BLANK setting (the default — "let
+    the client auto-detect") therefore resolves to the user folder itself
+    (``os.path.join(user_path(), "") == "<...>/Archipelago/"``), a directory.
+    A directory is never a Python interpreter, so treat any value that resolves
+    to a directory as unset and fall through to autodetection — otherwise the
+    blank default gets handed to ``subprocess`` as an "interpreter" and exec'ing
+    a directory raises PermissionError. A non-existent path is still returned so
+    a genuine typo surfaces the "configured Python not found" diagnostic.
     """
     try:
         import settings as ap_settings
         val = str(ap_settings.get_settings()["dread_options"]["dreadvania_python"])
-        return val if val else None
     except Exception:
         return None
+    if not val or os.path.isdir(val):
+        return None
+    return val
 
 
 def _field(obj: Any, name: str, idx: int) -> Any:

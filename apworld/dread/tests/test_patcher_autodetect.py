@@ -42,6 +42,25 @@ def test_autodetect_all_missing_returns_pip_command(monkeypatch):
     assert "mercury-engine-data-structures" in msg
 
 
+def test_check_dependencies_directory_returns_message(tmp_path, monkeypatch):
+    """A `dreadvania_python` pointed at a directory (e.g. the whole
+    Archipelago install dir) makes subprocess raise PermissionError when it
+    tries to exec it. check_dependencies must turn that into an actionable
+    message, not let the OSError propagate and crash the auto-patch."""
+    # Force the subprocess path (python_executable != sys.executable).
+    monkeypatch.setattr(pp.sys, "executable", str(tmp_path / "real-python"))
+
+    def _boom(cmd, **kwargs):
+        raise PermissionError(13, "Permission denied", str(tmp_path))
+
+    monkeypatch.setattr(pp.subprocess, "run", _boom)
+
+    msg = pp.check_dependencies(str(tmp_path))
+    assert msg is not None
+    assert "isn't a usable interpreter" in msg
+    assert str(tmp_path) in msg
+
+
 def test_candidate_pythons_excludes_frozen_launcher(tmp_path, monkeypatch):
     launcher = tmp_path / "ArchipelagoLauncher.exe"
     launcher.write_text("")
