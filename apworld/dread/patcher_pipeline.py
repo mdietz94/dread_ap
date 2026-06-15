@@ -606,6 +606,19 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
             )
         except subprocess.TimeoutExpired:
             return f"dep probe timed out launching {python_executable}"
+        except OSError as exc:
+            # The path exists but can't be exec'd as an interpreter — e.g. it's
+            # a directory (a user pointing `dreadvania_python` at the whole
+            # Archipelago install dir yields EACCES → PermissionError), a
+            # non-executable file, or a broken symlink. subprocess raises an
+            # OSError subclass here; without this catch it propagates and kills
+            # the whole auto-patch / autodetect pass.
+            return (
+                f"configured Python isn't a usable interpreter: {python_executable}\n"
+                f"    {exc}\n"
+                "Point `dreadvania_python` at a Python 3 executable (not a "
+                "folder), or clear it and re-run /setup to auto-detect one."
+            )
         if proc.returncode == 0 and _PROBE_OK_TOKEN in (proc.stdout or ""):
             return None
         # Surface the actual ImportError for actionable diagnostics.
