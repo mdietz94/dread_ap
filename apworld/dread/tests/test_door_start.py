@@ -455,3 +455,13 @@ def test_start_kit_baked_into_patcher(area):
         assert pid in starting_items, (
             f"area {area}: kit item {name!r} ({pid}) precollected into logic "
             f"but missing from patcher starting_items")
+        # Paired-resource starters must bake their full grant, not just the
+        # unlock flag. The Power Bomb launcher MUST also grant capacity
+        # (ITEM_WEAPON_POWER_BOMB_MAX) — without it the player spawns with the
+        # weapon unlocked but 0/0 power bombs (unusable), the start-location
+        # randomizer "0/0 power bombs" bug. AP logic credits the launcher's
+        # starting_power_bombs capacity, so the ROM must too.
+        if name == "Power Bomb":
+            assert starting_items.get("ITEM_WEAPON_POWER_BOMB_MAX", 0) >= 1, (
+                f"area {area}: Power Bomb starter baked the launcher flag but "
+                f"no ITEM_WEAPON_POWER_BOMB_MAX capacity — player has 0/0 PBs")
