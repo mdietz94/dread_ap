@@ -859,10 +859,23 @@ class DreadWorld(World):
         forced_start_abilities = (list(self.EXTRA_STARTING_ITEMS)
                                   + list(getattr(self, "_start_extra_items", [])
                                          or []))
+        from .client.protocol import pickup_resource_stage
         for name in forced_start_abilities:
             data = item_name_to_item.get(name)
-            if data and data.patcher_item_id:
-                starting_items[data.patcher_item_id] = max(1, int(data.quantity))
+            if not (data and data.patcher_item_id):
+                continue
+            # Expand paired-resource items so a baked starter is actually usable.
+            # The Power Bomb "launcher" (ITEM_WEAPON_POWER_BOMB) must ALSO grant
+            # ITEM_WEAPON_POWER_BOMB_MAX capacity — granting only the unlock flag
+            # leaves the player at 0/0 power bombs (unusable), even though AP logic
+            # credits the launcher's starting_power_bombs capacity. This was the
+            # start-location-randomizer "0/0 power bombs" bug. The capacity comes
+            # from the per-pickup ammo override (starting_power_bombs); other
+            # unlocks fall back to their items.json quantity. Mirrors the seed-
+            # baked placement path (which already uses pickup_resource_stage).
+            qty = ammo_amount_override.get(name, max(1, int(data.quantity)))
+            for res in pickup_resource_stage(data.patcher_item_id, qty):
+                starting_items[res["item_id"]] = max(1, int(res["quantity"]))
 
         # User-configured AP start_inventory / start_inventory_from_pool. AP
         # precollects these into logic and also streams them to the client as
