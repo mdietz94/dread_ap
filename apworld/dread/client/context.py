@@ -884,6 +884,12 @@ class DreadContext(CommonContext):
             result = await asyncio.to_thread(_do)
         except Exception as exc:
             log.exception("auto-patch: unhandled exception: %s", exc)
+            # Surface on the always-visible pill + the main Archipelago tab so
+            # the failure isn't buried in the Dread-tab log.
+            self.state.set_patch_status("error", f"unhandled exception: {exc}")
+            _ap_log.error(
+                "Auto-patch failed (unhandled exception: %s). Click the "
+                "'Patcher' status at the top for details.", exc)
             return
 
         if result.ok:
@@ -892,11 +898,23 @@ class DreadContext(CommonContext):
                 log.info("  patcher input: %s", result.patcher_input_path)
             for note in result.notes:
                 log.info("  %s", note)
+            self.state.set_patch_status("ok", result.message)
         else:
             log.error("auto-patch: %s", result.message)
             if result.cli_stderr_tail:
                 for line in result.cli_stderr_tail.splitlines():
                     log.error("  | %s", line)
+            # Record the full detail for the pill popup, and put a one-line
+            # pointer on the main Archipelago tab (which is visible by default)
+            # so a failed patch is noticed without opening the Dread tab.
+            detail = result.message
+            if result.cli_stderr_tail:
+                detail = f"{detail}\n\n{result.cli_stderr_tail}"
+            self.state.set_patch_status("error", detail)
+            _ap_log.error(
+                "Auto-patch failed: %s — click the 'Patcher' status at the top "
+                "(or see the Dread tab) for the full error.",
+                result.message.splitlines()[0] if result.message else "see Dread tab")
 
     # ---- Switch poll loop --------------------------------------------
 

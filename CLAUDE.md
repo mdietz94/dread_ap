@@ -675,6 +675,28 @@ e2e smoke). Pure formatters live in the Kivy-free `client/display.py`
 The Launcher `Component` now carries `game_name="Metroid Dread"` so it groups
 under the game and `.dreadap` files auto-route to it.
 
+UPDATE (romfs version pre-flight + visible patcher status): two fixes for the
+"Patcher : ready" → raw `ValueError: Not a valid version!` traceback a user hit
+on AP-connect (open-dread-rando → mercury-engine-data-structures
+`version_validation.identify_version` MD5s `system/files.toc` and matches it
+against its `GameVersion` table; an unrecognized hash aborts the patch).
+(1) `patcher_pipeline.verify_romfs_version` mirrors that check up-front
+(`KNOWN_DREAD_TOC_HASHES` = the 4 shipped Dread TOC md5s: 1.0.0/1.0.1/2.0.0/
+2.1.0) so `patch()` fails fast — BEFORE spawning the subprocess — with an
+actionable message (missing TOC ⇒ "not a romfs"; unknown hash ⇒ "not a clean
+retail dump: already-patched/mod-output/incomplete, or your MEDS predates this
+version"). `_patcher_error_hint` also translates a raw "Not a valid version!" on
+the subprocess stderr, covering the table-drift case where our pre-flight passed
+but the installed MEDS still rejected the romfs. (2) Patch outcome is now
+surfaced on an ALWAYS-VISIBLE top-bar "Patcher" pill (next to the Switch pill,
+visible on every tab) that turns RED on failure; clicking it opens
+`PatcherPopup` with the full error (`state.set_patch_status` + snapshot
+`patch_status_{level,msg}`; `display.format_patcher_pill`/`patcher_pill_color`/
+`format_patcher_detail`). `_run_patch` also mirrors a one-line failure pointer to
+the `"Client"`→Archipelago tab (the default-visible log), so a failed auto-patch
+is noticed without opening the Dread tab. Tests: `test_patcher_pipeline_output_path`
+(version pre-flight + error-hint), `test_display` (pill colors/labels/detail).
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**

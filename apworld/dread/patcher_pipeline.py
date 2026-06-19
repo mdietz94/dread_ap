@@ -43,6 +43,92 @@ from ._vendor import (
 from .client.protocol import pickup_resource_stage
 
 
+# MD5 of ``system/files.toc`` for each shipped Dread release. open-dread-rando
+# fingerprints the input romfs through mercury-engine-data-structures'
+# ``version_validation.identify_version``, which MD5s exactly this one TOC file
+# and matches it against its ``GameVersion`` table; an unrecognized hash aborts
+# the patch with a raw ``ValueError("Not a valid version!")`` traceback. We keep
+# a copy of that small, stable table so the client can fail fast with an
+# actionable message BEFORE spawning the subprocess. These hashes never change
+# for a given game version; kept in sync with MEDS' ``GameVersion`` enum
+# (randovania/mercury-engine-data-structures).
+KNOWN_DREAD_TOC_HASHES: dict[str, str] = {
+    "8dec0c18622c6dac370f84cf3a3ac0b4": "1.0.0",
+    "35309081af05c60cebc476f78f3609b6": "1.0.1",
+    "b36fb05261f2e4eaf0408760e1b983fd": "2.0.0",
+    "782820635ac434a18df11de3d4052dd1": "2.1.0",
+}
+
+# Path (relative to the romfs root) of the file MEDS fingerprints. Lowercase on
+# every platform — ``Toc.system_files_name()`` returns ``"system/files.toc"``.
+_TOC_RELPATH = ("system", "files.toc")
+
+
+def _supported_versions_str() -> str:
+    """Comma-joined, de-duped, sorted list of supported Dread versions for
+    user-facing messages (e.g. ``"1.0.0, 1.0.1, 2.0.0, 2.1.0"``)."""
+    return ", ".join(sorted(set(KNOWN_DREAD_TOC_HASHES.values())))
+
+
+def verify_romfs_version(vanilla_romfs_dir: Path) -> Optional[str]:
+    """Return ``None`` if ``vanilla_romfs_dir`` looks like a clean, supported
+    vanilla Dread dump; else a user-readable message explaining the most likely
+    cause.
+
+    This mirrors what the patcher does internally (MD5 ``system/files.toc`` and
+    match it against the known per-version hashes) so a wrong/patched/incomplete
+    romfs is reported with an actionable message instead of the raw upstream
+    ``ValueError("Not a valid version!")`` traceback the client would otherwise
+    dump into its log."""
+    toc = vanilla_romfs_dir.joinpath(*_TOC_RELPATH)
+    if not toc.is_file():
+        return (
+            f"{vanilla_romfs_dir} doesn't look like an extracted Dread romfs — "
+            f"{'/'.join(_TOC_RELPATH)} is missing.\n"
+            "Re-run /setup and pick the folder that DIRECTLY contains the "
+            "romfs's system/ and packs/ directories."
+        )
+    try:
+        digest = hashlib.md5(toc.read_bytes()).hexdigest().lower()
+    except OSError as exc:
+        return f"couldn't read {toc}: {exc}"
+    if digest in KNOWN_DREAD_TOC_HASHES:
+        return None
+    return (
+        f"the romfs at {vanilla_romfs_dir} is NOT a recognized vanilla Dread "
+        f"version (system/files.toc md5 {digest} matches none of the supported "
+        f"versions: {_supported_versions_str()}).\n"
+        "The usual cause is pointing at a romfs that isn't a clean retail dump "
+        "— e.g. an already-patched/randomized romfs, your Ryujinx mod-output "
+        "folder, or an incomplete extraction. Re-extract from a clean retail "
+        "Dread source and pick THAT folder in /setup.\n"
+        "If you're sure the dump is a clean supported version, your installed "
+        "mercury-engine-data-structures may predate it — upgrade the patcher "
+        "deps: pip install -U mercury-engine-data-structures open-dread-rando."
+    )
+
+
+def _patcher_error_hint(stderr: str) -> Optional[str]:
+    """Translate known upstream patcher failure signatures into an actionable
+    hint, or ``None`` if the stderr isn't a signature we recognize.
+
+    Covers the case where our :func:`verify_romfs_version` pre-flight passed
+    (the TOC hash is in our table) but the *installed* MEDS still rejected the
+    romfs — e.g. a MEDS too old to know the user's version. The pre-flight uses
+    our copy of the hash table; this consults the actual failure the running
+    MEDS produced, so the two together cover both drift directions."""
+    if "Not a valid version" in stderr:
+        return (
+            "The patcher didn't recognize your romfs as a supported Dread "
+            f"version (supported: {_supported_versions_str()}). Point /setup at "
+            "a CLEAN retail dump — not an already-patched romfs or your "
+            "mod-output folder. If the dump genuinely is a supported version, "
+            "upgrade the patcher deps: pip install -U "
+            "mercury-engine-data-structures open-dread-rando."
+        )
+    return None
+
+
 def _patcher_subprocess_env(env: Optional[dict[str, str]] = None) -> dict[str, str]:
     """Copy of ``env`` (or ``os.environ``) with ``PYTHONPATH`` prepended to
     include the vendored ``open_dread_rando`` source. The submodule path is
@@ -957,6 +1043,12 @@ def patch(
 
     if not vanilla_romfs_dir.is_dir():
         return PatchResult(ok=False, message=f"vanilla romfs not found: {vanilla_romfs_dir}")
+    # Fail fast on a wrong/patched/incomplete romfs with an actionable message,
+    # instead of letting the subprocess dump a raw MEDS "Not a valid version!"
+    # traceback into the client log (the reported symptom).
+    version_err = verify_romfs_version(vanilla_romfs_dir)
+    if version_err:
+        return PatchResult(ok=False, message=version_err)
     # First-ever deploy: the per-title install dir (SD .../contents/<tid> or
     # Ryujinx .../DreadRandovania) may not exist yet — _maybe_auto_patch's
     # SD-mount guard deliberately admits a freshly-mounted card that has only
@@ -1011,9 +1103,16 @@ def patch(
         return PatchResult(ok=False, message=f"could not launch patcher: {exc}")
 
     if proc.returncode != 0:
+        message = f"patcher CLI failed with exit {proc.returncode}"
+        # Translate known upstream failure signatures (e.g. MEDS' "Not a valid
+        # version!") into an actionable hint, in case our romfs pre-flight
+        # passed but the installed deps still rejected the romfs.
+        hint = _patcher_error_hint(proc.stderr or "")
+        if hint:
+            message = f"{message}\n{hint}"
         return PatchResult(
             ok=False,
-            message=f"patcher CLI failed with exit {proc.returncode}",
+            message=message,
             patcher_input_path=patcher_input_path,
             cli_returncode=proc.returncode,
             cli_stderr_tail="\n".join((proc.stderr or "").splitlines()[-20:]),

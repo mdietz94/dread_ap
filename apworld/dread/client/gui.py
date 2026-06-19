@@ -38,7 +38,12 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
 from .discovery import DEFAULT_DISCOVERY_PORT
-from .display import format_status_panel, format_switch_pill
+from .display import (
+    format_patcher_detail,
+    format_patcher_pill,
+    format_status_panel,
+    format_switch_pill,
+)
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     from .context import DreadContext
@@ -108,8 +113,10 @@ class DreadManager(GameManager):
         super().__init__(ctx)
         self._status_label: _StatusLabel | None = None
         self._switch_pill: Button | None = None
+        self._patcher_pill: Button | None = None
         self._client_log: UILog | None = None
         self._switches_popup: "SwitchesPopup | None" = None
+        self._patcher_popup: "PatcherPopup | None" = None
 
     def build(self):
         container = super().build()
@@ -127,28 +134,41 @@ class DreadManager(GameManager):
         self.add_client_tab("Dread", split)
 
         pill_h = self.server_connect_bar.height
-        self._switch_pill = Button(
-            text="Bridge: idle",
+        self._switch_pill = self._make_pill("Bridge: idle", pill_h,
+                                            self._open_switches_popup)
+        self.connect_layout.add_widget(self._switch_pill)
+        # A second top-bar pill for patcher status — visible on every tab so a
+        # failed auto-patch is noticed without opening the Dread tab. Click it
+        # for the full error.
+        self._patcher_pill = self._make_pill("Patcher: idle", pill_h,
+                                             self._open_patcher_popup)
+        self.connect_layout.add_widget(self._patcher_pill)
+
+        Clock.schedule_interval(self._refresh_panels, _REFRESH_INTERVAL)
+        return container
+
+    def _make_pill(self, text: str, height: float, on_release) -> Button:
+        """A transparent, auto-fitting top-bar status pill bound to a click
+        handler. Shared by the Switch + Patcher pills."""
+        pill = Button(
+            text=text,
             markup=True,
             size_hint_x=None,
             size_hint_y=None,
             width=dp(150),
-            height=pill_h,
+            height=height,
             halign="center",
             valign="middle",
             padding=(dp(8), 0),
             pos_hint={"center_y": 0.55},
-            text_size=(None, pill_h),
+            text_size=(None, height),
             background_normal="",
             background_down="",
             background_color=(0, 0, 0, 0),
         )
-        _bind_pill_layout(self._switch_pill)
-        self._switch_pill.bind(on_release=self._open_switches_popup)
-        self.connect_layout.add_widget(self._switch_pill)
-
-        Clock.schedule_interval(self._refresh_panels, _REFRESH_INTERVAL)
-        return container
+        _bind_pill_layout(pill)
+        pill.bind(on_release=on_release)
+        return pill
 
     def _refresh_panels(self, _dt) -> None:
         try:
@@ -157,8 +177,12 @@ class DreadManager(GameManager):
                 self._status_label.text = format_status_panel(snap)
             if self._switch_pill is not None:
                 self._switch_pill.text = format_switch_pill(snap)
+            if self._patcher_pill is not None:
+                self._patcher_pill.text = format_patcher_pill(snap)
             if self._switches_popup is not None and self._switches_popup.is_open:
                 self._switches_popup.refresh()
+            if self._patcher_popup is not None and self._patcher_popup.is_open:
+                self._patcher_popup.refresh()
         except Exception:
             logging.getLogger(_CLIENT_LOGGER).exception("panel refresh failed")
 
@@ -167,6 +191,12 @@ class DreadManager(GameManager):
             self._switches_popup = SwitchesPopup(self.ctx)
         self._switches_popup.refresh()
         self._switches_popup.open()
+
+    def _open_patcher_popup(self, _button) -> None:
+        if self._patcher_popup is None:
+            self._patcher_popup = PatcherPopup(self.ctx)
+        self._patcher_popup.refresh()
+        self._patcher_popup.open()
 
 
 class SwitchesPopup(Popup):
@@ -277,3 +307,42 @@ class SwitchesPopup(Popup):
                 "promote %s: %s", device_id, "OK" if ok else "unknown device_id")
             self.refresh()
         asyncio.ensure_future(_go())
+
+
+class PatcherPopup(Popup):
+    """Modal popup showing the latest patch run's full detail.
+
+    Opened from the top-bar Patcher pill so a failed auto-patch (e.g. an
+    unrecognized romfs version) can be read in full without hunting through
+    the Dread-tab log. Auto-refreshes while open via
+    DreadManager._refresh_panels."""
+
+    def __init__(self, ctx: "DreadContext"):
+        self._ctx = ctx
+        self._body: Label | None = None
+        self.is_open = False
+        super().__init__(
+            title="Patcher status",
+            size_hint=(0.9, 0.7),
+            auto_dismiss=True,
+        )
+        self.bind(
+            on_open=lambda *_: setattr(self, "is_open", True),
+            on_dismiss=lambda *_: setattr(self, "is_open", False),
+        )
+        self._build()
+
+    def _build(self) -> None:
+        outer = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+        scroll = ScrollView(do_scroll_x=False, do_scroll_y=True)
+        self._body = _StatusLabel(text="")
+        scroll.add_widget(self._body)
+        outer.add_widget(scroll)
+        self.content = outer
+
+    def refresh(self) -> None:
+        if self._body is not None:
+            self._body.text = format_patcher_detail(self.ctx_snapshot())
+
+    def ctx_snapshot(self) -> dict:
+        return self._ctx.state.snapshot()

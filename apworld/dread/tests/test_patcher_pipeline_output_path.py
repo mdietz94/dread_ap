@@ -41,6 +41,9 @@ def _patch_with_fakes(monkeypatch, dreadvania_dir: Path, romfs_dir: Path,
         return _FakeProc()
 
     monkeypatch.setattr(pp, "check_dependencies", lambda py=None: None)
+    # These tests use empty romfs dirs and exercise output-path logic, not the
+    # romfs-version pre-flight (covered separately) — bypass it like the dep check.
+    monkeypatch.setattr(pp, "verify_romfs_version", lambda d: None)
     monkeypatch.setattr(pp.subprocess, "run", _fake_run)
 
     result = pp.patch(
@@ -256,3 +259,95 @@ def test_install_exefs_ips_copies_bytes(tmp_path):
     assert set(copied) >= set(EXPECTED_IPS.values())
     for name in copied:
         assert (dest / name).stat().st_size > 0
+
+
+# --- romfs version pre-flight -----------------------------------------------
+
+import hashlib  # noqa: E402
+
+
+def _write_toc(romfs: Path, content: bytes) -> str:
+    """Write system/files.toc with the given bytes; return its md5 hexdigest."""
+    (romfs / "system").mkdir(parents=True, exist_ok=True)
+    (romfs / "system" / "files.toc").write_bytes(content)
+    return hashlib.md5(content).hexdigest()
+
+
+def test_verify_romfs_version_missing_toc(tmp_path):
+    """A folder without system/files.toc is reported as 'not a romfs', naming
+    the missing file — the 'wrong folder' case."""
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+    msg = pp.verify_romfs_version(romfs)
+    assert msg is not None
+    assert "system/files.toc" in msg
+
+
+def test_verify_romfs_version_unknown_hash(tmp_path):
+    """A present-but-unrecognized TOC (patched/incomplete dump) is reported
+    with the actionable 'not a clean retail dump' guidance + the digest."""
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+    digest = _write_toc(romfs, b"this is not a real dread toc")
+    msg = pp.verify_romfs_version(romfs)
+    assert msg is not None
+    assert digest in msg
+    assert "recognized vanilla Dread version" in msg
+    # Names every supported version so the user knows what's expected.
+    for ver in ("1.0.0", "1.0.1", "2.0.0", "2.1.0"):
+        assert ver in msg
+
+
+def test_verify_romfs_version_known_hash_passes(tmp_path, monkeypatch):
+    """A TOC whose md5 is in the known table verifies (None). We can't ship a
+    real Dread TOC, so register a synthetic file's hash as 'supported'."""
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+    digest = _write_toc(romfs, b"pretend-this-is-2.1.0")
+    monkeypatch.setitem(pp.KNOWN_DREAD_TOC_HASHES, digest, "2.1.0")
+    assert pp.verify_romfs_version(romfs) is None
+
+
+def test_patch_rejects_unknown_romfs_version(monkeypatch, tmp_path):
+    """patch() fails fast on an unrecognized romfs — no subprocess spawned —
+    with the actionable message (this is the reported 'Not a valid version!'
+    crash, now caught before the raw traceback)."""
+    mod_dir = tmp_path / "mods" / "contents" / "010093801237c000" / "DreadRandovania"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+    _write_toc(romfs, b"unrecognized")
+
+    spawned = {"ran": False}
+
+    def _fake_run(cmd, **kwargs):
+        spawned["ran"] = True
+        return _FakeProc()
+
+    monkeypatch.setattr(pp, "check_dependencies", lambda py=None: None)
+    monkeypatch.setattr(pp.subprocess, "run", _fake_run)
+
+    result = pp.patch(
+        placements=_minimal_placements(),
+        dreadvania_install_dir=mod_dir,
+        vanilla_romfs_dir=romfs,
+        python_executable="py",
+    )
+    assert not result.ok
+    assert "recognized vanilla Dread version" in result.message
+    assert not spawned["ran"], "patch() must not spawn the patcher on a bad romfs"
+
+
+def test_patcher_error_hint_translates_not_a_valid_version():
+    """A raw MEDS 'Not a valid version!' on the subprocess stderr is translated
+    into an actionable hint (covers the table-drift case where our pre-flight
+    passed but the installed MEDS rejected the romfs)."""
+    hint = pp._patcher_error_hint(
+        'ValueError: Not a valid version!\n  at version_validation.py:24')
+    assert hint is not None
+    assert "supported" in hint.lower()
+    assert "pip install" in hint
+
+
+def test_patcher_error_hint_none_for_unrelated_error():
+    assert pp._patcher_error_hint("Traceback: some other failure") is None

@@ -12,6 +12,7 @@ from __future__ import annotations
 _GREEN = "#4caf50"
 _ORANGE = "#ff9800"
 _GRAY = "#888888"
+_RED = "#f44336"
 
 
 def _conn_color(conn: str) -> str:
@@ -57,6 +58,64 @@ def format_switch_pill(snap: dict) -> str:
     else:
         label = "Bridge: error"
     return _colored(label, color)
+
+
+def patcher_pill_color(snap: dict) -> str:
+    """Color for the top-bar patcher pill.
+
+    A failed patch run wins (red) over everything else so the user sees it on
+    any tab. Otherwise: a successful run / a ready interpreter is green, an
+    unconfigured/needs-setup interpreter is orange, and a never-run idle state
+    is gray.
+    """
+    level = (snap.get("patch_status_level") or "").strip().lower()
+    if level == "error":
+        return _RED
+    if level == "ok":
+        return _GREEN
+    py = (snap.get("patcher_python") or "").strip().lower()
+    if py.startswith("ready") or py.startswith("patcher python ok"):
+        return _GREEN
+    if py == "":
+        return _GRAY
+    return _ORANGE
+
+
+def format_patcher_pill(snap: dict) -> str:
+    """One-line patcher status for a top-bar pill, visible on every tab.
+
+    Surfaces a patch FAILURE without the user having to open the Dread tab —
+    the full error text lives in the pill's click-through popup
+    (``patch_status_msg``) and in the log panes."""
+    color = patcher_pill_color(snap)
+    level = (snap.get("patch_status_level") or "").strip().lower()
+    if level == "error":
+        label = "Patcher: ERROR"
+    elif level == "ok":
+        label = "Patcher: OK"
+    else:
+        py = (snap.get("patcher_python") or "").strip().lower()
+        if py.startswith("ready") or py.startswith("patcher python ok"):
+            label = "Patcher: ready"
+        elif py == "":
+            label = "Patcher: idle"
+        else:
+            label = "Patcher: setup"
+    return _colored(label, color)
+
+
+def format_patcher_detail(snap: dict) -> str:
+    """Full patcher detail for the pill's popup: the latest run's message when
+    there is one, else the interpreter-detection status."""
+    msg = (snap.get("patch_status_msg") or "").strip()
+    if msg:
+        level = (snap.get("patch_status_level") or "").strip().lower()
+        header = "Last patch FAILED:" if level == "error" else "Last patch OK:"
+        return f"{header}\n\n{msg}"
+    py = (snap.get("patcher_python") or "").strip()
+    if py:
+        return f"Patcher interpreter: {py}\n\nNo patch has run yet this session."
+    return "No patch has run yet this session."
 
 
 def format_status_panel(snap: dict) -> str:
