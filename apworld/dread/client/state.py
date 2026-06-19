@@ -88,6 +88,14 @@ class BridgeState:
         # ("ready (python.exe)" / "not installed — see Archipelago tab").
         self.patcher_python: str = ""
 
+        # Outcome of the most recent patch run (auto-patch on AP-connect), so a
+        # failure is visible on the always-on top-bar pill WITHOUT opening the
+        # Dread tab. ``patch_status_level`` is "" (no run yet) / "ok" / "error";
+        # ``patch_status_msg`` is the full (possibly multi-line) detail surfaced
+        # in the pill's popup.
+        self.patch_status_level: str = ""
+        self.patch_status_msg: str = ""
+
         self.last_messages: list[str] = []  # cap 200, for log surface
 
     # ---- AP connection state ----
@@ -226,6 +234,16 @@ class BridgeState:
         with self._lock:
             self.patcher_python = status
 
+    def set_patch_status(self, level: str, message: str) -> None:
+        """Record the outcome of the latest patch run for the top-bar pill.
+
+        ``level`` is ``"ok"`` or ``"error"``; ``message`` is the full detail
+        (success summary or the failure message + stderr tail) shown in the
+        pill's popup."""
+        with self._lock:
+            self.patch_status_level = level
+            self.patch_status_msg = message
+
     # ---- Log surface ----
 
     def add_log(self, text: str) -> None:
@@ -253,6 +271,8 @@ class BridgeState:
                 "beaten": self.game_state.beaten_since_reboot,
                 "layout_uuid": self.game_state.layout_uuid,
                 "patcher_python": self.patcher_python,
+                "patch_status_level": self.patch_status_level,
+                "patch_status_msg": self.patch_status_msg,
                 "recent_messages": list(self.last_messages[-50:]),
                 "recent_items": [
                     {
