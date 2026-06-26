@@ -32,6 +32,17 @@ def build_root(tmp_path, monkeypatch):
     return target
 
 
+@pytest.fixture(autouse=True)
+def _no_prebuilt(tmp_path, monkeypatch):
+    """Default every build test to 'no prebuilt sysmodule bundled' by pointing
+    the resource dir at an empty folder. Keeps build_ready/resolve_build_outputs
+    on the source-build path regardless of whether the real data/sysmodule/ has
+    been staged on this machine. Prebuilt tests re-point this dir."""
+    empty = tmp_path / "no-sysmodule"
+    empty.mkdir()
+    monkeypatch.setattr(build, "_prebuilt_resource_dir", lambda: empty)
+
+
 def _stub_stream(monkeypatch, results):
     """Replace _stream_subprocess with a generator of scripted results.
 
@@ -163,6 +174,66 @@ def test_build_ready_requires_both_files(build_root):
     assert build.build_ready() is False
     (deploy / "main.npdm").write_bytes(b"")
     assert build.build_ready() is True
+
+
+# ---- prebuilt sysmodule (bundled in the apworld) -----------------------
+
+def _stage_prebuilt(monkeypatch, tmp_path, *, subsdk9=b"ELF", npdm=b"META"):
+    """Point build._prebuilt_resource_dir at a tmp dir holding the binaries."""
+    d = tmp_path / "bundled-sysmodule"
+    d.mkdir()
+    (d / "subsdk9").write_bytes(subsdk9)
+    (d / "main.npdm").write_bytes(npdm)
+    monkeypatch.setattr(build, "_prebuilt_resource_dir", lambda: d)
+    return d
+
+
+def test_prebuilt_available_false_when_not_bundled(build_root):
+    """The autouse fixture points at an empty dir → no prebuilt sysmodule."""
+    assert build.prebuilt_available() is False
+
+
+def test_prebuilt_available_true_and_outputs_materialize(build_root, tmp_path, monkeypatch):
+    """When subsdk9 + main.npdm are bundled, prebuilt_sysmodule_outputs writes
+    them under build_dir()/prebuilt and returns their paths with intact bytes."""
+    _stage_prebuilt(monkeypatch, tmp_path, subsdk9=b"\x7fELFsysmodule", npdm=b"METApndm")
+    assert build.prebuilt_available() is True
+    outputs = build.prebuilt_sysmodule_outputs()
+    assert set(outputs) == {"subsdk9", "main.npdm"}
+    assert outputs["subsdk9"].read_bytes() == b"\x7fELFsysmodule"
+    assert outputs["main.npdm"].read_bytes() == b"METApndm"
+    # staged under the build root, not the (read-only) resource dir
+    assert outputs["subsdk9"].parent == build_root / "prebuilt"
+
+
+def test_build_ready_true_when_prebuilt_even_without_source_build(build_root, tmp_path, monkeypatch):
+    """A bundled sysmodule satisfies build_ready with no local compile."""
+    _stage_prebuilt(monkeypatch, tmp_path)
+    assert build.collect_build_outputs() == {}  # no source build
+    assert build.build_ready() is True
+
+
+def test_resolve_prefers_prebuilt_over_source(build_root, tmp_path, monkeypatch):
+    """resolve_build_outputs returns the bundled binaries when present."""
+    _stage_prebuilt(monkeypatch, tmp_path, subsdk9=b"BUNDLED")
+    # also lay down a source build to prove the bundled one wins
+    deploy = build._build_output_dir()
+    deploy.mkdir(parents=True)
+    (deploy / "subsdk9").write_bytes(b"SOURCE")
+    (deploy / "main.npdm").write_bytes(b"SOURCE")
+    outputs = build.resolve_build_outputs()
+    assert outputs["subsdk9"].read_bytes() == b"BUNDLED"
+
+
+def test_resolve_falls_back_to_source_when_no_prebuilt(build_root):
+    """With nothing bundled (autouse fixture), resolve uses the source build."""
+    deploy = build._build_output_dir()
+    deploy.mkdir(parents=True)
+    (deploy / "subsdk9").write_bytes(b"SOURCE")
+    (deploy / "main.npdm").write_bytes(b"SOURCE")
+    outputs = build.resolve_build_outputs()
+    assert set(outputs) == {"subsdk9", "main.npdm"}
+    assert outputs["subsdk9"].read_bytes() == b"SOURCE"
 
 
 # ---- run_build_pipeline orchestration ----------------------------------

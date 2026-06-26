@@ -30,9 +30,10 @@ Smo-baseline pages this wizard intentionally drops:
 
   - ``DumpPickerPage``/``ExtractPage``: dread has no NSP extraction step.
     ``open_dread_rando`` overlays an already-extracted romfs at AP-connect.
-  - ``BridgeIpPage``: the build step auto-detects the PC's LAN IP via
-    ``detect_lan_ip()`` and bakes it as ``BRIDGE_HOST`` (the /24 seed the
-    Switch sweeps to discover us). No user-typed IP needed.
+  - ``BridgeIpPage``: the deploy step auto-detects the PC's LAN IP via
+    ``detect_lan_ip()`` and writes it to ``rom:/ap_config.json`` as
+    ``bridge_host`` (the /24 seed the Switch sweeps to discover us — read at
+    runtime, not baked into the build). No user-typed IP needed.
 
 After a successful build, the wizard opens Windows Firewall holes for the
 bridge: TCP 17777 (Switch → PC connect) and UDP 17776 (Switch → PC discovery
@@ -66,6 +67,8 @@ from .build import (
     build_ready,
     collect_build_outputs,
     ensure_exlaunch_checkout,
+    prebuilt_available,
+    resolve_build_outputs,
     run_exlaunch_build,
     write_build_manifest,
 )
@@ -305,6 +308,14 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
 
     # ----------------------------- shared state ---------------------------
 
+    # When the apworld ships a prebuilt sysmodule (the normal end-user case),
+    # the wizard skips the devkitPro prereq + the entire build page: setup is
+    # just "record your romfs → pick a deploy target → copy binaries + write
+    # ap_config.json". A source checkout with no bundled binaries falls back to
+    # the full build flow (devkitPro prereq + build page).
+    prebuilt = prebuilt_available()
+    wizard_log(f"prebuilt sysmodule bundled: {prebuilt}")
+
     saved_state = load_setup_state()
     saved_romfs = saved_state.get("romfs_path")
     initial_romfs = (
@@ -339,6 +350,30 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         s = Screen(name="welcome")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
         root.add_widget(_h1("Dread Archipelago — Setup"))
+        # Build-toolchain prose only applies to a source checkout with no
+        # prebuilt sysmodule. The release apworld bundles subsdk9 + main.npdm,
+        # so the end-user flow needs neither devkitPro nor a compile step.
+        if prebuilt:
+            prereq_line = (
+                "  - Check that you have Python 3.12 with the open-dread-rando "
+                "runtime deps installed (the patcher is vendored), so the "
+                "per-seed romfs patch can run when you connect.\n"
+            )
+            sysmodule_line = (
+                "  - Use the sysmodule (subsdk9 + main.npdm) prebuilt and "
+                "bundled inside this apworld — no devkitPro, no compiling.\n"
+            )
+        else:
+            prereq_line = (
+                "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
+                "Python 3.12 with the open-dread-rando runtime deps installed "
+                "(the patcher itself is vendored as a git submodule).\n"
+            )
+            sysmodule_line = (
+                "  - Clone open-dread-rando-exlaunch at the pinned commit and "
+                "build the subsdk9 sysmodule under devkitPro's msys2 bash "
+                "(~30-60 seconds on a warm cache).\n"
+            )
         msg = (
             "This wizard prepares everything DreadClient needs to run a "
             "Metroid Dread Archipelago seed against Ryujinx or a modded "
@@ -361,18 +396,14 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "https://nh-server.github.io/switch-guide/ if you are starting "
             "from scratch.\n\n"
             "This wizard will:\n"
-            "  - Check that you have devkitPro (devkitA64 + msys2 bash) and "
-            "Python 3.12 with the open-dread-rando runtime deps installed "
-            "(the patcher itself is vendored as a git submodule).\n"
+            + prereq_line +
             "  - Record the path to your extracted Dread romfs so the "
             "per-seed patcher can run automatically when you connect to "
             "an Archipelago server.\n"
-            "  - Clone open-dread-rando-exlaunch at the pinned commit, apply "
-            "our Ryujinx-fix patch, and build the subsdk9 sysmodule under "
-            "devkitPro's msys2 bash (~30-60 seconds on a warm cache).\n"
-            "  - Copy the compiled subsdk9 + main.npdm to your Ryujinx mods "
-            "directory, your Switch's SD card, or a custom folder you stage "
-            "from.\n\n"
+            + sysmodule_line +
+            "  - Copy the subsdk9 + main.npdm to your Ryujinx mods directory, "
+            "your Switch's SD card, or a custom folder you stage from, and "
+            "write the LAN bridge address (ap_config.json) alongside them.\n\n"
             "Changing AP server or slot does NOT require re-running this "
             "wizard — those go through DreadClient's Connect bar."
         )
@@ -604,7 +635,10 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             recheck.text = "Checking..."
 
             def worker() -> None:
-                results = check_all()
+                # Drop the devkitPro check when a prebuilt sysmodule is bundled
+                # — the user never compiles, only the per-seed patcher prereqs
+                # (Python + open-dread-rando) matter.
+                results = check_all(include_build_toolchain=not prebuilt)
                 def finish(_dt):
                     render(results)
                     recheck.text = "Re-check"
@@ -704,8 +738,11 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         err_label = _label("", color=(0.85, 0.7, 0.2, 1))
         root.add_widget(err_label)
 
-        nav, _, next_btn = _nav_row(lambda: goto("prereqs"),
-                                    lambda: goto("build"))
+        # Skip the build page entirely when a prebuilt sysmodule is bundled —
+        # go straight to deploy.
+        nav, _, next_btn = _nav_row(
+            lambda: goto("prereqs"),
+            lambda: goto("deploy" if prebuilt else "build"))
         # If a valid romfs path was restored from saved state, the user can
         # advance immediately without re-Browsing.
         next_btn.disabled = initial_path is None
@@ -1003,20 +1040,27 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         status = _label("")
         root.add_widget(status)
 
-        nav, _, _ = _nav_row(lambda: goto("build"), lambda: do_deploy_and_continue())
+        nav, _, _ = _nav_row(
+            lambda: goto("romfs" if prebuilt else "build"),
+            lambda: do_deploy_and_continue())
         root.add_widget(nav)
         s.add_widget(root)
 
         def do_deploy_and_continue() -> None:
             wizard_log("do_deploy_and_continue: entered")
-            outputs = collect_build_outputs()
+            # Prefer the apworld's bundled prebuilt sysmodule; fall back to a
+            # local source build if this is a dev checkout with no binaries.
+            outputs = resolve_build_outputs()
             if len(outputs) != 2:
                 missing = [k for k in ("subsdk9", "main.npdm") if k not in outputs]
                 wizard_log(f"do_deploy_and_continue: build outputs missing: {missing}")
-                status.text = (
-                    f"Build outputs missing ({missing}). Go back to the "
-                    f"Build step and re-run."
+                hint = (
+                    "The bundled sysmodule failed to unpack — reinstall the "
+                    "apworld."
+                    if prebuilt else
+                    "Go back to the Build step and re-run."
                 )
+                status.text = f"Sysmodule outputs missing ({missing}). {hint}"
                 return
             if ryu_cb.active:
                 target = Path(ryu_input.text.strip())

@@ -263,6 +263,25 @@ def test_check_all_returns_three_results_in_display_order(monkeypatch):
     ]
 
 
+def test_check_all_drops_devkitpro_when_prebuilt(monkeypatch):
+    """With a prebuilt sysmodule bundled (include_build_toolchain=False), the
+    devkitPro check is dropped — the user never compiles. Python +
+    open-dread-rando stay (the per-seed patcher needs them)."""
+    monkeypatch.setattr(prereqs, "check_devkitpro",
+                        lambda: prereqs.PrereqResult("devkitpro", "devkitPro / devkitA64",
+                                                     True, "ok"))
+    monkeypatch.setattr(prereqs, "check_python312",
+                        lambda: prereqs.PrereqResult("python312", "Python 3.12",
+                                                     True, "ok"))
+    monkeypatch.setattr(prereqs, "check_open_dread_rando",
+                        lambda python=None: prereqs.PrereqResult(
+                            "open_dread_rando",
+                            "open-dread-rando (Python patcher)",
+                            True, "ok"))
+    results = prereqs.check_all(include_build_toolchain=False)
+    assert [r.key for r in results] == ["python312", "open_dread_rando"]
+
+
 def test_all_ok_aggregator():
     """all_ok is True iff every PrereqResult.ok is True."""
     ok = [prereqs.PrereqResult("a", "A", True, ""),

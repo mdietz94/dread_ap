@@ -639,6 +639,7 @@ def check_open_dread_rando(python: Path | str | None = None) -> PrereqResult:
 
 def check_all(
     *,
+    include_build_toolchain: bool = True,
     hactool_override: Path | None = None,    # accepted for wizard-import
     prod_keys_override: Path | None = None,  # compat; ignored
 ) -> list[PrereqResult]:
@@ -646,18 +647,24 @@ def check_all(
     most-likely-missing first so the user isn't surprised at the end of
     the list.
 
+    `include_build_toolchain` gates the devkitPro check: it's only needed to
+    COMPILE the sysmodule from source. When the apworld ships a prebuilt
+    subsdk9 + main.npdm (the normal end-user case), pass False — the user never
+    builds, so devkitPro is irrelevant. Python + open-dread-rando stay required
+    either way: they run the per-seed romfs patcher at connect time.
+
     The two override kwargs (`hactool_override`, `prod_keys_override`) are
     accepted but ignored — they're vestigial smo-baseline parameters left
     in the signature so the lifted wizard.py call sites don't have to
     change. Drop them when wizard.py surgery removes their call sites.
     """
     del hactool_override, prod_keys_override  # vestigial; see docstring
-    python_row = check_python312()
-    return [
-        check_devkitpro(),
-        python_row,
-        check_open_dread_rando(),
-    ]
+    rows: list[PrereqResult] = []
+    if include_build_toolchain:
+        rows.append(check_devkitpro())
+    rows.append(check_python312())
+    rows.append(check_open_dread_rando())
+    return rows
 
 
 def all_ok(results: list[PrereqResult]) -> bool:

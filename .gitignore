@@ -74,6 +74,11 @@ Thumbs.db
 # ============================================================================
 apworld/dread/data/logic_graph.json
 
+# Prebuilt sysmodule staged into the apworld at package time by
+# scripts/install_apworld.py (subsdk9 has no extension; main.npdm is also
+# covered by the *.npdm rule above). Build outputs, never committed.
+apworld/dread/data/sysmodule/
+
 # ============================================================================
 # Test scratch
 # ============================================================================

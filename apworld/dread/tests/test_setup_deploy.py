@@ -22,6 +22,15 @@ sys.path.insert(0, str(ROOT.parent))
 
 from dread._setup import deploy  # noqa: E402
 
+# Explicit LAN IP passed to every deploy_to_* call so the suite never touches
+# the real network (an unset bridge_host would auto-detect via detect_lan_ip).
+FAKE_HOST = "192.168.7.42"
+
+
+def _read_ap_config(romfs_dir: Path) -> dict:
+    import json
+    return json.loads((romfs_dir / "ap_config.json").read_text(encoding="utf-8"))
+
 
 @pytest.fixture
 def fake_outputs(tmp_path):
@@ -92,14 +101,18 @@ def test_deploy_to_ryujinx_lands_both_files(tmp_path, fake_outputs):
     match the source; DeployResult.ok is True."""
     ryu = tmp_path / "Ryujinx"
     ryu.mkdir()
-    result = deploy.deploy_to_ryujinx(ryu, fake_outputs)
+    result = deploy.deploy_to_ryujinx(ryu, fake_outputs, bridge_host=FAKE_HOST)
     assert result.ok is True
     assert "Ryujinx" in result.target
     exefs = ryu / "mods" / "contents" / deploy.DREAD_TITLE_ID / deploy.RYU_MOD_NAME / "exefs"
     assert (exefs / "subsdk9").is_file()
     assert (exefs / "main.npdm").is_file()
     assert (exefs / "subsdk9").stat().st_size == fake_outputs["subsdk9"].stat().st_size
-    assert len(result.files) == 2
+    # subsdk9 + main.npdm + ap_config.json
+    assert len(result.files) == 3
+    # ap_config.json lands in the sdcard romfs layer (separate from exefs).
+    romfs = ryu / "sdcard" / "atmosphere" / "contents" / deploy.DREAD_TITLE_ID / "romfs"
+    assert _read_ap_config(romfs) == {"bridge_host": FAKE_HOST}
 
 
 def test_deploy_to_ryujinx_creates_parent_dirs(tmp_path, fake_outputs):
@@ -107,7 +120,7 @@ def test_deploy_to_ryujinx_creates_parent_dirs(tmp_path, fake_outputs):
     ryu = tmp_path / "Ryujinx"
     ryu.mkdir()
     # no mods/, no contents/, no anything
-    result = deploy.deploy_to_ryujinx(ryu, fake_outputs)
+    result = deploy.deploy_to_ryujinx(ryu, fake_outputs, bridge_host=FAKE_HOST)
     assert result.ok is True
 
 
@@ -117,12 +130,16 @@ def test_deploy_to_sd_lands_both_files(tmp_path, fake_outputs):
     """Files land at atmosphere/contents/<title>/exefs/<filename>."""
     sd = tmp_path / "sd"
     sd.mkdir()
-    result = deploy.deploy_to_sd(sd, fake_outputs)
+    result = deploy.deploy_to_sd(sd, fake_outputs, bridge_host=FAKE_HOST)
     assert result.ok is True
     assert "SD card" in result.target
-    exefs = sd / "atmosphere" / "contents" / deploy.DREAD_TITLE_ID / "exefs"
+    base = sd / "atmosphere" / "contents" / deploy.DREAD_TITLE_ID
+    exefs = base / "exefs"
     assert (exefs / "subsdk9").is_file()
     assert (exefs / "main.npdm").is_file()
+    # ap_config.json sits in the same romfs the patcher seed populates, so
+    # the sysmodule reads it as rom:/ap_config.json.
+    assert _read_ap_config(base / "romfs") == {"bridge_host": FAKE_HOST}
 
 
 # ---- deploy_to_custom_folder -------------------------------------------
@@ -132,11 +149,12 @@ def test_deploy_to_custom_folder_uses_sd_layout(tmp_path, fake_outputs):
     subtree as deploy_to_sd, so the user can drop it on any SD card."""
     custom = tmp_path / "staging"
     custom.mkdir()
-    result = deploy.deploy_to_custom_folder(custom, fake_outputs)
+    result = deploy.deploy_to_custom_folder(custom, fake_outputs, bridge_host=FAKE_HOST)
     assert result.ok is True
     assert "Custom folder" in result.target
-    exefs = custom / "atmosphere" / "contents" / deploy.DREAD_TITLE_ID / "exefs"
-    assert (exefs / "subsdk9").is_file()
+    base = custom / "atmosphere" / "contents" / deploy.DREAD_TITLE_ID
+    assert (base / "exefs" / "subsdk9").is_file()
+    assert _read_ap_config(base / "romfs") == {"bridge_host": FAKE_HOST}
 
 
 # ---- _copy_files error paths -------------------------------------------
@@ -158,7 +176,7 @@ def test_deploy_to_custom_folder_preserves_source_byte_sizes(tmp_path, fake_outp
     Windows-FS-filter early-return guard)."""
     custom = tmp_path / "staging"
     custom.mkdir()
-    result = deploy.deploy_to_custom_folder(custom, fake_outputs)
+    result = deploy.deploy_to_custom_folder(custom, fake_outputs, bridge_host=FAKE_HOST)
     assert result.ok is True
     for src_path, dst_path in result.files:
         assert dst_path.stat().st_size == src_path.stat().st_size
