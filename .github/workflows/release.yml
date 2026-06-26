@@ -69,7 +69,10 @@ jobs:
       # — validate with a manual `workflow_dispatch` run before the first tag.
       - name: Install devkitPro (devkitA64) for the sysmodule build
         run: |
-          wget https://apt.devkitpro.org/install-devkitpro-pacman
+          # apt.devkitpro.org sits behind Cloudflare's WAF, which 403s wget's
+          # default user-agent. devkitPro whitelisted the "dkp-apt" UA — their
+          # documented workaround — so spoof it for the bootstrap fetch.
+          wget -U "dkp-apt" https://apt.devkitpro.org/install-devkitpro-pacman
           chmod +x ./install-devkitpro-pacman
           sudo ./install-devkitpro-pacman
           sudo dkp-pacman -S --noconfirm switch-dev
