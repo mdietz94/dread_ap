@@ -24,7 +24,7 @@ jobs:
       PYTHONIOENCODING: "utf-8"  # the rule extractor prints non-ASCII (em dashes)
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # vendor/open-dread-rando supplies the patcher-template test fixtures.
           submodules: recursive
