@@ -48,6 +48,12 @@ VENDORED_PATCHER_PKG = (
 # `apworld/dread/_vendor.py` at runtime.
 BUNDLED_PATCHER_REL = Path("_vendored_patcher") / "open_dread_rando"
 
+# Where the prebuilt sysmodule (subsdk9 + main.npdm) is staged inside the
+# apworld. Shipped so the end-user setup wizard never needs devkitPro / a
+# compile — it just copies these to the SD/Ryujinx and writes ap_config.json.
+# Generated at package time (like logic_graph.json), gitignored, never committed.
+SYSMODULE_DIR = SRC / "data" / "sysmodule"
+
 SKIP_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache",
               ".pytest_cache", "tests"}
 
@@ -117,6 +123,60 @@ def _ensure_logic_graph() -> None:
             f"regen of {target.name} failed:\n"
             f"{err.decode('utf-8', errors='replace')}\n")
         sys.exit(1)
+
+
+def _ensure_prebuilt_sysmodule(skip_build: bool) -> None:
+    """Build subsdk9 + main.npdm and stage them under data/sysmodule/ so the
+    packaged apworld ships a ready-to-deploy sysmodule. This shifts the
+    devkitPro/git/compile burden from every end-user onto the packager (here /
+    CI): the setup wizard then just copies the binaries and writes
+    ap_config.json.
+
+    `skip_build` (``--no-build-sysmodule``) reuses whatever is already staged
+    — for CI that builds in a separate job, or a packager without devkitPro who
+    accepts the previously-staged binaries. Fatal if skip is requested but
+    nothing is staged, since the apworld would ship unusable.
+    """
+    SYSMODULE_DIR.mkdir(parents=True, exist_ok=True)
+    have = {"subsdk9", "main.npdm"} <= {p.name for p in SYSMODULE_DIR.iterdir()}
+
+    if skip_build:
+        if not have:
+            sys.stderr.write(
+                "\n--no-build-sysmodule was passed but data/sysmodule/ has no "
+                "subsdk9 + main.npdm to bundle. Build once without the flag "
+                "(needs devkitPro), or stage the binaries there first.\n"
+            )
+            sys.exit(1)
+        print("reusing already-staged prebuilt sysmodule")
+        return
+
+    # Import the apworld's build pipeline (needs apworld/ on sys.path).
+    sys.path.insert(0, str(REPO / "apworld"))
+    from dread._setup.build import (  # noqa: E402
+        collect_build_outputs,
+        run_build_pipeline,
+    )
+
+    print("building sysmodule (subsdk9 + main.npdm) under devkitPro...")
+    result = run_build_pipeline(on_line=lambda line: print(f"  {line}"))
+    if not result.ok:
+        sys.stderr.write(
+            f"\nsysmodule build failed: {result.detail}\n"
+            "Fix the toolchain (devkitPro + msys2) or pass "
+            "--no-build-sysmodule to reuse a previously-staged binary.\n"
+        )
+        sys.exit(1)
+    outputs = collect_build_outputs()
+    if len(outputs) != 2:
+        sys.stderr.write(
+            f"\nbuild reported success but outputs are incomplete: "
+            f"{sorted(outputs)}\n"
+        )
+        sys.exit(1)
+    for name, src in outputs.items():
+        shutil.copy2(src, SYSMODULE_DIR / name)
+    print(f"staged prebuilt sysmodule: {sorted(p.name for p in SYSMODULE_DIR.iterdir())}")
 
 
 def _check_vendored_patcher_or_die() -> list[tuple[Path, Path]]:
@@ -212,9 +272,18 @@ def main(argv: list[str] | None = None) -> int:
              "release artifact without needing an Archipelago checkout. "
              "Only valid with --mode apworld.",
     )
+    parser.add_argument(
+        "--no-build-sysmodule",
+        action="store_true",
+        help="Skip building subsdk9 + main.npdm and reuse whatever is already "
+             "staged under apworld/dread/data/sysmodule/. Use when devkitPro "
+             "isn't available here (e.g. CI built the binaries in a separate "
+             "job and staged them).",
+    )
     args = parser.parse_args(argv)
 
     _ensure_logic_graph()
+    _ensure_prebuilt_sysmodule(args.no_build_sysmodule)
 
     if args.output is not None:
         if args.mode != "apworld":

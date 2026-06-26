@@ -37,7 +37,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Hard fork: github.com/mdietz94/open-dread-rando-exlaunch.
 # bridge-networking (Switch-dials-PC, UDP discovery, JSON envelope) has been
 # merged into main. Bump this hash when the fork lands new commits to ship.
-PINNED_EXLAUNCH_COMMIT = "51d31da"
+PINNED_EXLAUNCH_COMMIT = "dcb4a64"
 EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
 
 
@@ -293,15 +293,14 @@ def _resolve_msys2_bash() -> Path | None:
 
 
 def _build_env_overrides() -> dict[str, str]:
-    """BRIDGE_HOST + MOD_VERSION baked into the sysmodule at compile time.
+    """MOD_VERSION baked into the sysmodule at compile time.
 
-    Both flow through config.mk as CXXFLAGS defines. BRIDGE_HOST is the /24
-    seed the Switch sweeps to find this PC (auto-detected from the builder's
-    LAN IP). MOD_VERSION lands verbatim in the HELLO envelope so the
-    BridgeServer can validate compatibility."""
-    from ..client.net_util import detect_lan_ip
+    Flows through config.mk as a CXXFLAGS define and lands verbatim in the
+    HELLO envelope so the BridgeServer can validate compatibility. The /24
+    sweep seed is NOT baked — the Switch reads it at runtime from
+    rom:/ap_config.json (written by _setup/deploy.py), so the build is
+    machine-independent and a single sysmodule targets any LAN."""
     return {
-        "BRIDGE_HOST": detect_lan_ip(),
         "MOD_VERSION": "dread-bridge-0.1.0",
     }
 
@@ -317,7 +316,6 @@ def run_exlaunch_build(on_line: ProgressFn | None = None) -> BuildResult:
 
     overrides = _build_env_overrides()
     if on_line:
-        on_line(f"[build] BRIDGE_HOST={overrides['BRIDGE_HOST']}")
         on_line(f"[build] MOD_VERSION={overrides['MOD_VERSION']}")
 
     if os.name == "nt":
@@ -374,10 +372,76 @@ def collect_build_outputs() -> dict[str, Path]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Prebuilt sysmodule (shipped inside the apworld)
+# ---------------------------------------------------------------------------
+#
+# The release apworld bundles a prebuilt subsdk9 + main.npdm under
+# data/sysmodule/ (placed there by scripts/install_apworld.py at package time).
+# subsdk9/main.npdm are exlaunch build outputs — pure GPL open-source code, no
+# Nintendo bytes (an independent NSO Atmosphère loads alongside the game), so
+# they're safe to ship. When present, the setup wizard skips the entire
+# devkitPro/git/compile path and just deploys them + writes ap_config.json (the
+# only per-user step is the LAN IP, which is a runtime romfs config now, not a
+# compile-time bake). A source checkout with no bundled binaries falls back to
+# the local build pipeline (dev workflow), so both paths stay supported.
+
+
+def _prebuilt_resource_dir():
+    """Zip-safe Traversable for the apworld's data/sysmodule/ dir."""
+    from .._data_loader import data_resource
+    return data_resource("sysmodule")
+
+
+def prebuilt_available() -> bool:
+    """True when the apworld ships prebuilt subsdk9 + main.npdm under
+    data/sysmodule/. Works whether the apworld is a folder or a .apworld zip."""
+    try:
+        names = {p.name for p in _prebuilt_resource_dir().iterdir()}
+    except (FileNotFoundError, NotADirectoryError, OSError):
+        return False
+    return {"subsdk9", "main.npdm"} <= names
+
+
+def prebuilt_sysmodule_outputs() -> dict[str, Path]:
+    """Materialize the bundled subsdk9 + main.npdm to disk and return their
+    paths (same shape as `collect_build_outputs`), so the deploy_* functions can
+    copy them. Returns {} when no prebuilt binaries are bundled.
+
+    Zip-safe: reads bytes through importlib.resources (works for a folder- or
+    zip-installed apworld) and stages them under build_dir()/prebuilt so the
+    paths persist across wizard pages.
+    """
+    if not prebuilt_available():
+        return {}
+    staged = build_dir() / "prebuilt"
+    staged.mkdir(parents=True, exist_ok=True)
+    out: dict[str, Path] = {}
+    for name in ("subsdk9", "main.npdm"):
+        data = _prebuilt_resource_dir().joinpath(name).read_bytes()
+        dst = staged / name
+        dst.write_bytes(data)
+        out[name] = dst
+    return out
+
+
+def resolve_build_outputs() -> dict[str, Path]:
+    """The subsdk9 + main.npdm the deploy step should copy.
+
+    Prefers the apworld's bundled prebuilt sysmodule (no toolchain needed);
+    falls back to a local source build (dev workflow with no bundled binaries).
+    """
+    pre = prebuilt_sysmodule_outputs()
+    if len(pre) == 2:
+        return pre
+    return collect_build_outputs()
+
+
 def build_ready() -> bool:
-    """True when both build outputs are present on disk. Used by the
-    deploy page to gate the Deploy button."""
-    return len(collect_build_outputs()) == 2
+    """True when deployable sysmodule outputs exist — either bundled in the
+    apworld (prebuilt) or produced by a local source build. Gates the deploy
+    step."""
+    return prebuilt_available() or len(collect_build_outputs()) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +455,10 @@ def _build_manifest_path() -> Path:
 def _compute_build_inputs_hash() -> str | None:
     """SHA-256 of PINNED_EXLAUNCH_COMMIT + baked env overrides.
 
-    Any change to the commit hash or BRIDGE_HOST triggers a fresh build.
+    Any change to the commit hash or MOD_VERSION triggers a fresh build. The
+    build no longer depends on the machine's LAN IP (the /24 sweep seed moved
+    to runtime rom:/ap_config.json), so the same inputs hash holds across
+    machines and IP changes.
     """
     h = hashlib.sha256()
     h.update(PINNED_EXLAUNCH_COMMIT.encode())
@@ -450,8 +517,9 @@ def build_current() -> bool:
 def run_build_pipeline(on_line: ProgressFn | None = None) -> BuildResult:
     """Single-shot fetch → build orchestration.
 
-    BRIDGE_HOST + MOD_VERSION are auto-detected and baked into the sysmodule
-    via config.mk CXXFLAGS overrides.
+    MOD_VERSION is baked into the sysmodule via a config.mk CXXFLAGS override.
+    The /24 sweep seed is no longer baked — it's written to rom:/ap_config.json
+    at deploy time, so this build is machine-independent.
     """
     if on_line:
         on_line("[build] step 1/2: ensure exlaunch fork checkout")

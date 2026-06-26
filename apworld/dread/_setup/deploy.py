@@ -28,6 +28,7 @@ the bytes are identical, only the destination differs.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import string
@@ -186,7 +187,48 @@ def _copy_files(
     return copied
 
 
-def deploy_to_sd(sd_root: Path, build_outputs: dict[str, Path]) -> DeployResult:
+def _resolve_bridge_host(explicit: str | None) -> str:
+    """Pick the LAN IP the Switch should sweep to find this PC.
+
+    `explicit` (when the wizard passes one) wins; otherwise we auto-detect
+    via the same `detect_lan_ip()` the build-time bake uses. Lazy-imported so
+    `deploy` stays a pure-stdlib module that loads without the client package.
+    """
+    if explicit:
+        return explicit
+    from ..client.net_util import detect_lan_ip
+    return detect_lan_ip()
+
+
+def _write_ap_config(dest: Path, bridge_host: str) -> None:
+    """Write `rom:/ap_config.json` = {"bridge_host": <ip>} into the romfs
+    layer. The sysmodule reads this at connect time (resolveBridge) as the
+    SOLE /24 sweep seed — there is no compile-time bake, so one prebuilt
+    `subsdk9` targets any LAN. Raises `DeployCopyError` on a short write —
+    same partial-write guard `_copy_files` applies to the binaries.
+    """
+    data = json.dumps({"bridge_host": bridge_host}, separators=(",", ":")).encode("utf-8")
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+    except OSError as e:
+        raise DeployCopyError(
+            f"Failed to write {dest}: {e}. Check the target drive is "
+            f"writable and has free space."
+        ) from e
+    if dest.stat().st_size != len(data):
+        raise DeployCopyError(
+            f"Partial write: {dest} is {dest.stat().st_size} bytes but "
+            f"ap_config.json is {len(data)} bytes. Free space (or reconnect "
+            f"the SD card) and re-run Deploy."
+        )
+
+
+def deploy_to_sd(
+    sd_root: Path,
+    build_outputs: dict[str, Path],
+    bridge_host: str | None = None,
+) -> DeployResult:
     """Copy build outputs to a Switch SD card root.
 
     `sd_root` should be the drive root (e.g. `D:/`), not a deeper path.
@@ -195,6 +237,8 @@ def deploy_to_sd(sd_root: Path, build_outputs: dict[str, Path]) -> DeployResult:
     try:
         dests = _sd_layout(sd_root)
         copied = _copy_files(build_outputs, dests)
+        _write_ap_config(dests["ap_config.json"], _resolve_bridge_host(bridge_host))
+        copied.append((dests["ap_config.json"], dests["ap_config.json"]))
         return DeployResult(
             ok=True,
             target=f"SD card at {sd_root}",
@@ -217,11 +261,14 @@ def deploy_to_sd(sd_root: Path, build_outputs: dict[str, Path]) -> DeployResult:
 def deploy_to_ryujinx(
     ryujinx_root: Path,
     build_outputs: dict[str, Path],
+    bridge_host: str | None = None,
 ) -> DeployResult:
     """Copy build outputs to a Ryujinx install root."""
     try:
         dests = _ryujinx_layout(ryujinx_root)
         copied = _copy_files(build_outputs, dests)
+        _write_ap_config(dests["ap_config.json"], _resolve_bridge_host(bridge_host))
+        copied.append((dests["ap_config.json"], dests["ap_config.json"]))
         return DeployResult(
             ok=True,
             target=f"Ryujinx at {ryujinx_root}",
@@ -240,6 +287,7 @@ def deploy_to_ryujinx(
 def deploy_to_custom_folder(
     custom_root: Path,
     build_outputs: dict[str, Path],
+    bridge_host: str | None = None,
 ) -> DeployResult:
     """Copy build outputs to an arbitrary folder using the SD-card layout.
 
@@ -254,6 +302,8 @@ def deploy_to_custom_folder(
     try:
         dests = _sd_layout(custom_root)
         copied = _copy_files(build_outputs, dests)
+        _write_ap_config(dests["ap_config.json"], _resolve_bridge_host(bridge_host))
+        copied.append((dests["ap_config.json"], dests["ap_config.json"]))
         return DeployResult(
             ok=True,
             target=f"Custom folder at {custom_root}",

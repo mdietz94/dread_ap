@@ -64,8 +64,10 @@ reference.
 
 **Discovery** (UDP 17776):
 
-  - Switch sweeps `BRIDGE_HOST_STRING` /24 (baked at build time from
-    `detect_lan_ip()`) plus loopback (Ryujinx). 2 s collect window.
+  - Switch sweeps the /24 whose seed is read at runtime from
+    `rom:/ap_config.json` `bridge_host` (written at deploy time from
+    `detect_lan_ip()`; no compile-time bake) plus loopback (Ryujinx). 2 s
+    collect window.
   - Probe: `{"t":"discover","mod_ver":"<x>"}\n`
   - Reply: `{"t":"bridge","host":"<lan-ip>","port":17777,"seed":"<seed>"}\n`
 

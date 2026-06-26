@@ -29,9 +29,10 @@ The packages here are organized so each step is independently testable:
   - `build.py`       — clone the open-dread-rando-exlaunch-bridge fork
                        (ours, networking-rewritten), run
                        `./exlaunch.sh build` under devkitPro's msys2 bash
-                       with BRIDGE_HOST + MOD_VERSION baked from
-                       detect_lan_ip() and the apworld version,
-                       harvest the resulting subsdk9 + main.npdm.
+                       with MOD_VERSION baked from the apworld version
+                       (the /24 sweep seed is read at runtime from
+                       rom:/ap_config.json, not baked), harvest the
+                       resulting subsdk9 + main.npdm.
   - `deploy.py`      — copy outputs to SD card / Ryujinx / custom folder.
   - `launcher_errors.py` — surface uncaught launch-time exceptions via Tk +
                        %APPDATA%/dread_ap/launch-crash.log so a broken

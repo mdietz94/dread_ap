@@ -1,9 +1,9 @@
 """Network helpers — lifted verbatim from smo_archipelago.
 
-``detect_lan_ip`` powers both the build-time BRIDGE_HOST baking (the
-Switch sysmodule uses this as the /24 subnet sweep seed) and the runtime
-UDP discovery reply payload (so the Switch dials our actual LAN IP, not
-the one baked at build time if they differ).
+``detect_lan_ip`` powers both the deploy-time ``rom:/ap_config.json``
+``bridge_host`` write (the Switch sysmodule reads this as the /24 subnet
+sweep seed — there is no compile-time bake) and the runtime UDP discovery
+reply payload (so the Switch dials our actual LAN IP).
 """
 
 from __future__ import annotations

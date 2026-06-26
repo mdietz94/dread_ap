@@ -2,7 +2,7 @@
 
 The Switch sysmodule sends a small JSON probe to one of:
   * ``127.0.0.1:17776`` (Ryujinx-on-same-host, tried first, 250ms cap)
-  * Every host in the ``BRIDGE_HOST_STRING /24`` (unicast subnet sweep, 2s
+  * Every host in the ``rom:/ap_config.json`` ``bridge_host`` /24 (unicast subnet sweep, 2s
     collect window) — see ``vendor/open-dread-rando-exlaunch/source/program/
     discovery.cpp``.
 
@@ -180,8 +180,8 @@ class DiscoveryResponder:
             sock.close()
             log.warning(
                 "discovery: failed to bind UDP %s:%d (%s) — auto-discovery "
-                "disabled this session; rebuild the sysmodule with a "
-                "BRIDGE_HOST that resolves directly to this PC.",
+                "disabled this session; free the port (another DreadClient "
+                "may be running) and reconnect.",
                 self._bind_host, self._port, e,
             )
             return False

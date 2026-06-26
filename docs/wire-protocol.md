@@ -15,9 +15,11 @@ Two-stage probe per (re)connect cycle:
 
 1. **Loopback** — UDP probe to `127.0.0.1:17776`, 250 ms timeout. Covers
    Ryujinx on the same host as DreadClient.
-2. **Subnet sweep** — burst-send probes to every host in
-   `BRIDGE_HOST_STRING /24` (baked at build time from
-   `detect_lan_ip()`). 2 s collect window. First valid reply wins.
+2. **Subnet sweep** — burst-send probes to every host in the `/24` whose
+   seed is read at runtime from `rom:/ap_config.json` `bridge_host` (written
+   at deploy time from `detect_lan_ip()`; no compile-time bake). 2 s collect
+   window. First valid reply wins. Skipped when the config is absent/invalid
+   (loopback above still covers Ryujinx).
 
 Replaces the old 255.255.255.255 broadcast (silently dropped on travel
 routers, mesh repeaters, IGMP-snooping switches).
