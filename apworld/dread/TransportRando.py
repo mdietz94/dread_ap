@@ -21,9 +21,31 @@ from __future__ import annotations
 from typing import Any
 
 
+# USABLE component of the two Hanubia<->Itorash capsule rides. These are NOT
+# ordinary elevators: the up-launch (``capsulelaunchershipyard``) and the
+# post-Raven-Beak escape (``capsuleelevatorskybase``) are scripted around the
+# capsule actor and its special landing platform, so repointing either direction
+# loads a room that can't resolve the capsule's spawn/cutscene actor and crashes
+# the game on the ride (null-string deref). Randovania never ships transport
+# rando enabled (both Dread presets keep teleporters vanilla), so this was never
+# exercised upstream. We keep these two endpoints vanilla. They share a type and
+# are each other's only same-type partner, so excluding them costs no shuffle
+# variety. open-dread-rando classifies the component as a TRANSPORT and would
+# happily patch it — the crash is in-game scripting, not the patcher.
+_NON_SHUFFLED_COMPONENTS = frozenset({"CCapsuleUsableComponent"})
+
+
+def _shufflable(meta: dict) -> bool:
+    """A transport endpoint is in the shuffle pool unless its USABLE component is
+    one we keep vanilla (the scripted Itorash capsule rides)."""
+    return meta.get("component") not in _NON_SHUFFLED_COMPONENTS
+
+
 def _by_type(graph: dict) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = {}
     for sid, meta in graph.get("transports", {}).items():
+        if not _shufflable(meta):
+            continue
         groups.setdefault(meta["type"], []).append(sid)
     # Deterministic order before shuffling (rng drives the actual permutation).
     for g in groups.values():
@@ -83,6 +105,18 @@ def roll_connected_matching(graph: dict, rng, tl: dict,
     return {}  # give up -> vanilla (always reachable)
 
 
+# The Ghavoran "Flipper" shuttle exists as TWO actors in the same room: a
+# cutscene variant (the one the logic node names) used on the first ride, and a
+# plain variant used on every ride after. open-dread-rando only repoints the
+# actor we hand it, so patching just the cutscene variant leaves later rides
+# pointed at the VANILLA destination. Randovania duplicates the elevator entry
+# onto the second actor (DreadPatchDataFactory.create_game_specific_data); we
+# mirror that here. Keyed by the cutscene actor's name.
+_DUP_ACTORS = {
+    "wagontrain_quarantine_with_cutscene_000": "wagontrain_quarantine_000",
+}
+
+
 def matching_to_elevators(matching: dict[str, str], graph: dict) -> list[dict[str, Any]]:
     """Build the open-dread-rando ``elevators`` config from the matching. One
     entry per transport endpoint whose destination changed from vanilla."""
@@ -95,7 +129,7 @@ def matching_to_elevators(matching: dict[str, str], graph: dict) -> list[dict[st
             continue
         if dest == src["default_dest"]:
             continue  # unchanged
-        out.append({
+        entry = {
             "teleporter": {"scenario": src["scenario"], "actor": src["actor"]},
             # Land at the DESTINATION endpoint's own landing platform
             # (``start_point`` = Randovania's ``start_point_actor_name``), which
@@ -106,7 +140,14 @@ def matching_to_elevators(matching: dict[str, str], graph: dict) -> list[dict[st
             "destination": {"scenario": dmeta["scenario"],
                             "actor": dmeta["start_point"]},
             "connection_name": dmeta.get("transporter_name", ""),
-        })
+        }
+        out.append(entry)
+        # Patch the Flipper's second (non-cutscene) actor too, or later rides
+        # silently snap back to the vanilla destination.
+        dup_actor = _DUP_ACTORS.get(src["actor"])
+        if dup_actor is not None:
+            dup = {**entry, "teleporter": {**entry["teleporter"], "actor": dup_actor}}
+            out.append(dup)
     return out
 
 

@@ -289,6 +289,51 @@ def test_transport_matching_two_way_within_type(graph):
 
 
 @graph_required
+def test_itorash_capsule_rides_never_shuffled(graph):
+    """The Hanubia<->Itorash capsule rides (``CCapsuleUsableComponent``) must stay
+    vanilla: the up-launch and the post-Raven-Beak escape are scripted around the
+    capsule actor + its special landing platform, so repointing either direction
+    crashes the game on the ride. Regression for the reported Hanubia-entrance /
+    post-Raven-Beak crashes."""
+    import random
+    from dread.TransportRando import roll_matching
+    tr = graph["transports"]
+    capsules = [sid for sid, m in tr.items()
+                if m.get("component") == "CCapsuleUsableComponent"]
+    # Both Itorash capsule endpoints are present and tagged.
+    assert len(capsules) == 2, capsules
+    # They are never assigned a partner across many rolls (kept vanilla).
+    for seed in range(100):
+        m = roll_matching(graph, random.Random(seed))
+        assert not any(c in m for c in capsules), \
+            f"capsule shuffled at seed {seed}: {[c for c in capsules if c in m]}"
+
+
+@graph_required
+def test_flipper_shuttle_patches_both_actors(graph):
+    """The Ghavoran Flipper shuttle has a cutscene actor and a plain actor in the
+    same room; open-dread-rando only repoints the actor we pass, so a shuffled
+    Flipper must emit BOTH actors with the same destination or later rides snap
+    back to the vanilla connection (mirrors Randovania's dual-actor patch)."""
+    import random
+    from dread.TransportRando import roll_matching, matching_to_elevators
+    CUT = "wagontrain_quarantine_with_cutscene_000"
+    DUP = "wagontrain_quarantine_000"
+    for seed in range(100):
+        elevs = matching_to_elevators(roll_matching(graph, random.Random(seed)), graph)
+        cut = [e for e in elevs if e["teleporter"]["actor"] == CUT]
+        if not cut:
+            continue
+        dup = [e for e in elevs if e["teleporter"]["actor"] == DUP]
+        assert dup, f"Flipper shuffled (seed {seed}) but second actor not patched"
+        assert dup[0]["destination"] == cut[0]["destination"]
+        assert dup[0]["teleporter"]["scenario"] == cut[0]["teleporter"]["scenario"]
+        return
+    import pytest as _pytest
+    _pytest.skip("no sampled seed shuffled the Flipper shuttle")
+
+
+@graph_required
 def test_connected_matching_keeps_pickups_reachable(graph):
     from dread.TransportRando import roll_connected_matching, _full_reachable_ok
     from dread.Tricks import DREAD_TRICKS
@@ -323,7 +368,12 @@ def test_matching_to_elevators_lands_at_dest_room(graph):
     by_actor = {(meta["scenario"], meta["actor"]): sid for sid, meta in tr.items()}
     changed = 0
     for e in matching_to_elevators(m, graph):
-        src_sid = by_actor[(e["teleporter"]["scenario"], e["teleporter"]["actor"])]
+        key = (e["teleporter"]["scenario"], e["teleporter"]["actor"])
+        if key not in by_actor:
+            # Synthetic Flipper second-actor duplicate (not its own endpoint); its
+            # destination mirrors the cutscene entry, validated separately.
+            continue
+        src_sid = by_actor[key]
         dest_sid = m[src_sid]
         dmeta = tr[dest_sid]
         # Land in the destination endpoint's room, at that room's own platform.

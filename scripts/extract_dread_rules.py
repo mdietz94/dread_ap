@@ -1055,7 +1055,8 @@ GlobalKey = tuple                  # (region, sub_area, node)
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
-GRAPH_SCHEMA_VERSION = 5   # v5: DoorLocks kept symbolic (misc atom in AST)
+GRAPH_SCHEMA_VERSION = 6   # v6: transports carry their USABLE `component` (so
+                           # transport rando can exclude scripted capsule rides)
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
 # (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel
@@ -1206,6 +1207,13 @@ def emit_graph(
                 # Collision camera of THIS endpoint's room, for the room-name
                 # display rewrite under transport rando.
                 "source_cc": area_cc.get((region, sub_name)),
+                # The actor's USABLE component type (CElevatorUsableComponent /
+                # CTrainUsableComponent / CCapsuleUsableComponent / ...). Transport
+                # rando uses it to exclude the Hanubia<->Itorash capsule rides
+                # (CCapsuleUsableComponent): the up-launch and the post-Raven-Beak
+                # escape are scripted around the capsule actor + its special
+                # landing platform, so shuffling either direction crashes the game.
+                "component": ex.get("elevator_component"),
             }
             continue
         # Eligible per Randovania's door dock_rando: the door's CURRENT weakness
@@ -1256,6 +1264,7 @@ def emit_graph(
             "start_point": meta["start_point"],
             "transporter_name": meta["transporter_name"],
             "source_cc": meta["source_cc"],
+            "component": meta["component"],
         }
 
     pickups: list = []              # [comp, ap_location_name]
