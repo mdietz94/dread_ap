@@ -537,7 +537,8 @@ def main(argv: list[str] | None = None) -> int:
     compiled_path = data / "compiled_rules.json"
     if not compiled_path.exists():
         print(f"missing {compiled_path}. Generate it first:\n"
-              f"  python scripts/extract_dread_rules.py --all", flush=True)
+              f"  python scripts/extract_dread_rules.py --all\n"
+              f"  python scripts/graph_to_compiled_rules.py", flush=True)
         return 2
 
     compiled = json.loads(compiled_path.read_text())
