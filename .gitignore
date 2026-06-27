@@ -73,6 +73,10 @@ Thumbs.db
 # it into the .apworld zip for end users.
 # ============================================================================
 apworld/dread/data/logic_graph.json
+# Flat item-only per-pickup rules derived from the graph by
+# scripts/graph_to_compiled_rules.py for the PopTracker exporter. Large
+# (~8 MB) and fully regenerable; not consumed by the apworld at runtime.
+apworld/dread/data/compiled_rules.json
 
 # Prebuilt sysmodule staged into the apworld at package time by
 # scripts/install_apworld.py (subsdk9 has no extension; main.npdm is also

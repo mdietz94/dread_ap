@@ -33,6 +33,13 @@ pre-populated from slot_data by the pack's ``onClear`` (see the companion
 archipelago.lua edit). Items the rules never reference (DNA, bosses) are left to
 the pack.
 
+Input is ``data/compiled_rules.json`` (schema 3), the flat item-only per-pickup
+rules. The apworld no longer emits that file directly (the native graph is its
+sole logic backend); regenerate it from the graph first:
+
+  python scripts/extract_dread_rules.py --all          # -> logic_graph.json
+  python scripts/graph_to_compiled_rules.py            # -> compiled_rules.json
+
 Run:  python scripts/export_poptracker_logic.py --pack <path-to-pack>
 """
 from __future__ import annotations
@@ -343,11 +350,18 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     data = args.data_dir
-    compiled = json.loads((data / "compiled_rules.json").read_text())
+    compiled_path = data / "compiled_rules.json"
+    if not compiled_path.exists():
+        print(f"ERROR: {compiled_path} not found. The apworld emits the native "
+              f"graph, not the flat rules; build them first:\n"
+              f"  python scripts/extract_dread_rules.py --all\n"
+              f"  python scripts/graph_to_compiled_rules.py")
+        return 2
+    compiled = json.loads(compiled_path.read_text())
     sv = compiled.get("schema_version")
     if sv != 3:
         print(f"ERROR: compiled_rules.json schema_version={sv!r} (need 3). "
-              f"Regenerate: python scripts/extract_dread_rules.py --all")
+              f"Regenerate: python scripts/graph_to_compiled_rules.py")
         return 2
     locations = json.loads((data / "locations.json").read_text())
 
