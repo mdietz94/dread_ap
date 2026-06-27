@@ -656,6 +656,31 @@ which force-shows transport names when room names are off). Tests:
 `test_seed_to_patcher` (camera-dict merge + empty no-op), `test_door_start`
 (`test_transport_rando_rewrites_room_names`, full World→payload→patcher path).
 
+UPDATE (transport rando crash fix — Itorash capsules + Flipper dual-actor): a user
+hit a game-side `strlen(NULL)` crash (cazadora.nss) at both Hanubia entrances and
+after killing Raven Beak with transport+door rando on. Root cause: the two
+Hanubia↔Itorash rides are NOT ordinary elevators — they use
+`CCapsuleUsableComponent` (`capsulelaunchershipyard` up-launch +
+`capsuleelevatorskybase`, the post-Raven-Beak ESCAPE ride) and their landing is a
+special scripted platform. Our extractor typed them `elevator` and dropped them in
+the normal shuffle pool, so a shuffled capsule (or a normal ride routed onto its
+platform) loads a room that can't resolve the capsule's scripted spawn/cutscene
+actor → null-string deref on the ride. Randovania never ships transport rando
+enabled (both Dread presets keep teleporters vanilla), so this was never exercised
+upstream. Fix: graph schema 5→6 now threads each transport's USABLE `component`;
+`TransportRando._by_type`/`_shufflable` exclude `CCapsuleUsableComponent` endpoints
+(kept vanilla — they're each other's only same-type pair, so zero variety lost;
+`transport_pairs` still emits their `default_dest` edge so Itorash/Raven Beak stays
+reachable — strictly easier, no fill regression). Also fixed a co-located bug: the
+Ghavoran "Flipper" shuttle has a cutscene actor AND a plain actor in one room;
+open-dread-rando only repoints the one we pass, so `matching_to_elevators` now
+duplicates the entry onto `wagontrain_quarantine_000` (mirrors Randovania's
+`create_game_specific_data`), or later rides snapped back to the vanilla dest.
+Tests: `test_door_start` (`test_itorash_capsule_rides_never_shuffled`,
+`test_flipper_shuttle_patches_both_actors`), `test_graph_logic` (schema==6).
+NOTE: needs `python scripts/extract_dread_rules.py --all` to regen the gitignored
+`logic_graph.json` at schema 6 (conftest auto-regens when the script is newer).
+
 The real-hardware end-to-end integration smoke is DONE: validated on real hardware
 (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop, and checks
 register. The manual validation gate is cleared; the counter/cutscene semantics
