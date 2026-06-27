@@ -858,16 +858,26 @@ class DreadContext(CommonContext):
         mod_compatibility: Optional[str] = None,
     ) -> None:
         from ..patcher_pipeline import patch
-        from .._setup.build import collect_build_outputs
+        from .._setup.build import resolve_build_outputs
 
         log.info("auto-patch: starting…")
 
-        exefs_overlay = collect_build_outputs() or None
+        # MUST be resolve_build_outputs (prefers the apworld's bundled prebuilt
+        # sysmodule), NOT collect_build_outputs (local source-build dir only).
+        # The patcher writes the UPSTREAM server-mode subsdk9 into exefs via
+        # open_dread_rando_exlaunch.include_depackager(); we re-assert our
+        # bridge subsdk9 over it. On the normal prebuilt-release path there is
+        # no local source build, so collect_build_outputs() returned {} and the
+        # re-assert silently no-op'd — leaving the upstream :6969 server binary,
+        # so the Switch never dialed the client. See the delivery-protocol notes.
+        exefs_overlay = resolve_build_outputs() or None
         if not exefs_overlay:
             log.warning(
-                "auto-patch: no built sysmodule found to re-assert — the patcher's "
-                "upstream subsdk9 (server-mode) will be used and the Switch won't "
-                "dial the client. Run /setup's Build + Deploy steps."
+                "auto-patch: no sysmodule found to re-assert (neither a bundled "
+                "prebuilt nor a local build) — the patcher's upstream subsdk9 "
+                "(server-mode :6969) will be used and the Switch won't dial the "
+                "client. Reinstall the apworld (it ships a prebuilt sysmodule) "
+                "or run /setup's Build step."
             )
 
         def _do():
