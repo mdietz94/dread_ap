@@ -30,10 +30,13 @@ Smo-baseline pages this wizard intentionally drops:
 
   - ``DumpPickerPage``/``ExtractPage``: dread has no NSP extraction step.
     ``open_dread_rando`` overlays an already-extracted romfs at AP-connect.
-  - ``BridgeIpPage``: the deploy step auto-detects the PC's LAN IP via
-    ``detect_lan_ip()`` and writes it to ``rom:/ap_config.json`` as
-    ``bridge_host`` (the /24 seed the Switch sweeps to discover us — read at
-    runtime, not baked into the build). No user-typed IP needed.
+  - ``BridgeIpPage`` (standalone): folded into the Deploy page instead. The
+    deploy step auto-detects the PC's LAN IP via ``detect_lan_ip()`` and writes
+    it to ``rom:/ap_config.json`` as ``bridge_host`` (the /24 seed the Switch
+    sweeps to discover us — read at runtime, not baked into the build). The
+    Deploy page pre-fills that detected IP into an editable "Bridge IP" field
+    and ships an override, because a PC with a VPN / WSL / Hyper-V / VM adapter
+    can auto-detect a virtual NIC the Switch can't reach.
 
 After a successful build, the wizard opens Windows Firewall holes for the
 bridge: TCP 17777 (Switch → PC connect) and UDP 17776 (Switch → PC discovery
@@ -111,6 +114,30 @@ def save_setup_state(state: dict[str, Any]) -> None:
 
 def _wizard_log_path() -> Path:
     return appdata_root() / "wizard.log"
+
+
+def _detect_lan_ip_safe() -> str:
+    """Best-effort PC LAN IP to pre-fill the deploy page's bridge_host field.
+
+    Lazy-imports the client net helper (``deploy.py`` does the same) so the
+    ``_setup`` package stays importable without the client package on headless
+    generation hosts. Returns "" on any failure — the user can still type one.
+    """
+    try:
+        from ..client.net_util import detect_lan_ip
+        return detect_lan_ip()
+    except Exception as e:  # pragma: no cover - defensive
+        log.warning("LAN IP auto-detect failed: %s", e)
+        return ""
+
+
+def _is_plausible_ipv4(s: str) -> bool:
+    """Validate a user-typed bridge IP before deploy. Lazy-import as above."""
+    try:
+        from ..client.net_util import is_plausible_ipv4
+        return is_plausible_ipv4(s)
+    except Exception:  # pragma: no cover - defensive
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +357,11 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         "ryujinx_root": str(detect_ryujinx_path() or saved_state.get("ryujinx_root", "")),
         "sd_root": saved_state.get("sd_root", ""),
         "custom_root": saved_state.get("custom_root", ""),
+        # The PC LAN IP the Switch sweeps/dials, written to rom:/ap_config.json
+        # at deploy time. A saved override (last run) wins; otherwise pre-fill
+        # the auto-detected LAN IP so the field is never blank. Editable on the
+        # Deploy page — auto-detect can pick a virtual NIC on a VPN/WSL/VM host.
+        "bridge_host": saved_state.get("bridge_host", "") or _detect_lan_ip_safe(),
         # Set by the Done page's "Launch DreadClient" button before stopping
         # Kivy. The caller (in DreadClient's /setup handler) reads this after
         # ``App().run()`` returns and performs the actual DreadClient launch.
@@ -1037,6 +1069,36 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         redetect.bind(on_release=do_redetect)
         root.add_widget(redetect)
 
+        # Bridge IP override — the PC LAN address the Switch sweeps (/24) and
+        # dials. Written to rom:/ap_config.json. Pre-filled with the detected
+        # LAN IP, but a VPN / WSL / Hyper-V / VM adapter can make detection pick
+        # a virtual NIC the Switch can't reach, so the user can correct it here.
+        bridge_row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                               height=48, spacing=8)
+        bridge_input = TextInput(text=wizard_state.get("bridge_host", ""),
+                                 multiline=False)
+        bridge_detect = Button(text="Detect", size_hint_x=None, width=_BROWSE_W)
+
+        def do_detect_ip(_i):
+            ip = _detect_lan_ip_safe()
+            if ip:
+                bridge_input.text = ip
+            else:
+                status.text = "Could not auto-detect a LAN IP; type it manually."
+        bridge_detect.bind(on_release=do_detect_ip)
+        bridge_row.add_widget(_label("Bridge IP (this PC on the Switch's LAN):",
+                                     size_hint_x=None, width=260))
+        bridge_row.add_widget(bridge_input)
+        bridge_row.add_widget(bridge_detect)
+        root.add_widget(bridge_row)
+        root.add_widget(_label(
+            "The Switch sweeps this address's /24 subnet to find the client. "
+            "It must be on the same network as your Switch — if you use a VPN, "
+            "WSL, or a VM, auto-detect may pick the wrong adapter; set your "
+            "real LAN IP (run 'ipconfig').",
+            height=48,
+        ))
+
         status = _label("")
         root.add_widget(status)
 
@@ -1062,13 +1124,27 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 )
                 status.text = f"Sysmodule outputs missing ({missing}). {hint}"
                 return
+            # Resolve the bridge IP override. Blank → None → deploy auto-detects
+            # (preserving the old behavior). A non-blank but malformed value is a
+            # hard error: it'd silently write an unreachable address into
+            # ap_config.json and the Switch would never find the client.
+            bridge_host = bridge_input.text.strip()
+            if bridge_host and not _is_plausible_ipv4(bridge_host):
+                status.text = (
+                    f"Bridge IP is not a valid IPv4 address: {bridge_host!r}. "
+                    f"Clear it to auto-detect, or enter e.g. 192.168.1.42."
+                )
+                return
+            bridge_arg = bridge_host or None
+            wizard_state["bridge_host"] = bridge_host
+            wizard_log(f"do_deploy_and_continue: bridge_host={bridge_host or '(auto)'}")
             if ryu_cb.active:
                 target = Path(ryu_input.text.strip())
                 if not target.is_dir():
                     status.text = f"Ryujinx folder does not exist: {target}"
                     return
                 wizard_log(f"deploy_to_ryujinx target={target}")
-                result = deploy_to_ryujinx(target, outputs)
+                result = deploy_to_ryujinx(target, outputs, bridge_host=bridge_arg)
                 wizard_state["deploy_target"] = "ryujinx"
                 wizard_state["ryujinx_root"] = str(target)
             elif sd_cb.active:
@@ -1077,7 +1153,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                     status.text = f"SD card path does not exist: {target}"
                     return
                 wizard_log(f"deploy_to_sd target={target}")
-                result = deploy_to_sd(target, outputs)
+                result = deploy_to_sd(target, outputs, bridge_host=bridge_arg)
                 wizard_state["deploy_target"] = "sd"
                 wizard_state["sd_root"] = str(target)
             elif custom_cb.active:
@@ -1092,7 +1168,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                     return
                 target.mkdir(parents=True, exist_ok=True)
                 wizard_log(f"deploy_to_custom_folder target={target}")
-                result = deploy_to_custom_folder(target, outputs)
+                result = deploy_to_custom_folder(target, outputs, bridge_host=bridge_arg)
                 wizard_state["deploy_target"] = "custom"
                 wizard_state["custom_root"] = str(target)
             else:
@@ -1113,6 +1189,9 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 "ryujinx_root": wizard_state["ryujinx_root"],
                 "sd_root": wizard_state["sd_root"],
                 "custom_root": wizard_state["custom_root"],
+                # Persist the override (blank = "auto-detect") so a re-run
+                # pre-fills the same choice instead of re-detecting.
+                "bridge_host": wizard_state["bridge_host"],
             })
             save_setup_state(state)
             wizard_state["deploy_result"] = result
