@@ -21,31 +21,9 @@ from __future__ import annotations
 from typing import Any
 
 
-# USABLE component of the two Hanubia<->Itorash capsule rides. These are NOT
-# ordinary elevators: the up-launch (``capsulelaunchershipyard``) and the
-# post-Raven-Beak escape (``capsuleelevatorskybase``) are scripted around the
-# capsule actor and its special landing platform, so repointing either direction
-# loads a room that can't resolve the capsule's spawn/cutscene actor and crashes
-# the game on the ride (null-string deref). Randovania never ships transport
-# rando enabled (both Dread presets keep teleporters vanilla), so this was never
-# exercised upstream. We keep these two endpoints vanilla. They share a type and
-# are each other's only same-type partner, so excluding them costs no shuffle
-# variety. open-dread-rando classifies the component as a TRANSPORT and would
-# happily patch it — the crash is in-game scripting, not the patcher.
-_NON_SHUFFLED_COMPONENTS = frozenset({"CCapsuleUsableComponent"})
-
-
-def _shufflable(meta: dict) -> bool:
-    """A transport endpoint is in the shuffle pool unless its USABLE component is
-    one we keep vanilla (the scripted Itorash capsule rides)."""
-    return meta.get("component") not in _NON_SHUFFLED_COMPONENTS
-
-
 def _by_type(graph: dict) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = {}
     for sid, meta in graph.get("transports", {}).items():
-        if not _shufflable(meta):
-            continue
         groups.setdefault(meta["type"], []).append(sid)
     # Deterministic order before shuffling (rng drives the actual permutation).
     for g in groups.values():

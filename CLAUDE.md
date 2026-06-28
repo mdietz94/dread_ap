@@ -656,30 +656,36 @@ which force-shows transport names when room names are off). Tests:
 `test_seed_to_patcher` (camera-dict merge + empty no-op), `test_door_start`
 (`test_transport_rando_rewrites_room_names`, full World→payload→patcher path).
 
-UPDATE (transport rando crash fix — Itorash capsules + Flipper dual-actor): a user
-hit a game-side `strlen(NULL)` crash (cazadora.nss) at both Hanubia entrances and
-after killing Raven Beak with transport+door rando on. Root cause: the two
-Hanubia↔Itorash rides are NOT ordinary elevators — they use
-`CCapsuleUsableComponent` (`capsulelaunchershipyard` up-launch +
-`capsuleelevatorskybase`, the post-Raven-Beak ESCAPE ride) and their landing is a
-special scripted platform. Our extractor typed them `elevator` and dropped them in
-the normal shuffle pool, so a shuffled capsule (or a normal ride routed onto its
-platform) loads a room that can't resolve the capsule's scripted spawn/cutscene
-actor → null-string deref on the ride. Randovania never ships transport rando
-enabled (both Dread presets keep teleporters vanilla), so this was never exercised
-upstream. Fix: graph schema 5→6 now threads each transport's USABLE `component`;
-`TransportRando._by_type`/`_shufflable` exclude `CCapsuleUsableComponent` endpoints
-(kept vanilla — they're each other's only same-type pair, so zero variety lost;
-`transport_pairs` still emits their `default_dest` edge so Itorash/Raven Beak stays
-reachable — strictly easier, no fill regression). Also fixed a co-located bug: the
-Ghavoran "Flipper" shuttle has a cutscene actor AND a plain actor in one room;
-open-dread-rando only repoints the one we pass, so `matching_to_elevators` now
-duplicates the entry onto `wagontrain_quarantine_000` (mirrors Randovania's
-`create_game_specific_data`), or later rides snapped back to the vanilla dest.
-Tests: `test_door_start` (`test_itorash_capsule_rides_never_shuffled`,
-`test_flipper_shuttle_patches_both_actors`), `test_graph_logic` (schema==6).
-NOTE: needs `python scripts/extract_dread_rules.py --all` to regen the gitignored
-`logic_graph.json` at schema 6 (conftest auto-regens when the script is newer).
+UPDATE (transport rando — Flipper dual-actor fix; capsule shuffle CONFIRMED safe):
+a user hit a game-side `strlen(NULL)` crash (cazadora.nss) at both Hanubia entrances
+and after killing Raven Beak, with transport+door rando on. FIRST hypothesis (now
+REJECTED) blamed the two Hanubia<->Itorash capsule rides (`CCapsuleUsableComponent`:
+`capsulelaunchershipyard` up-launch + `capsuleelevatorskybase` post-Raven-Beak
+escape) and excluded them from the shuffle. That was WRONG: Randovania's own
+`all_settings` patch-data test fixture
+(`test/test_files/patcher_data/dread/dread/all_settings/world_1.json`) shuffles BOTH
+capsules (capsulelaunchershipyard -> Burenia `elevator_cave_000_platform`;
+capsuleelevatorskybase -> Burenia `wagontrain_baselab_000_platform`) with the EXACT
+entry shape we emit, and a user has played an RDV capsule-shuffle seed (Itorash
+access from lower Burenia) on hardware. So the capsule is fully supportable and our
+`elevators` config is faithful to RDV (verified: every transport has a valid
+`start_point`/`transporter_name`/`source_cc`; `_start_point_ref_for` semantics
+match). The exclusion + the schema-6 `component` threading were REVERTED.
+The one REAL bug found and KEPT: the Ghavoran "Flipper" shuttle has a cutscene actor
+AND a plain actor in one room; open-dread-rando only repoints the actor we pass, so
+`matching_to_elevators` now duplicates the entry onto `wagontrain_quarantine_000`
+(mirrors Randovania `create_game_specific_data`), or later Flipper rides snap back to
+the vanilla destination. Test: `test_door_start::test_flipper_shuttle_patches_both_actors`.
+STILL OPEN: the actual crash cause is NOT pinned. Transport config (incl. capsule)
+and door rando (respects `incompatible_weaknesses`) both look faithful to RDV.
+Two known parity GAPS noted but not crash-implicated: (1) we shuffle elevators and
+shuttles in SEPARATE pools (`_by_type`); RDV mixes all teleporters in one pool. (2)
+RDV force-enables room-name display + rebuilds the full `camera_names_dict` when
+teleporters are non-vanilla (`patch_data_factory._cosmetic_patch_data`); we only
+overlay transport names. Next step to root-cause: the crashing seed's
+`ap_patcher_input.json` (the exact JSON fed to open-dread-rando — regenerate-able at
+patch time) or its yaml, to diff the s080/s090 `elevators` + `door_patches` + pickup
+entries against RDV's shape.
 
 The real-hardware end-to-end integration smoke is DONE: validated on real hardware
 (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop, and checks

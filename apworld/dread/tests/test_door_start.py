@@ -289,27 +289,6 @@ def test_transport_matching_two_way_within_type(graph):
 
 
 @graph_required
-def test_itorash_capsule_rides_never_shuffled(graph):
-    """The Hanubia<->Itorash capsule rides (``CCapsuleUsableComponent``) must stay
-    vanilla: the up-launch and the post-Raven-Beak escape are scripted around the
-    capsule actor + its special landing platform, so repointing either direction
-    crashes the game on the ride. Regression for the reported Hanubia-entrance /
-    post-Raven-Beak crashes."""
-    import random
-    from dread.TransportRando import roll_matching
-    tr = graph["transports"]
-    capsules = [sid for sid, m in tr.items()
-                if m.get("component") == "CCapsuleUsableComponent"]
-    # Both Itorash capsule endpoints are present and tagged.
-    assert len(capsules) == 2, capsules
-    # They are never assigned a partner across many rolls (kept vanilla).
-    for seed in range(100):
-        m = roll_matching(graph, random.Random(seed))
-        assert not any(c in m for c in capsules), \
-            f"capsule shuffled at seed {seed}: {[c for c in capsules if c in m]}"
-
-
-@graph_required
 def test_flipper_shuttle_patches_both_actors(graph):
     """The Ghavoran Flipper shuttle has a cutscene actor and a plain actor in the
     same room; open-dread-rando only repoints the actor we pass, so a shuffled
