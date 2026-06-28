@@ -818,13 +818,21 @@ class DreadContext(CommonContext):
         # in the global exefs_patches tree. Pick the matching compatibility so
         # the seed doesn't land where the console can't read it.
         mod_compat = "ryujinx" if state.get("deploy_target") == "ryujinx" else "atmosphere"
+        # The bridge-IP override the user set on the Deploy page (empty ⇒
+        # auto-detect via detect_lan_ip in patch()). Threaded through so the
+        # re-asserted rom:/ap_config.json targets the same LAN the Deploy step
+        # would have — see patcher_pipeline.patch step 4(c).
+        bridge_host = state.get("bridge_host") or None
         _ap_log.info(
             "Auto-patch: writing per-seed romfs overlay to %s (vanilla "
-            "romfs: %s, compatibility: %s)",
-            deploy_dir, romfs_path, mod_compat,
+            "romfs: %s, compatibility: %s, bridge_host: %s)",
+            deploy_dir, romfs_path, mod_compat, bridge_host or "(auto)",
         )
         asyncio.ensure_future(
-            self._run_patch(str(deploy_dir), str(romfs_path), mod_compatibility=mod_compat)
+            self._run_patch(
+                str(deploy_dir), str(romfs_path),
+                mod_compatibility=mod_compat, bridge_host=bridge_host,
+            )
         )
 
     async def _ensure_patcher_python(self) -> None:
@@ -856,6 +864,7 @@ class DreadContext(CommonContext):
         vanilla_romfs_dir: str,
         *,
         mod_compatibility: Optional[str] = None,
+        bridge_host: Optional[str] = None,
     ) -> None:
         from ..patcher_pipeline import patch
         from .._setup.build import resolve_build_outputs
@@ -888,6 +897,7 @@ class DreadContext(CommonContext):
                 python_executable=self.dreadvania_python,
                 exefs_overlay=exefs_overlay,
                 mod_compatibility=mod_compatibility,
+                bridge_host=bridge_host,
             )
 
         try:
