@@ -69,10 +69,12 @@ async def test_auto_patch_schedules_run_patch_with_ryujinx_paths(
 
     captured: dict = {}
 
-    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None):
+    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None,
+                             bridge_host=None):
         captured["deploy_dir"] = deploy_dir
         captured["romfs"] = romfs
         captured["mod_compatibility"] = mod_compatibility
+        captured["bridge_host"] = bridge_host
 
     ctx._run_patch = fake_run_patch  # type: ignore[assignment]
 
@@ -87,6 +89,8 @@ async def test_auto_patch_schedules_run_patch_with_ryujinx_paths(
     assert Path(captured["romfs"]) == romfs_dir
     # Ryujinx deploy → ryujinx compatibility (nested DreadRandovania layout).
     assert captured["mod_compatibility"] == "ryujinx"
+    # No bridge-IP override in state ⇒ None (patch() auto-detects via LAN IP).
+    assert captured["bridge_host"] is None
 
 
 @pytest.mark.asyncio
@@ -105,6 +109,9 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
         "deploy_target": "sd",
         "sd_root": str(sd_root),
         "romfs_path": str(romfs_dir),
+        # The Deploy-page bridge-IP override must reach _run_patch so the
+        # re-asserted rom:/ap_config.json targets the right LAN.
+        "bridge_host": "192.168.1.153",
     })
     monkeypatch.setattr(
         "dread.client.context.setup_state_path", lambda: state_file
@@ -114,10 +121,12 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
 
     captured: dict = {}
 
-    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None):
+    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None,
+                             bridge_host=None):
         captured["deploy_dir"] = deploy_dir
         captured["romfs"] = romfs
         captured["mod_compatibility"] = mod_compatibility
+        captured["bridge_host"] = bridge_host
 
     ctx._run_patch = fake_run_patch  # type: ignore[assignment]
 
@@ -128,6 +137,8 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
     assert Path(captured["deploy_dir"]) == expected_dir
     # SD deploy → atmosphere compatibility (flat contents/<tid> layout).
     assert captured["mod_compatibility"] == "atmosphere"
+    # The bridge-IP override is threaded through to _run_patch.
+    assert captured["bridge_host"] == "192.168.1.153"
 
 
 @pytest.mark.asyncio
@@ -154,7 +165,8 @@ async def test_auto_patch_sd_not_mounted_skips_and_logs(
 
     ran = {"called": False}
 
-    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None):
+    async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None,
+                             bridge_host=None):
         ran["called"] = True
 
     ctx._run_patch = fake_run_patch  # type: ignore[assignment]

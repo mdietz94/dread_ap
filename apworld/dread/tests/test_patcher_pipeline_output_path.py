@@ -160,6 +160,44 @@ def test_atmosphere_overlay_lands_in_contents_exefs(monkeypatch, tmp_path):
     assert (mod_dir / "exefs" / "main.npdm").read_bytes() == b"NPDM"
 
 
+def test_ap_config_reasserted_into_romfs(monkeypatch, tmp_path):
+    """The upstream patcher writes a FRESH romfs that doesn't carry our
+    rom:/ap_config.json — the bridge sysmodule's SOLE /24 discovery-sweep
+    seed. patch() must re-assert it (with the given bridge_host) or the Switch
+    only sweeps loopback and never finds the PC on real hardware. Regression
+    for 'connects on Ryujinx, not on hardware after an auto-patch'."""
+    import json
+
+    mod_dir = tmp_path / "sd" / "atmosphere" / "contents" / "010093801237c000"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    captured: dict = {}
+
+    def _fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _FakeProc()
+
+    monkeypatch.setattr(pp, "check_dependencies", lambda py=None: None)
+    monkeypatch.setattr(pp, "verify_romfs_version", lambda d: None)
+    monkeypatch.setattr(pp.subprocess, "run", _fake_run)
+
+    result = pp.patch(
+        placements=_minimal_placements(),
+        dreadvania_install_dir=mod_dir,
+        vanilla_romfs_dir=romfs,
+        python_executable="py",
+        mod_compatibility="atmosphere",
+        bridge_host="192.168.1.153",
+    )
+
+    assert result.ok, result.message
+    ap_config = mod_dir / "romfs" / "ap_config.json"
+    assert ap_config.is_file(), "patch() must re-assert rom:/ap_config.json"
+    assert json.loads(ap_config.read_text()) == {"bridge_host": "192.168.1.153"}
+
+
 def test_exefs_overlay_overwrites_upstream_subsdk9(monkeypatch, tmp_path):
     """Our patched subsdk9 is re-asserted over whatever the patcher wrote."""
     mod_dir = tmp_path / "mods" / "contents" / "010093801237c000" / "DreadRandovania"

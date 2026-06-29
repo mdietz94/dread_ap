@@ -983,6 +983,7 @@ def patch(
     python_executable: Optional[str] = None,
     exefs_overlay: Optional[dict[str, Path]] = None,
     mod_compatibility: Optional[str] = None,
+    bridge_host: Optional[str] = None,
 ) -> PatchResult:
     """End-to-end /patch implementation. Pure-ish (writes to disk, runs
     a subprocess) — returns a PatchResult that the caller surfaces as
@@ -1155,6 +1156,22 @@ def patch(
                 "re-asserted patched sysmodule ("
                 + ", ".join(sorted(exefs_overlay)) + f") into {exefs_dir}"
             )
+        #   (c) rom:/ap_config.json — the bridge sysmodule reads bridge_host
+        #       from here as the SOLE /24 discovery-sweep seed. The upstream
+        #       patcher writes a FRESH romfs (it doesn't carry our file), so a
+        #       Deploy-written ap_config.json is wiped on every auto-patch.
+        #       Without it the Switch only sweeps loopback and never finds the
+        #       PC on real hardware. Re-assert it here, mirroring (b).
+        from ._setup.deploy import _resolve_bridge_host, _write_ap_config
+
+        romfs_dir = exefs_dir.parent / "romfs"
+        ap_config_dest = romfs_dir / "ap_config.json"
+        resolved_host = _resolve_bridge_host(bridge_host)
+        _write_ap_config(ap_config_dest, resolved_host)
+        notes.append(
+            f"re-asserted rom:/ap_config.json (bridge_host={resolved_host}) "
+            f"into {romfs_dir}"
+        )
     except OSError as exc:
         # Don't fail the whole patch silently — the romfs is already written;
         # surface the problem so the user knows the mod may be unbootable.
