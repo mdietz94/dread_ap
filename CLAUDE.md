@@ -724,6 +724,34 @@ the `"Client"`→Archipelago tab (the default-visible log), so a failed auto-pat
 is noticed without opening the Dread tab. Tests: `test_patcher_pipeline_output_path`
 (version pre-flight + error-hint), `test_display` (pill colors/labels/detail).
 
+UPDATE (Universal Tracker support): SHIPPED. UT recomputes a slot's reachable
+set by re-running generation from slot_data in a single-player "fake" regen with
+a DIFFERENT RNG stream. Our world rolls a CUSTOM per-seed region graph in
+`World.generate_early` (door-lock rando `DoorRando.roll_assignments`, transport
+rando `TransportRando.roll_connected_matching`, start-area `_start_comp`), so a
+naive UT regen re-rolled a degenerate graph and reachability collapsed to a
+near-empty set (only item-only-reachable spots survived — the reported "1 in-logic
+location" bug). Fix (marioland2/tunic idiom): `World.interpret_slot_data` (static,
+returns slot_data → triggers UT's passthrough regen); `fill_slot_data` exports a
+new additive `ut_state` key = `{options, dock_assignments, transport_matching,
+start_comp, start_patcher, start_extra_items}` (`_ut_state`; options = every
+Dread-specific option value so the regen matches even with NO player YAML — common
+options stay UT-owned); `generate_early` early-returns through `_restore_ut_state`
+when `re_gen_passthrough["Metroid Dread"].ut_state` is present, restoring the
+rolled decisions instead of re-rolling (`self.random` untouched). `graph_logic.
+set_graph_rules` skips the random `prefer_bosses` locked-DNA placement when
+`multiworld.generation_is_fake` (DNA never gates region access — only the
+completion condition — so the reachable set is identical, and skipping avoids an
+RNG-divergent placement colliding with UT's multidata overlay). Normal generation
+is byte-identical (the restore branch only fires under `re_gen_passthrough`, never
+set in real gen). The `ut_state` key is additive/slot_data-only (NOT in the CLI
+placements JSON) and the client ignores it — client contract intact. Tests:
+`tests/test_ut_tracker.py` (AP-gated) — round-trip byte-equality of all restored
+fields + option restore from defaults, and a door-sensitive reachability check
+(regen reproduces the seed's 94-location set, NOT a different seed's re-roll).
+PopTracker map-tab (`tracker_world`) integration is NOT done (optional; not needed
+for the in-logic-set fix).
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**
