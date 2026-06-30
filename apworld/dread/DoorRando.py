@@ -189,9 +189,15 @@ def early_reachable(graph: dict, items: dict, tl: dict,
                     use_events: bool = True,
                     transport_matching: dict | None = None,
                     energy_per_tank: int = 100,
-                    ammo_amounts: dict | None = None) -> tuple[set, dict]:
-    """Regions reachable from the start with VANILLA doors + the given items +
-    trick levels. Returns (reachable_comps, side_id->(src,dst)).
+                    ammo_amounts: dict | None = None,
+                    dock_assignments: dict | None = None) -> tuple[set, dict]:
+    """Regions reachable from the start with the given doors + items + trick
+    levels. Returns (reachable_comps, side_id->(src,dst)).
+
+    ``dock_assignments`` ({side_id: weakness}) resolves each randomized door to
+    its rolled weakness; the default ``None`` keeps every door VANILLA (the door
+    guard wants the vanilla early frontier). Pass the rolled assignment to get
+    door-rando-accurate reachability (e.g. the full-accessibility guard).
 
     ``use_events=True`` runs the event fixpoint (the true reach, used by the
     door guard). ``use_events=False`` evaluates event atoms as False — an
@@ -200,10 +206,11 @@ def early_reachable(graph: dict, items: dict, tl: dict,
     sphere rather than one that depends on the live event cascade."""
     ds = graph["dock_sides"]
     wreq = graph["weakness_requirements"]
+    da = dock_assignments or {}
     adj: dict[int, list] = {}
     side_comp: dict[str, tuple] = {}
     for c0, c1, ast in graph["entrances"]:
-        adj.setdefault(c0, []).append((c1, _resolve_docks(ast, {}, ds, wreq)))
+        adj.setdefault(c0, []).append((c1, _resolve_docks(ast, da, ds, wreq)))
         if ast.get("type") == "dock":
             side_comp[ast["side_id"]] = (c0, c1)
     # Transport ride edges (elevator/shuttle) per the matching — they're not in

@@ -515,3 +515,54 @@ def test_start_kit_baked_into_patcher(area):
             assert starting_items.get("ITEM_WEAPON_POWER_BOMB_MAX", 0) >= 1, (
                 f"area {area}: Power Bomb starter baked the launcher flag but "
                 f"no ITEM_WEAPON_POWER_BOMB_MAX capacity — player has 0/0 PBs")
+
+
+# --------------------------------------------------------------------------- #
+# Full-accessibility guard (all-tricks-disabled starter-preset port)
+# --------------------------------------------------------------------------- #
+
+def _all_tricks_disabled() -> dict:
+    from dread.Tricks import VISIBLE_TRICKS
+    return {t.attr: 0 for t in VISIBLE_TRICKS}
+
+
+@runtime
+def test_all_tricks_disabled_full_raises_optionerror():
+    """Disabling every trick (the faithful Randovania starter-preset port:
+    minimal_logic off + empty specific_levels) strands the 8 Speed-Booster-
+    Conservation pickups, which 'accessibility: full' cannot satisfy. The world
+    must fail fast with an actionable OptionError naming the gating trick and the
+    'accessibility: minimal' fix — not a cryptic late FillError."""
+    from Options import OptionError
+    opts = _all_tricks_disabled()
+    opts["accessibility"] = "full"
+    with pytest.raises(OptionError) as ei:
+        _generate(opts)
+    msg = str(ei.value)
+    assert "accessibility: minimal" in msg
+    # Pinpoints the real gate, not the whole frontier trick set.
+    assert "Speed Booster Conservation" in msg
+
+
+@runtime
+def test_all_tricks_disabled_minimal_generates():
+    """Under 'minimal' the stranded spots hold filler (Randovania-faithful), so
+    generation succeeds with every trick disabled."""
+    opts = _all_tricks_disabled()
+    opts["accessibility"] = "minimal"
+    _generate(opts)
+
+
+@runtime
+def test_only_suitless_disabled_full_generates():
+    """The Suitless un-hide in isolation: disabling just Heat/Cold Runs keeps
+    every location reachable (the lava/heat gates have suit/HP alternatives), so
+    'full' generates without tripping the guard."""
+    _generate({"trick_suitless": 0, "accessibility": "full"})
+
+
+@runtime
+def test_default_full_passes_guard():
+    """The default config (global Beginner, all follow_global) is fully reachable;
+    the guard must not fire."""
+    _generate({"accessibility": "full"})

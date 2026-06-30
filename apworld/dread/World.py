@@ -270,6 +270,7 @@ class DreadWorld(World):
         transport_on = int(self.options.transport_rando.value) != 0
         area = int(self.options.starting_area.value)
         if not (door_on or transport_on or area != 0):
+            self._guard_full_accessibility()
             return
 
         from .graph_logic import load_graph
@@ -314,6 +315,58 @@ class DreadWorld(World):
                 ammo_amounts=ammo_amounts_from_options(self.options),
                 doors_to_change=set(self.options.doors_to_change.value),
                 change_doors_to=set(self.options.change_doors_to.value))
+
+        self._guard_full_accessibility()
+
+    def _guard_full_accessibility(self) -> None:
+        """Fail fast with an actionable OptionError when the trick / door /
+        transport / start config leaves pickup locations unreachable AND the
+        slot demands full accessibility.
+
+        Randovania's starter preset disables every trick and only guarantees the
+        seed is BEATABLE — its trick-gated pickups (e.g. the Speed-Booster-
+        Conservation speedboost rooms) simply hold filler. That is exactly AP's
+        ``accessibility: minimal``, under which fill places only filler in the
+        unreachable spots and generation succeeds. ``full`` (and its ``items``
+        alias) instead require every location reachable, which an all-tricks-off
+        config genuinely cannot satisfy — so without this guard AP would raise a
+        cryptic late ``FillError``. We pre-empt it with a message naming the
+        stranded locations, the gating trick(s), and the two fixes (raise the
+        trick or switch to ``accessibility: minimal``)."""
+        acc = self.options.accessibility
+        if acc.value == acc.option_minimal:
+            return  # minimal => unreachable locations hold filler (RDV-faithful)
+
+        from .graph_logic import (
+            load_graph, ammo_amounts_from_options, unreachable_pickup_locations,
+        )
+        from .Tricks import effective_trick_levels, DREAD_TRICKS
+
+        unreachable, gating = unreachable_pickup_locations(
+            load_graph(), effective_trick_levels(self.options),
+            start_comp=getattr(self, "_start_comp", None),
+            transport_matching=getattr(self, "_transport_matching", None),
+            dock_assignments=getattr(self, "_dock_assignments", None),
+            energy_per_tank=int(self.options.energy_per_tank.value),
+            ammo_amounts=ammo_amounts_from_options(self.options))
+        if not unreachable:
+            return
+
+        from Options import OptionError
+        long_name = {t.short_name: t.long_name for t in DREAD_TRICKS}
+        tricks = sorted(long_name.get(s, s) for s in gating)
+        shown = ", ".join(unreachable[:6]) + (
+            f", ... (+{len(unreachable) - 6} more)" if len(unreachable) > 6 else "")
+        raise OptionError(
+            f"Metroid Dread [{self.player_name}]: {len(unreachable)} location(s) "
+            f"are unreachable under this configuration even with a full item "
+            f"loadout, so 'accessibility: full' cannot be satisfied: {shown}. "
+            f"These are gated by trick(s) you have disabled: "
+            f"{', '.join(tricks) or '(see logic)'}. Fix EITHER by enabling the "
+            f"gating trick(s) (raise their per-trick level or the global Trick "
+            f"Level), OR by setting 'accessibility: minimal' -- the latter mirrors "
+            f"Randovania's starter preset, which disables all tricks and lets "
+            f"such spots hold filler.")
 
     def create_regions(self) -> None:
         # Events are graph regions; AP's BFS must re-derive event-gated

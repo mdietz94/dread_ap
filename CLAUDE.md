@@ -452,13 +452,44 @@ trick_levels)` resolves each atom against `Tricks.effective_trick_levels(options
 — a constant per seed (depends only on options, not items), so it never
 reintroduces the item↔event cycle the forward resolver breaks. `apworld/dread/Tricks.py`
 is the single source of truth: the 26 Randovania tricks (short/long name, hidden
-flag; Suitless is hidden→always follows global), level names (1=Beginner…5=Mastery),
-and the effective-level helper. Options: the global `TrickLevel` stays as the
-BASELINE (now extended with Expert/Mastery) applied to any trick left on
-`follow_global`; `Options.py` generates one `TrickOverride(Choice)` subclass per
-non-hidden trick (`trick_<name>`, default follow_global) from `VISIBLE_TRICKS`
-and composes `DreadOptions` via `make_dataclass`. Untouched YAMLs behave exactly
-as the old Beginner default. Tests: `tests/test_trick_level.py` (rewritten:
+flag), level names (1=Beginner…5=Mastery), and the effective-level helper.
+Suitless (Heat/Cold Runs) is now VISIBLE — Randovania hides it in its own UI, but
+we expose it as a normal per-trick option so it can be DISABLED independently
+(the global `TrickLevel` has no `disabled` tier, so a hidden Suitless could only
+ever sit at the Beginner floor, blocking a faithful all-tricks-disabled
+starter-preset port). So all 26 tricks are now in `VISIBLE_TRICKS`; the `hidden`
+field is retained but no Dread trick currently sets it. Options: the global
+`TrickLevel` stays as the BASELINE (now extended with Expert/Mastery) applied to
+any trick left on `follow_global`; `Options.py` generates one
+`TrickOverride(Choice)` subclass per non-hidden trick (`trick_<name>`, default
+follow_global) from `VISIBLE_TRICKS` and composes `DreadOptions` via
+`make_dataclass`. Untouched YAMLs behave exactly as the old Beginner default.
+STARTER-PRESET PORT + accessibility guard: Randovania's Dread starter preset is
+`minimal_logic: false` + `specific_levels: {}` = EVERY trick Disabled (verified
+against the real `.rdvpreset` at the pinned commit). It still generates because
+Randovania only guarantees BEATABILITY, not full reachability — its trick-gated
+pickups just hold filler. That is exactly AP `accessibility: minimal`. So the
+faithful port = all 26 `trick_*` = disabled + `accessibility: minimal` (and the
+Suitless un-hide above is what makes "all disabled" expressible). Confirmed from
+the cached RDV source that 8 pickups (Ferenia Speedboost Slopes Maze / Space Jump
+Room, Burenia Early Gravity Speedboost, Cataris+Ghavoran Dairon Transport Access,
+Dairon Freezer/Storm Missile Gate/Energy Recharge West, Elun Fan Room) have their
+ONLY incoming edge gated on the `Speedbooster` (Speed Booster Conservation) trick
+— no item-only path in Randovania either. So this is NOT an extraction gap; it's
+faithful. Under AP `full` (and its `items` alias) those 8 must be reachable,
+which all-tricks-off cannot satisfy, so `World._guard_full_accessibility`
+(generate_early) now pre-empts the cryptic late FillError: it runs
+`graph_logic.unreachable_pickup_locations` (a full-loadout `early_reachable`
+sweep, door/transport/start-aware via the new `dock_assignments` arg threaded
+through `early_reachable`) and, when accessibility != minimal and any pickup is
+unreachable with EVEN a full loadout, raises an `OptionError` naming the stranded
+locations + the recovering trick (narrowed to the actual recoverer by re-probing
+each frontier-trick at max level — error path only, so the extra sweeps are free)
++ the two fixes (raise the trick / use `accessibility: minimal`). The guard never
+fires for the default Beginner config (146 full gens still pass). Tests:
+`test_door_start.py` (full raises / minimal generates / only-Suitless full /
+default full), `test_graph_logic.py::test_unreachable_pickup_locations_all_tricks_disabled`
+(exact 8-set + `gating=={"Speedbooster"}`, AP-free). Tests: `tests/test_trick_level.py` (rewritten:
 effective-level map + symbolic-atom resolution + artifact carries trick atoms),
 `tests/test_rule_compiler.py` + `scripts/tests/test_extract_dread_rules.py`
 (trick translation now symbolic, DNF round-trip, sort-key penalty). Faithful win:
