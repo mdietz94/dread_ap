@@ -69,12 +69,28 @@ jobs:
       # — validate with a manual `workflow_dispatch` run before the first tag.
       - name: Install devkitPro (devkitA64) for the sysmodule build
         run: |
-          # apt.devkitpro.org sits behind Cloudflare's WAF, which 403s wget's
-          # default user-agent. devkitPro whitelisted the "dkp-apt" UA — their
-          # documented workaround — so spoof it for the bootstrap fetch.
+          # devkitPro's servers sit behind Cloudflare's WAF, which 403s the
+          # default libcurl/wget user-agent. There are TWO hosts with TWO
+          # different whitelisted UAs:
+          #   - apt.devkitpro.org (bootstrap script + gpg key) → "dkp-apt"
+          #   - pkg.devkitpro.org (pacman .db / .pkg downloads) → "dkp-pacman"
+          # The bootstrap fetch below spoofs the first. But the .deb's
+          # post-install runs `pacman -Sy`, which pulls db files from
+          # pkg.devkitpro.org and 403s because the shipped pacman.conf sets no
+          # UA. install-devkitpro-pacman therefore fails its configure step, so
+          # we tolerate that, patch pacman's XferCommand to spoof "dkp-pacman"
+          # (wget, not curl — curl gives patchy results per the maintainer),
+          # then finish the configure (re-runs the now-working sync).
+          # See devkitPro/pacman#63.
           wget -U "dkp-apt" https://apt.devkitpro.org/install-devkitpro-pacman
           chmod +x ./install-devkitpro-pacman
-          sudo ./install-devkitpro-pacman
+          sudo ./install-devkitpro-pacman || true
+          sudo sed -i '/^\[options\]/a XferCommand = /usr/bin/wget -U "dkp-pacman" --passive-ftp -c -O %o %u' \
+            /opt/devkitpro/pacman/etc/pacman.conf
+          # Drop any zero-byte db partials a 403'd sync may have left behind.
+          sudo rm -f /opt/devkitpro/pacman/var/lib/pacman/sync/dkp-* \
+            /var/lib/pacman/sync/dkp-* 2>/dev/null || true
+          sudo dpkg --configure -a
           sudo dkp-pacman -S --noconfirm switch-dev
           echo "DEVKITPRO=/opt/devkitpro" >> "$GITHUB_ENV"
           echo "/opt/devkitpro/devkitA64/bin" >> "$GITHUB_PATH"
