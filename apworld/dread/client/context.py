@@ -48,8 +48,14 @@ from .protocol import (
     build_mark_collected_lua,
     build_restore_grant_lua,
     build_set_received_pickups_lua,
+    build_warp_src,
+    build_read_current_subarea_lua,
     pickup_class_for,
     pickup_resource_stage,
+    NAV_HINT_STATIONS,
+    SAVE_STATIONS_BY_REGION,
+    SAVE_STATION_BY_CAMERA,
+    _lua_string,
 )
 from .scout_cache import ScoutCache, request_scout
 from .state import BridgeState
@@ -206,19 +212,32 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         asyncio.ensure_future(self.ctx._poke_lua(source))
         return True
 
-    def _cmd_warp(self) -> bool:
-        """``/warp`` — softlock recovery: warp to the starting room.
+    def _cmd_warp(self, *args: str) -> bool:
+        """``/warp [region [station]] | list`` — softlock recovery via
+        ``Game.LoadScenario``.
 
-        Wraps the same ``Game.LoadScenario`` call Randovania exposes via
-        ZL+ZR at any save station (``Scenario.CheckWarpToStart``), but
-        invokable when no save station is reachable. Inventory and
-        per-pickup collected bits persist (same primitive every door
-        transition uses); the player should save at the starting save
-        station to commit them to disk.
+        ``/warp`` (no arg) warps to the STARTING save station — the same
+        ``Scenario.CheckWarpToStart`` primitive Randovania exposes via ZL+ZR at a
+        save station, but invokable from anywhere. ``/warp <region> [station]``
+        warps to a specific save station you have VISITED (e.g. ``/warp dairon`` or
+        ``/warp dairon west``) — the recovery for a player who toggled themselves
+        out of a region's only local route (e.g. the Cataris thermal-device trap
+        that can sever the through-room path to Dairon). It restores access you
+        already had; you can't warp to a save station you never reached.
+        ``/warp list`` shows the recorded targets. Inventory and per-pickup
+        collected bits persist (same primitive every door transition uses); save
+        at the destination to commit them.
         """
         ctx = self.ctx
+        region = args[0] if args else ""
+        station = args[1] if len(args) > 1 else ""
         async def _go():
-            msg = await ctx._warp_to_start()
+            if not region:
+                msg = await ctx._warp_to_start()
+            elif region.lower() == "list":
+                msg = ctx._warp_list()
+            else:
+                msg = await ctx._warp_to_region(region, station)
             self.output(f"warp: {msg}")
         asyncio.ensure_future(_go())
         return True
@@ -268,6 +287,26 @@ class DreadContext(CommonContext):
         # Bridge + discovery responder created at start_bridge() time.
         self._bridge: Optional[BridgeServer] = None
         self._discovery: Optional[DiscoveryResponder] = None
+
+        # Scenarios the active Switch has reported being in (via game_state) —
+        # used for friendlier /warp errors ("you've been to Dairon but not at a
+        # save station there yet").
+        self._visited_scenarios: set[str] = set()
+        # Save stations the player has stood in, as (scenario, collision_camera)
+        # keys into protocol.SAVE_STATION_BY_CAMERA. Accumulated each poll from the
+        # live subarea the warp guard tracks; gates ``/warp <region> [station]`` so
+        # it only restores access you ALREADY had. Client-owned, so it survives a
+        # Lua re-bootstrap (reconnect); reset only on a fresh client session.
+        self._visited_saves: set[tuple[str, str]] = set()
+
+        # Nav Station hint registration. Built from slot_data on connect:
+        # (scenario, camera) -> [(location_owner_slot, location_id), ...] for the
+        # plaque shown at that Nav Station. When the player reaches the room, the
+        # revealed location is registered as a FREE AP server hint (CreateHints /
+        # LocationScouts create_as_hint). ``_registered_nav_hints`` dedupes so a
+        # re-visit doesn't re-send.
+        self._nav_hint_by_camera: dict[tuple[str, str], list[tuple[int, int]]] = {}
+        self._registered_nav_hints: set[tuple[int, int]] = set()
 
         # Per-active-Switch session state. Reset on each promote/demote.
         self._poll_task: Optional[asyncio.Task[None]] = None
@@ -519,6 +558,7 @@ class DreadContext(CommonContext):
                 str(name): int(qty)
                 for name, qty in (sd.get("item_amounts") or {}).items()
             }
+            self._build_nav_hint_map(sd)
         # Mirror the seed's DeathLink choice into the AP connection tag. Sends a
         # ConnectUpdate (we're already Connected here), which is the supported
         # way to toggle the tag post-connect.
@@ -996,6 +1036,7 @@ class DreadContext(CommonContext):
                 "RL.GetCollectedIndicesAndSend(); return ''", timeout=T)
             await self._bridge.run_lua(
                 "RL.GetReceivedPickupsAndSend(); return ''", timeout=T)
+            await self._record_room_visit(T)
         # Goal + death detection run regardless of INGAME: the win sequence and
         # the death reload are themselves non-INGAME states.
         state_resp = await self._bridge.run_lua(
@@ -1013,6 +1054,77 @@ class DreadContext(CommonContext):
                 except ValueError:
                     log.debug("unparseable death count: %r", death_resp.payload[:32])
         await self._attempt_delivery()
+
+    def _build_nav_hint_map(self, slot_data: dict) -> None:
+        """Index the slot's Nav Station hints by the room (scenario, camera) that
+        shows each, so reaching that room can register the revealed location as a
+        free AP hint. ``nav_hints[i]`` is shown at ``NAV_HINT_STATIONS[i]`` (both
+        in patcher-template plaque order); each carries ``loc = [owner, id]``."""
+        self._nav_hint_by_camera = {}
+        nav_hints = slot_data.get("nav_hints") or []
+        for i, hint in enumerate(nav_hints):
+            if i >= len(NAV_HINT_STATIONS):
+                break
+            loc = hint.get("loc") if isinstance(hint, dict) else None
+            if not loc or len(loc) != 2:
+                continue
+            station = NAV_HINT_STATIONS[i]
+            self._nav_hint_by_camera.setdefault(station, []).append(
+                (int(loc[0]), int(loc[1])))
+
+    async def _record_room_visit(self, timeout: float) -> None:
+        """Read the live (scenario, collision-camera) the warp guard tracks and
+        react to where the player is: record a save station (for
+        ``/warp <region>``) and/or register a Nav Station's hint with the AP
+        server. Non-fatal — a failed read or an untracked subarea just means
+        nothing happens this tick."""
+        assert self._bridge is not None
+        try:
+            resp = await self._bridge.run_lua(
+                build_read_current_subarea_lua(), timeout=timeout)
+        except (ConnectionError, asyncio.TimeoutError, RuntimeError):
+            return
+        if not resp.success or not resp.payload:
+            return
+        body = resp.payload.decode("utf-8", "replace").strip()
+        scenario, _, camera = body.partition(",")
+        key = (scenario.strip(), camera.strip())
+        if "" in key:
+            return
+        station = SAVE_STATION_BY_CAMERA.get(key)
+        if station is not None and key not in self._visited_saves:
+            self._visited_saves.add(key)
+            log.info("/warp: recorded save station %s %s",
+                     station.region, station.name)
+        if key in self._nav_hint_by_camera:
+            await self._register_nav_hints(key)
+
+    async def _register_nav_hints(self, station: tuple[str, str]) -> None:
+        """Register the Nav Station's revealed location(s) as FREE AP server hints
+        (so they show in ``!hints`` / trackers and ping the item owner), once each.
+
+        Own locations go via ``LocationScouts`` ``create_as_hint`` (universally
+        supported); a location in another world (an item hint — only valid because
+        the item there is ours) goes via ``CreateHints``. Neither costs hint
+        points. ``self.slot`` is set once Connected; bail if not."""
+        my_slot = getattr(self, "slot", None)
+        for owner, loc_id in self._nav_hint_by_camera.get(station, []):
+            if (owner, loc_id) in self._registered_nav_hints:
+                continue
+            self._registered_nav_hints.add((owner, loc_id))
+            if my_slot is not None and owner == my_slot:
+                packet = {"cmd": "LocationScouts", "locations": [loc_id],
+                          "create_as_hint": 2}
+            else:
+                packet = {"cmd": "CreateHints", "player": owner,
+                          "locations": [loc_id]}
+            try:
+                await self.send_msgs([packet])
+                log.info("registered Nav Station hint: location %d (slot %d)",
+                         loc_id, owner)
+            except Exception as exc:  # noqa: BLE001 — never let a hint break the poll
+                self._registered_nav_hints.discard((owner, loc_id))
+                log.warning("Nav Station hint registration failed: %s", exc)
 
     # ---- Push handlers (JSON dataclass dispatch) ---------------------
 
@@ -1172,6 +1284,8 @@ class DreadContext(CommonContext):
     async def _handle_game_state(self, msg: W.GameState) -> None:
         self.state.update_game_state(scenario_id=msg.scenario,
                                      beaten_since_reboot=msg.beaten)
+        if msg.scenario:
+            self._visited_scenarios.add(msg.scenario)
         if msg.beaten:
             await self._maybe_report_goal()
 
@@ -1197,7 +1311,76 @@ class DreadContext(CommonContext):
         log.info("poke reply: success=%s payload=%r", resp.success, resp.payload[:200])
 
     async def _warp_to_start(self) -> str:
-        """Softlock recovery: warp Samus back to the starting actor.
+        """Softlock recovery: warp Samus back to the STARTING save station."""
+        return await self._warp(
+            "Init.sStartingScenario", "Init.sStartingActor",
+            "the starting save station")
+
+    def _warp_list(self) -> str:
+        """``/warp list`` — the save stations recovery can warp to (the ones the
+        player has been observed standing in)."""
+        from .protocol import SAVE_STATION_BY_CAMERA
+        visited = [SAVE_STATION_BY_CAMERA[k] for k in self._visited_saves
+                   if k in SAVE_STATION_BY_CAMERA]
+        if not visited:
+            return ("no save stations recorded yet — stand at one for a moment, "
+                    "then it becomes a /warp target")
+        visited.sort(key=lambda s: (s.region, s.name))
+        return "visited save stations: " + ", ".join(
+            f"{s.region} {s.name}" for s in visited)
+
+    async def _warp_to_region(self, region: str, station: str = "") -> str:
+        """``/warp <region> [station]`` — warp to a specific save station the
+        player has VISITED. Recovers someone who toggled themselves out of a
+        region's only local route (e.g. the Cataris thermal-device trap severing
+        the path to Dairon): it restores access you ALREADY had, never grants new.
+
+        Only save stations the client has seen the player stand in
+        (``_visited_saves``) are eligible — you can't warp somewhere you never
+        reached. With multiple eligible stations in a region, ``station`` (a
+        directional name like ``west``) disambiguates. Otherwise identical to
+        warp-to-start (same guards + the inventory/cursor/collected rewind)."""
+        key = region.strip().lower()
+        stations = SAVE_STATIONS_BY_REGION.get(key)
+        if stations is None:
+            known = ", ".join(sorted(SAVE_STATIONS_BY_REGION))
+            return f"unknown region {region!r}; try one of: {known}"
+        region_name = stations[0].region
+        visited = [s for s in stations
+                   if (s.scenario, s.camera) in self._visited_saves]
+        if not visited:
+            if stations[0].scenario in self._visited_scenarios:
+                return (f"you've been to {region_name} but I haven't seen you at "
+                        "a save station there yet — stand at one for a moment, "
+                        "then retry")
+            return (f"you haven't been to {region_name} yet this session "
+                    "(warp only restores access you already had)")
+        if station:
+            kw = station.strip().lower()
+            matches = [s for s in visited if kw in s.name.lower()]
+            if not matches:
+                names = ", ".join(s.name for s in visited)
+                return (f"no visited {region_name} save station matches "
+                        f"{station!r}; visited: {names}")
+            if len(matches) > 1:
+                names = ", ".join(s.name for s in matches)
+                return f"{station!r} is ambiguous in {region_name}: {names}"
+            chosen = matches[0]
+        elif len(visited) == 1:
+            chosen = visited[0]
+        else:
+            names = ", ".join(s.name for s in visited)
+            return (f"multiple {region_name} save stations visited ({names}) — "
+                    f"pick one, e.g. /warp {key} {visited[0].name.lower()}")
+        return await self._warp(
+            _lua_string(chosen.scenario), _lua_string(chosen.spawn),
+            f"the {chosen.region} {chosen.name} save station")
+
+    async def _warp(self, scenario_lua: str, actor_lua: str,
+                    where: str) -> str:
+        """Warp Samus via ``Game.LoadScenario`` to ``scenario_lua``/``actor_lua``
+        (Lua expressions — ``Init.sStarting*`` for start, quoted literals for a
+        region) and rewind whatever the reload reverts.
 
         Same ``Game.LoadScenario`` primitive Randovania exposes via ZL+ZR at a
         save station (custom_scenario.lua:CheckWarpToStart). The crucial
@@ -1249,31 +1432,9 @@ class DreadContext(CommonContext):
         # diff would double-count.
         self._warp_in_progress = True
         try:
-            src = (
-                'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
-                # Refuse to warp out of a boss arena — Game.LoadScenario mid-fight
-                # corrupts the encounter (the Kraid brick). RL.IsInBossArena is
-                # defined by lua/warp_guard.lua in our bootstrap; guard the call
-                # so an older/partial VM (function nil) degrades to allowing warp
-                # rather than erroring.
-                'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
-                # Refuse to warp out of a Navigation (Adam) room — the conversation
-                # keeps Samus controllable but leaves a dialogue box that
-                # Game.LoadScenario doesn't tear down, stranding an undismissable
-                # text box. RL.IsInNavRoom is defined by lua/warp_guard.lua; guard
-                # the call so a pre-bootstrap VM (function nil) degrades to allowing
-                # the warp. A Nav room is a safe hub, so blocking here is free.
-                'if RL.IsInNavRoom and RL.IsInNavRoom() then return "in_nav" end '
-                # Refuse to warp from a save station — same stranded-dialog risk as
-                # a Nav room (the save box survives LoadScenario), and a save room
-                # is a safe hub where /warp is never needed (just save + reload).
-                # RL.IsInSaveRoom is defined by lua/warp_guard.lua; guard the call
-                # so a pre-bootstrap VM degrades to allowing the warp.
-                'if RL.IsInSaveRoom and RL.IsInSaveRoom() then return "in_save" end '
-                'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
-                'Game.LoadScenario("c10_samus", Init.sStartingScenario, Init.sStartingActor, "", 1) '
-                'return "ok"'
-            )
+            # Guards (boss/nav/save/interaction) all inspect the CURRENT location,
+            # so they apply regardless of destination. See protocol.build_warp_src.
+            src = build_warp_src(scenario_lua, actor_lua)
             try:
                 resp = await self._bridge.run_lua(src)
             except (RuntimeError, ConnectionError, asyncio.TimeoutError) as exc:
@@ -1304,13 +1465,13 @@ class DreadContext(CommonContext):
             if body != "ok":
                 return f"unexpected reply: {body!r}"
             return await self._restore_after_warp(
-                inv_before, recv_before, collected_before)
+                inv_before, recv_before, collected_before, where)
         finally:
             self._warp_in_progress = False
 
     async def _restore_after_warp(
         self, inv_before: dict[str, float], recv_before: int,
-        collected_before: list[int],
+        collected_before: list[int], where: str = "the starting save station",
     ) -> str:
         """Rewind everything the ``Game.LoadScenario`` warp reverted.
 
@@ -1381,9 +1542,9 @@ class DreadContext(CommonContext):
 
         if not restored:
             return "warped — no pickups needed restoring"
-        return ("warped — restored {n} reverted pickup(s): {names}. Save at the "
-                "starting save station to commit them.").format(
-                    n=len(restored), names=", ".join(restored))
+        return ("warped — restored {n} reverted pickup(s): {names}. Save at {where}"
+                " to commit them.").format(
+                    n=len(restored), names=", ".join(restored), where=where)
 
     async def _read_inventory_amounts(self) -> dict[str, float]:
         """Read live per-item amounts (``ITEM_id -> amount``) straight from the

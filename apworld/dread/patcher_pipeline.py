@@ -454,8 +454,10 @@ def _apply_nav_hints(
     The starter preset bakes ~11 entries pointing at Randovania's own
     placement (e.g. "A Progressive Beam can be found in Cataris"); those are
     false under AP shuffling. ``DreadWorld`` instead generates real cross-world
-    placement hints at generation time (see ``DreadWorld._generate_nav_hints``,
-    which also registers each as a real AP server hint). Slots beyond the
+    placement hints at generation time (see ``DreadWorld._generate_nav_hints``);
+    each also carries the revealed location, which the CLIENT registers as a free
+    AP server hint when the player reaches that Nav Station
+    (``DreadContext._register_nav_hints``). Slots beyond the
     generated count — or every slot when ``generated`` is empty, e.g. the
     offline / template-passthrough flows — fall back to the AP-aware filler so
     nothing keeps leaking the stale Randovania placement."""
