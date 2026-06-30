@@ -250,6 +250,21 @@ class DreadWorld(World):
         self._start_comp: int | None = None           # None => graph default (Artaria)
         self._start_patcher: dict | None = None       # None => STARTING_AREA index 0
         self._start_extra_items: list[str] = []
+        self._ut = False                              # Universal Tracker regen?
+
+        # Universal Tracker re-runs generation from slot_data to recompute the
+        # reachable set for a live game. Its single-player regen uses a DIFFERENT
+        # RNG stream than the original multiworld, so re-rolling door/transport/
+        # start randomization here would build a degenerate graph and collapse
+        # reachability to a near-empty set. Instead, restore every per-seed
+        # decision (and the logic-affecting options, in case UT has no player
+        # YAML) from the `ut_state` payload fill_slot_data exported. See
+        # _ut_state / interpret_slot_data.
+        ut_state = self._ut_passthrough()
+        if ut_state is not None:
+            self._ut = True
+            self._restore_ut_state(ut_state)
+            return
 
         door_on = int(self.options.door_lock_rando.value) != 0
         transport_on = int(self.options.transport_rando.value) != 0
@@ -726,6 +741,84 @@ class DreadWorld(World):
     # starter preset ships Charge Beam as a findable pickup, not a start item.
     EXTRA_STARTING_ITEMS: tuple[str, ...] = ()
 
+    # ---- Universal Tracker integration ------------------------------------
+    #
+    # UT (https://github.com/FarisTheAncient/Archipelago tracker branch) recomputes
+    # a slot's reachable locations by re-running generation from slot_data. Our
+    # world builds a CUSTOM per-seed region graph (door-lock rando, transport
+    # rando, start-area gating — all rolled from self.random in generate_early),
+    # so without restoring those decisions UT would re-roll a different graph and
+    # report a wildly wrong in-logic set. We export the rolled state (and the
+    # logic-affecting options) in `ut_state` and restore it on a UT regen.
+
+    @staticmethod
+    def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
+        """Universal Tracker hook. Returning the slot_data (a truthy value) tells
+        UT to run a re-generation pass with ``multiworld.re_gen_passthrough[GAME]``
+        set to this dict, so :meth:`generate_early` can restore the seed's per-seed
+        randomization from ``ut_state`` instead of re-rolling it."""
+        return slot_data
+
+    def _ut_passthrough(self) -> dict[str, Any] | None:
+        """The ``ut_state`` dict UT handed back via ``re_gen_passthrough`` for this
+        game, or None during a normal generation."""
+        mw = self.multiworld
+        passthrough = getattr(mw, "re_gen_passthrough", None)
+        if not passthrough or GAME_NAME not in passthrough:
+            return None
+        slot_data = passthrough[GAME_NAME] or {}
+        return slot_data.get("ut_state")
+
+    # Options that are part of every game (accessibility, progression_balancing,
+    # start_inventory, …) are owned by UT/the YAML and need no round-trip; only the
+    # Dread-specific options affect the graph/rules we rebuild.
+    def _dread_option_keys(self) -> list[str]:
+        from Options import PerGameCommonOptions
+        common = set(PerGameCommonOptions.type_hints)
+        return [k for k in self.options_dataclass.type_hints if k not in common]
+
+    def _ut_state(self) -> dict[str, Any]:
+        """Per-seed state Universal Tracker needs to reconstruct this slot's
+        region graph + rules on a regen (see the class comment above). Persists
+        (a) every Dread-specific option value — so the regen matches even when UT
+        has no player YAML — and (b) the rolled door/transport/start decisions."""
+        opts: dict[str, Any] = {}
+        for key in self._dread_option_keys():
+            opt = getattr(self.options, key, None)
+            if opt is None:
+                continue
+            val = opt.value
+            if isinstance(val, (set, frozenset)):
+                val = sorted(val)            # OptionSet → JSON-serializable list
+            opts[key] = val
+        return {
+            "options": opts,
+            "dock_assignments": dict(getattr(self, "_dock_assignments", {}) or {}),
+            "transport_matching": dict(getattr(self, "_transport_matching", {}) or {}),
+            "start_comp": getattr(self, "_start_comp", None),
+            "start_patcher": getattr(self, "_start_patcher", None),
+            "start_extra_items": list(getattr(self, "_start_extra_items", []) or []),
+        }
+
+    def _restore_ut_state(self, ut_state: dict[str, Any]) -> None:
+        """Apply a previously-exported :meth:`_ut_state` onto this world during a
+        UT regen: restore the logic-affecting options, then the rolled per-seed
+        decisions (so create_regions/set_rules rebuild the original graph without
+        touching self.random)."""
+        for key, value in (ut_state.get("options") or {}).items():
+            opt = getattr(self.options, key, None)
+            if opt is None:
+                continue
+            # OptionSet values were stored as lists; restore them as sets.
+            opt.value = (set(value)
+                         if isinstance(opt.value, (set, frozenset)) else value)
+        self._dock_assignments = dict(ut_state.get("dock_assignments") or {})
+        self._transport_matching = dict(ut_state.get("transport_matching") or {})
+        sc = ut_state.get("start_comp")
+        self._start_comp = int(sc) if sc is not None else None
+        self._start_patcher = ut_state.get("start_patcher")
+        self._start_extra_items = list(ut_state.get("start_extra_items") or [])
+
     def _build_placements_payload(self) -> dict[str, Any]:
         """Build the per-slot placements payload.
 
@@ -1150,6 +1243,9 @@ class DreadWorld(World):
         payload = self._build_placements_payload()
         payload["location_count"] = len(location_table)
         payload["item_count"] = len(item_table)
+        # Universal Tracker regen state (additive; the client ignores it). Only
+        # on the slot_data path — the offline CLI placements JSON doesn't need it.
+        payload["ut_state"] = self._ut_state()
         return payload
 
     def get_filler_item_name(self) -> str:

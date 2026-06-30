@@ -222,7 +222,15 @@ def set_graph_rules(world) -> None:
     else:
         mw.completion_condition[player] = victory
 
-    if n_dna > 0 and world.options.artifact_placement.current_key == "prefer_bosses":
+    # Locked-DNA placement consumes world.random and pins items onto boss
+    # locations. On a Universal Tracker regen the RNG stream differs, so this
+    # would pick different bosses AND collide with UT overlaying the seed's real
+    # placements from multidata. Skip it: DNA never gates region access (only the
+    # completion condition references it), so the reachable-location set UT
+    # computes is identical whether or not we pre-place the DNA here.
+    fake_gen = getattr(mw, "generation_is_fake", False)
+    if (not fake_gen and n_dna > 0
+            and world.options.artifact_placement.current_key == "prefer_bosses"):
         from .Locations import location_table
         boss = [l.name for l in location_table
                 if l.pickup_type in ("corpius", "emmi", "cutscene", "corex")]
