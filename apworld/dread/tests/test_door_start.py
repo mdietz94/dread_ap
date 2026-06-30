@@ -335,11 +335,29 @@ def test_flipper_shuttle_patches_both_actors(graph):
 
 @graph_required
 def test_connected_matching_keeps_pickups_reachable(graph):
-    from dread.TransportRando import roll_connected_matching, _full_reachable_ok
+    from dread.TransportRando import (roll_connected_matching,
+                                      _no_reachability_regression)
     from dread.Tricks import DREAD_TRICKS
     tl = {t.short_name: 5 for t in DREAD_TRICKS}  # all tricks on (full reach)
     m = roll_connected_matching(graph, _ShuffleRNG(), tl)
-    assert _full_reachable_ok(graph, m, tl)
+    assert _no_reachability_regression(graph, m, tl)
+
+
+@graph_required
+def test_connected_matching_shuffles_with_all_tricks_disabled(graph):
+    """Regression: the faithful starter preset (all tricks disabled) leaves 8
+    Speedbooster-gated pickups unreachable even under VANILLA transports, so the
+    old all-pickups-reachable acceptance test rejected every roll and silently
+    fell back to vanilla — transports never shuffled. The no-regression test must
+    still produce a real (non-empty) matching here."""
+    import random
+    from dread.TransportRando import roll_connected_matching
+    from dread.Tricks import DREAD_TRICKS
+    tl = {t.short_name: 0 for t in DREAD_TRICKS}  # all tricks disabled
+    # Real RNG so the retry loop sees distinct permutations (the deterministic
+    # _ShuffleRNG yields one fixed matching, defeating the point of the retry).
+    m = roll_connected_matching(graph, random.Random(999), tl)
+    assert m, "transport matching fell back to vanilla at all-tricks-disabled"
 
 
 @graph_required

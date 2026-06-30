@@ -12,9 +12,10 @@ The matching feeds two consumers:
   * patcher — ``matching_to_elevators`` emits the open-dread-rando ``elevators``
     config (source actor -> destination scenario + target spawn point).
 
-Like door rando this re-rolls until the matching keeps every pickup reachable
-with a full loadout (a random matching can otherwise strand a transport-only
-region); a connected matching plus the door start-guard keeps fill bootstrappable.
+Like door rando this re-rolls until the matching doesn't strand any pickup that
+was reachable under vanilla transports (a random matching can otherwise cut off a
+transport-only region); that no-regression matching plus the door start-guard
+keeps fill bootstrappable.
 """
 from __future__ import annotations
 
@@ -71,14 +72,27 @@ def roll_matching(graph: dict, rng, mode: str = "randomized") -> dict[str, str]:
     return matching
 
 
-def _full_reachable_ok(graph: dict, matching: dict[str, str], tl: dict) -> bool:
-    """Every pickup reachable with a full loadout under this matching (i.e. the
-    transport graph didn't strand a region)."""
+def _no_reachability_regression(graph: dict, matching: dict[str, str],
+                                tl: dict) -> bool:
+    """The matching doesn't strand any pickup that was reachable under VANILLA
+    transports (full loadout, given trick levels).
+
+    NOT "every pickup reachable": at low/disabled trick levels some pickups are
+    trick-gated and unreachable even with a full loadout AND vanilla transports
+    (e.g. the all-tricks-disabled starter preset leaves 8 Speedbooster-gated
+    pickups unreachable — they hold filler under ``accessibility: minimal``).
+    Requiring full reachability there would reject every roll and silently fall
+    back to vanilla. The correct invariant — like DoorRando's start-frontier
+    guard — is that shuffling transports never makes reachability WORSE than the
+    vanilla baseline."""
     from .DoorRando import early_reachable
     full = {nm: 99 for nm in _ALL_ITEMS}
+    base, _ = early_reachable(graph, full, tl, use_events=True,
+                              transport_matching={})
+    baseline_pickups = {comp for comp, _name in graph["pickups"] if comp in base}
     reach, _ = early_reachable(graph, full, tl, use_events=True,
                                transport_matching=matching)
-    return all(comp in reach for comp, _name in graph["pickups"])
+    return baseline_pickups <= reach
 
 
 _ALL_ITEMS = (
@@ -94,13 +108,14 @@ _ALL_ITEMS = (
 
 def roll_connected_matching(graph: dict, rng, tl: dict,
                             mode: str = "randomized", attempts: int = 50):
-    """Roll a matching that keeps every pickup reachable with a full loadout,
-    retrying up to ``attempts`` times; falls back to vanilla if none found."""
+    """Roll a matching that strands no pickup reachable under vanilla transports
+    (full loadout, given trick levels), retrying up to ``attempts`` times; falls
+    back to vanilla if none found."""
     if mode in ("off", "vanilla", None):
         return {}
     for _ in range(attempts):
         m = roll_matching(graph, rng, mode)
-        if _full_reachable_ok(graph, m, tl):
+        if _no_reachability_regression(graph, m, tl):
             return m
     return {}  # give up -> vanilla (always reachable)
 
