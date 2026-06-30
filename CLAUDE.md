@@ -863,6 +863,35 @@ distinctness), `test_warp` (nav/map spawn loads, save-vs-nav kind disambiguation
 Hanubia nav-only, nav/map visit recording, in_map block), `test_bootstrap`
 (RL.MapRooms block + IsInMapRoom).
 
+UPDATE (visited-warp set now PERSISTS across a client restart, via AP
+DataStorage): `_visited_saves` was in-memory only — it survived a Switch
+reconnect (client-owned, re-bootstrap-safe) but a full CLIENT restart started
+empty, so a restarted client had to re-walk to each station before it could
+`/warp` there. That's the wrong failure mode: the recovery use case is exactly
+when you're STUCK and may be unable to re-reach a station. So the set is now
+mirrored into AP server DataStorage (the client had NO prior DataStorage usage —
+this introduces it). `_on_connected` binds `_warp_visited_key =
+f"dread_warp_visited_{seed}_{team}_{slot}"` (seed-scoped so it never restores a
+DIFFERENT seed's stations — and a seed change now also CLEARS the in-memory set,
+fixing a latent pre-existing cross-seed leak) and `set_notify`s it; the resulting
+`Retrieved` repopulates `_visited_saves` (`_absorb_visited_storage` merges
+server→local, dropping any pair that isn't a current `WARP_TARGET_BY_CAMERA` key),
+and `SetNotify` keeps multiple clients on the same slot in sync. Each new local
+observation in `_record_room_visit` writes the full set back via
+`Set`/`replace` (`_persist_visited`; ≤34 entries, tiny). Loop-safe: our own `Set`
+uses `want_reply=False` and the `SetReply` handler MERGES ONLY (never re-persists);
+`Retrieved` persists once iff local holds entries the server lacked (observed
+while AP was disconnected → push-back). `send_msgs` self-guards when the AP socket
+is down, so persistence is a silent no-op offline. Pure-client change — no
+slot_data/world_version/wire impact. The conftest `CommonContext` stub was
+extended (`team`, `stored_data`, `stored_data_notification_keys`, `set_notify`) to
+match the surface now used. Tests: `test_warp` (persist-on-visit, restore-on-
+Retrieved, SetReply merge, unrelated-key/garbage ignored, local-only push-back
+flag, restart round-trip→warp), `test_context_e2e` (connect subscribes the
+seed+slot key, seed change clears + rekeys). Residual: `replace` (not a CRDT
+merge) means two clients writing in the same instant can clobber — self-heals on
+the next reconnect's Retrieved; acceptable for a recovery feature.
+
 UPDATE (Nav Station hints → free AP server hints on visit): the in-game Nav
 Station ("Adam") plaques already showed REAL cross-world placement facts
 (`World._generate_nav_hints` bakes them post-fill — "Your Grapple is at P2's Foo",

@@ -300,8 +300,15 @@ class DreadContext(CommonContext):
         # ``/warp <region> [station]`` so it only restores access you ALREADY had.
         # Client-owned, so it survives a Lua re-bootstrap (reconnect); reset only
         # on a fresh client session. (Named ``_visited_saves`` from when save
-        # stations were the only warp targets.)
+        # stations were the only warp targets.) Mirrored into AP DataStorage
+        # (``_warp_visited_key``) so a client RESTART — not just a reconnect —
+        # can keep warping: the recovery use case (you're stuck) is exactly when
+        # you may be unable to re-reach a station to re-record it.
         self._visited_saves: set[tuple[str, str]] = set()
+        # AP DataStorage key holding the visited set, seed+slot scoped so it never
+        # bleeds across seeds. Set in _on_connected once slot/seed are known; None
+        # while offline / pre-connect (persistence is then a no-op).
+        self._warp_visited_key: Optional[str] = None
 
         # Nav Station hint registration. Built from slot_data on connect:
         # (scenario, camera) -> [(location_owner_slot, location_id), ...] for the
@@ -384,6 +391,17 @@ class DreadContext(CommonContext):
             log.debug("absorbed %d scout entries", n)
         elif cmd == "RoomInfo":
             self.state.seed = args.get("seed_name", "")
+        elif cmd == "Retrieved":
+            # Initial sync of the persisted visited-warp set (response to the Get
+            # set_notify issued). Merge server -> local; if local also holds
+            # entries the server lacks (observed while AP was disconnected), push
+            # the union back so they survive too.
+            if self._absorb_visited_storage(args):
+                asyncio.ensure_future(self._persist_visited())
+        elif cmd == "SetReply":
+            # Another client (same slot, different device) recorded a station —
+            # merge it. Merge only, never push, so our own Set can't ping-pong.
+            self._absorb_visited_storage(args)
 
     async def shutdown(self) -> None:
         await self._stop_active_session()
@@ -537,6 +555,10 @@ class DreadContext(CommonContext):
                          "location mirror so prior-seed collections don't "
                          "suppress this seed's checks", self._synced_seed, new_seed)
             self.state.clear_received()
+            # A station visited in the PRIOR seed isn't necessarily reached in
+            # THIS one, so drop the in-memory set; this seed's own DataStorage key
+            # (below) restores the correct set for it.
+            self._visited_saves.clear()
             self._synced_seed = new_seed
         else:
             # Same multiworld, fresh socket: re-assert everything we believe is
@@ -551,6 +573,16 @@ class DreadContext(CommonContext):
                          len(collected))
                 await self.send_msgs([{"cmd": "LocationChecks",
                                        "locations": collected}])
+        # Subscribe to the persisted visited-warp set for THIS seed+slot. The Get
+        # set_notify issues lands as a ``Retrieved`` that repopulates
+        # _visited_saves (so a restarted client keeps its /warp targets), and the
+        # SetNotify keeps multiple clients on the same slot in sync. Scoped by seed
+        # so it never restores a different seed's stations. Offline (no seed) ⇒
+        # left None, persistence is a no-op.
+        if new_seed and self.slot is not None:
+            self._warp_visited_key = (
+                f"dread_warp_visited_{new_seed}_{self.team}_{self.slot}")
+            self.set_notify(self._warp_visited_key)
         # New connection ⇒ re-baseline death detection on the next poll so a
         # historical death count from a prior session isn't reported now.
         self._last_death_count = None
@@ -1099,8 +1131,57 @@ class DreadContext(CommonContext):
         if target is not None and key not in self._visited_saves:
             self._visited_saves.add(key)
             log.info("/warp: recorded %s %s", target.region, target.label)
+            await self._persist_visited()
         if key in self._nav_hint_by_camera:
             await self._register_nav_hints(key)
+
+    def _absorb_visited_storage(self, args: dict) -> bool:
+        """Merge a ``Retrieved`` / ``SetReply`` payload for the visited-warp key
+        into ``_visited_saves`` (server -> local union). Ignores unrelated keys
+        and any stored pair that isn't a known warp target (defensive against a
+        future table change). Returns True iff the LOCAL set still holds entries
+        the stored value lacked — i.e. a push-back to storage is warranted."""
+        key = self._warp_visited_key
+        if not key:
+            return False
+        if "keys" in args:                       # Retrieved: {key: value, ...}
+            if key not in args["keys"]:
+                return False
+            value = args["keys"][key]
+        elif args.get("key") == key:             # SetReply: flat key/value
+            value = args.get("value")
+        else:
+            return False
+        stored: set[tuple[str, str]] = set()
+        if isinstance(value, list):
+            for pair in value:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    t = (str(pair[0]), str(pair[1]))
+                    if t in WARP_TARGET_BY_CAMERA:
+                        stored.add(t)
+        before = set(self._visited_saves)
+        self._visited_saves |= stored
+        restored = self._visited_saves - before
+        if restored:
+            log.info("/warp: restored %d station(s) from AP storage",
+                     len(restored))
+        return bool(before - stored)             # local-only entries to push
+
+    async def _persist_visited(self) -> None:
+        """Write the visited-warp set to AP DataStorage (full ``replace``). Safe
+        no-op if there's no key yet or the AP socket is down (``send_msgs`` drops
+        silently when disconnected). Volume is tiny (<=34 entries)."""
+        key = self._warp_visited_key
+        if not key:
+            return
+        payload = sorted(list(k) for k in self._visited_saves)
+        try:
+            await self.send_msgs([{
+                "cmd": "Set", "key": key, "default": [], "want_reply": False,
+                "operations": [{"operation": "replace", "value": payload}],
+            }])
+        except Exception as exc:  # noqa: BLE001 — never let persistence break the poll
+            log.debug("/warp: persisting visited set failed: %s", exc)
 
     async def _register_nav_hints(self, station: tuple[str, str]) -> None:
         """Register the Nav Station's revealed location(s) as FREE AP server hints

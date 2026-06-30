@@ -93,9 +93,15 @@ def _install_common_client_stub() -> None:
             self.username = ""
             self.auth = None
             self.slot = 0
+            self.team = 0
             self.slot_info: dict = {}
             # Real CommonContext exposes this; the backoff supervisor checks it.
             self.exit_event = asyncio.Event()
+            # DataStorage surface (mirrors CommonContext). set_notify subscribes
+            # keys + (in real AP) issues a Get/SetNotify; the stub just records
+            # them so client code exercising the persisted-warp path doesn't crash.
+            self.stored_data: dict = {}
+            self.stored_data_notification_keys: set = set()
             # DeathLink surface (mirrors CommonContext). Instance-level tags so
             # tests don't bleed into each other via a shared class set.
             self.tags = {"AP"}
@@ -110,6 +116,9 @@ def _install_common_client_stub() -> None:
 
         async def send_msgs(self, msgs) -> None:
             pass
+
+        def set_notify(self, *keys: str) -> None:
+            self.stored_data_notification_keys.update(keys)
 
         async def shutdown(self) -> None:
             pass
