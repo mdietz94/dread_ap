@@ -226,3 +226,27 @@ async def test_first_connect_records_seed_without_resync(ctx, monkeypatch):
         if m.get("cmd") == "LocationChecks"
     ]
     assert location_checks == []
+
+
+@pytest.mark.asyncio
+async def test_connect_subscribes_warp_storage_key(ctx, monkeypatch):
+    """Connect binds a seed+slot scoped DataStorage key and subscribes to it, so
+    the visited-warp set survives a client restart."""
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    assert ctx._warp_visited_key == f"dread_warp_visited_AP-aaaa_{ctx.team}_{ctx.slot}"
+    assert ctx._warp_visited_key in ctx.stored_data_notification_keys
+
+
+@pytest.mark.asyncio
+async def test_seed_change_clears_visited_and_rekeys(ctx, monkeypatch):
+    """A different seed drops the in-memory visited set (a station reached in the
+    prior seed isn't necessarily reached here) and rebinds to the new seed's key;
+    that key's own Retrieved restores the correct set."""
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    ctx._visited_saves.add(("s030_baselab", "collision_camera_000"))
+
+    await ctx._on_connected({"seed_name": "AP-bbbb", "slot_data": {}})
+    assert ctx._visited_saves == set()
+    assert ctx._warp_visited_key == f"dread_warp_visited_AP-bbbb_{ctx.team}_{ctx.slot}"

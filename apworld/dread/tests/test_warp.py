@@ -525,3 +525,102 @@ async def test_nav_visit_elsewhere_registers_nothing(ctx):
     await ctx._record_room_visit(1.0)
     assert sent == []
     assert not ctx._registered_nav_hints
+
+
+# ---- visited set persists in AP DataStorage (survives client restart) ------
+
+_KEY = "dread_warp_visited_SEED_0_1"
+
+
+def _set_for(sent, key):
+    """The replace-value of the Set targeting ``key`` in captured msgs, or None."""
+    for m in sent:
+        if m.get("cmd") == "Set" and m.get("key") == key:
+            return m["operations"][0]["value"]
+    return None
+
+
+@pytest.mark.asyncio
+async def test_recording_a_visit_persists_to_storage(ctx):
+    # With a storage key bound, recording a station writes the full set via Set.
+    ctx._warp_visited_key = _KEY
+    sent = _capture_msgs(ctx)
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True, payload=b"s030_baselab,collision_camera_000"))
+    ctx._bridge = bridge
+    await ctx._record_room_visit(1.0)
+    value = _set_for(sent, _KEY)
+    assert value == [["s030_baselab", "collision_camera_000"]]
+
+
+@pytest.mark.asyncio
+async def test_persist_is_noop_without_key(ctx):
+    ctx._warp_visited_key = None
+    sent = _capture_msgs(ctx)
+    ctx._visited_saves = {_DAIRON_EAST}
+    await ctx._persist_visited()
+    assert sent == []
+
+
+def test_retrieved_restores_visited_set(ctx):
+    # A restarted client starts empty; the Get response repopulates the set.
+    ctx._warp_visited_key = _KEY
+    ctx._visited_saves = set()
+    pushed = ctx._absorb_visited_storage(
+        {"keys": {_KEY: [["s030_baselab", "collision_camera_000"],
+                         ["s080_shipyard", "collision_camera_003"]]}})
+    assert _DAIRON_EAST in ctx._visited_saves
+    assert ("s080_shipyard", "collision_camera_003") in ctx._visited_saves
+    # Nothing local-only -> no push-back warranted.
+    assert pushed is False
+
+
+def test_setreply_merges_other_client_visit(ctx):
+    ctx._warp_visited_key = _KEY
+    ctx._visited_saves = set()
+    ctx._absorb_visited_storage(
+        {"key": _KEY, "value": [["s030_baselab", "collision_camera_044"]]})
+    assert _DAIRON_NAV_NORTH in ctx._visited_saves
+
+
+def test_absorb_ignores_unrelated_key_and_garbage(ctx):
+    ctx._warp_visited_key = _KEY
+    ctx._visited_saves = set()
+    # Wrong key -> ignored.
+    assert ctx._absorb_visited_storage({"keys": {"other": [["s030_baselab", "x"]]}}) is False
+    # Unknown / malformed pairs are dropped, not added.
+    ctx._absorb_visited_storage(
+        {"keys": {_KEY: [["s030_baselab", "collision_camera_999"], ["bad"], 42]}})
+    assert ctx._visited_saves == set()
+
+
+def test_absorb_flags_local_only_entries_for_pushback(ctx):
+    # Observed a station while AP was disconnected; on reconnect the stored value
+    # lacks it, so a push-back is warranted.
+    ctx._warp_visited_key = _KEY
+    ctx._visited_saves = {_DAIRON_EAST}
+    pushed = ctx._absorb_visited_storage({"keys": {_KEY: []}})
+    assert pushed is True
+
+
+@pytest.mark.asyncio
+async def test_restart_roundtrip_then_warp(ctx):
+    # End-to-end: persist on visit, then a fresh client restores from storage and
+    # can warp there without re-visiting.
+    ctx._warp_visited_key = _KEY
+    sent = _capture_msgs(ctx)
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True, payload=b"s080_shipyard,collision_camera_003"))
+    ctx._bridge = bridge
+    await ctx._record_room_visit(1.0)            # Hanubia nav station
+    stored = _set_for(sent, _KEY)
+
+    fresh = ctx.__class__.__new__(ctx.__class__)  # a "restarted" context, no shared state
+    fresh._visited_saves = set()
+    fresh._warp_visited_key = _KEY
+    fresh._absorb_visited_storage({"keys": {_KEY: stored}})
+    assert ("s080_shipyard", "collision_camera_003") in fresh._visited_saves
