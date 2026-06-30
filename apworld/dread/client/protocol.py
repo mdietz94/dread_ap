@@ -308,30 +308,65 @@ def build_mark_collected_lua(pickup_indices: list[int]) -> str:
 # observed the player standing in (``DreadContext._visited_saves``, accumulated
 # from the live collision-camera the warp guard tracks).
 #
-# ``SAVE_STATIONS`` is every reloadable save station — the 17 with an actual save
-# platform (a subset of ``SAVE_STATION_CAMERAS``, which also lists access/tunnel
-# rooms that have no spawn point). Each carries the scenario id (what
-# ``Game.GetScenarioID`` reports), the collision-camera id (how a visit is
-# detected — same id the warp guard keys on), and the spawn actor (the weight
-# plate the player stands on). All are functional identifiers from Randovania's
-# published Dread logic. Hanubia is omitted: no save station (final escape run).
+# A warp TARGET is any reloadable spawn point: a save station, a Navigation
+# ("Adam") station, or a Map station. All three are ``valid_starting_location``
+# nodes in Randovania's Dread logic, so each carries a real spawn actor (a weight
+# plate / access-point platform) that ``Game.LoadScenario`` can land Samus on —
+# that spawn actor is the only thing that ever made save stations special. Each
+# target carries the scenario id (what ``Game.GetScenarioID`` reports), the
+# collision-camera id (how a visit is detected — same id the warp guard keys on),
+# and the spawn actor. All are functional identifiers from Randovania's published
+# Dread logic. Save stations omit Hanubia (no save station — final escape run);
+# nav stations ADD Hanubia (its only warp target); map stations cover the 6
+# regions that have a map console.
+#
 # ``WARP_LEVEL_ID`` is the constant Dread level container passed as
 # ``Game.LoadScenario``'s first arg (same as warp-to-start).
 WARP_LEVEL_ID = "c10_samus"
 
+# Display titles per kind. ``WarpTarget.label`` ("Save East" / "Nav North" /
+# "Map") is what /warp matches a user keyword against and what /warp list shows,
+# so save/nav/map targets that share a region (and even a direction) stay
+# distinguishable — e.g. Artaria has both "Save North" and "Nav North", picked
+# apart by ``/warp artaria save north`` vs ``/warp artaria nav north``.
+WARP_KIND_TITLE = {"save": "Save", "nav": "Nav", "map": "Map"}
+
 
 @dataclass(frozen=True)
-class SaveStation:
-    """A reloadable save station: a /warp <region> [name] target."""
+class WarpTarget:
+    """A reloadable spawn point: a /warp <region> [name] target (save / nav / map)."""
     region: str       # display region name, e.g. "Dairon"
     region_key: str   # lowercase command key, e.g. "dairon"
     scenario: str     # scenario id, e.g. "s030_baselab"
     camera: str       # collision-camera id used to detect a visit
-    name: str         # short directional name, e.g. "East" / "Main"
-    spawn: str        # save-platform spawn actor
+    name: str         # short directional name, e.g. "East" / "North" / "" (single)
+    spawn: str        # spawn actor (weight plate / access-point platform)
+    kind: str = "save"  # "save" | "nav" | "map"
+
+    @property
+    def label(self) -> str:
+        """Kind-prefixed match/display name: "Save East", "Nav North", "Map"."""
+        title = WARP_KIND_TITLE.get(self.kind, self.kind.title())
+        return f"{title} {self.name}".strip()
 
 
-def _save_stations() -> list[SaveStation]:
+# Back-compat alias — the dataclass was ``SaveStation`` when save stations were
+# the only /warp targets.
+SaveStation = WarpTarget
+
+
+def _build_targets(kind: str, raw: dict) -> list[WarpTarget]:
+    """Expand a ``{(region, region_key, scenario): [(camera, name, spawn), ...]}``
+    table into :class:`WarpTarget`\\ s of ``kind``."""
+    out: list[WarpTarget] = []
+    for (region, region_key, scenario), stations in raw.items():
+        for camera, name, spawn in stations:
+            out.append(WarpTarget(region, region_key, scenario, camera, name,
+                                  spawn, kind))
+    return out
+
+
+def _save_stations() -> list[WarpTarget]:
     # (region, region_key, scenario): [(camera, short name, spawn actor), ...]
     raw = {
         ("Artaria", "artaria", "s010_cave"): [
@@ -368,21 +403,97 @@ def _save_stations() -> list[SaveStation]:
             ("collision_camera_000", "Main", "savestation_000_platform"),
         ],
     }
-    out: list[SaveStation] = []
-    for (region, region_key, scenario), stations in raw.items():
-        for camera, name, spawn in stations:
-            out.append(SaveStation(region, region_key, scenario, camera, name, spawn))
-    return out
+    return _build_targets("save", raw)
 
 
-SAVE_STATIONS: list[SaveStation] = _save_stations()
+def _nav_stations() -> list[WarpTarget]:
+    # Navigation ("Adam") stations — each region's access-point platform (the
+    # ``valid_starting_location`` node RDV places at the Adam console). Cameras
+    # match NAV_HINT_STATIONS / NAV_ROOM_CAMERAS (same visit signal already used
+    # for hint registration). Adds Hanubia (s080), which has no save station.
+    raw = {
+        ("Artaria", "artaria", "s010_cave"): [
+            ("collision_camera_065", "North", "PRP_CV_AccessPoint002_WeightPlate"),
+            ("collision_camera_068", "South", "PRP_CV_AccessPoint001_WeightPlate"),
+        ],
+        ("Cataris", "cataris", "s020_magma"): [
+            ("collision_camera_002", "Southeast", "accesspoint_platform"),
+            ("collision_camera_058", "Northwest", "accesspoint_platform_000"),
+        ],
+        ("Dairon", "dairon", "s030_baselab"): [
+            ("collision_camera_014", "South", "accesspoint_000_platform"),
+            ("collision_camera_044", "North", "accesspoint_001_platform"),
+        ],
+        ("Burenia", "burenia", "s040_aqua"): [
+            ("collision_camera_009", "North", "accesspoint_000_platform"),
+            ("collision_camera_016", "South", "accesspoint_001_platform"),
+        ],
+        ("Ghavoran", "ghavoran", "s050_forest"): [
+            ("collision_camera_006", "", "accesspoint_000_platform"),
+        ],
+        ("Ferenia", "ferenia", "s070_basesanc"): [
+            ("collision_camera_016", "", "accesspoint_000_platform"),
+        ],
+        ("Hanubia", "hanubia", "s080_shipyard"): [
+            ("collision_camera_003", "", "weightactivatedplatform_access_000"),
+        ],
+    }
+    return _build_targets("nav", raw)
 
-# Fast lookups: (scenario, camera) -> SaveStation (visit detection); region_key ->
-# [SaveStation] (command resolution).
-SAVE_STATION_BY_CAMERA: dict[tuple[str, str], SaveStation] = {
+
+def _map_stations() -> list[WarpTarget]:
+    # Map stations — each region's map-console platform (also a
+    # ``valid_starting_location`` node). One per region; only the 6 regions with a
+    # map console appear. Cameras are the map-room collision cameras.
+    raw = {
+        ("Artaria", "artaria", "s010_cave"): [
+            ("collision_camera_058", "", "PRP_CV_MapStation001_WeightPlate"),
+        ],
+        ("Cataris", "cataris", "s020_magma"): [
+            ("collision_camera_030", "", "maproom_platform"),
+        ],
+        ("Dairon", "dairon", "s030_baselab"): [
+            ("collision_camera_023", "", "maproom_000_platform"),
+        ],
+        ("Burenia", "burenia", "s040_aqua"): [
+            ("collision_camera_000", "", "maproom_platform"),
+        ],
+        ("Ghavoran", "ghavoran", "s050_forest"): [
+            ("collision_camera_013", "", "maproom_platform"),
+        ],
+        ("Ferenia", "ferenia", "s070_basesanc"): [
+            ("collision_camera_023", "", "maproom_platform"),
+        ],
+    }
+    return _build_targets("map", raw)
+
+
+SAVE_STATIONS: list[WarpTarget] = _save_stations()
+NAV_STATIONS: list[WarpTarget] = _nav_stations()
+MAP_STATIONS: list[WarpTarget] = _map_stations()
+
+# Every /warp <region> target. Save/nav/map cameras are disjoint within each
+# scenario, so a (scenario, camera) key maps to exactly one target — asserted at
+# import so a future data edit that collides is caught loudly, not silently
+# dropped from WARP_TARGET_BY_CAMERA.
+WARP_TARGETS: list[WarpTarget] = SAVE_STATIONS + NAV_STATIONS + MAP_STATIONS
+WARP_TARGET_BY_CAMERA: dict[tuple[str, str], WarpTarget] = {}
+for _t in WARP_TARGETS:
+    _k = (_t.scenario, _t.camera)
+    if _k in WARP_TARGET_BY_CAMERA:
+        raise ValueError(
+            f"warp-target camera collision at {_k}: "
+            f"{WARP_TARGET_BY_CAMERA[_k].label} vs {_t.label}")
+    WARP_TARGET_BY_CAMERA[_k] = _t
+WARP_TARGETS_BY_REGION: dict[str, list[WarpTarget]] = {}
+for _t in WARP_TARGETS:
+    WARP_TARGETS_BY_REGION.setdefault(_t.region_key, []).append(_t)
+
+# Back-compat: save-only lookups (still imported by older call sites / tests).
+SAVE_STATION_BY_CAMERA: dict[tuple[str, str], WarpTarget] = {
     (s.scenario, s.camera): s for s in SAVE_STATIONS
 }
-SAVE_STATIONS_BY_REGION: dict[str, list[SaveStation]] = {}
+SAVE_STATIONS_BY_REGION: dict[str, list[WarpTarget]] = {}
 for _s in SAVE_STATIONS:
     SAVE_STATIONS_BY_REGION.setdefault(_s.region_key, []).append(_s)
 
@@ -432,14 +543,15 @@ def build_warp_src(scenario_lua: str, actor_lua: str) -> str:
     ``_lua_string``) for a region warp. The guards are identical either way and
     all inspect the CURRENT location, so they apply regardless of destination:
     refuse outside INGAME, out of a boss arena (corrupts the fight), out of a
-    Nav/save room (strands the dialog box), or mid-cutscene. Each ``RL.IsIn*``
-    call is nil-guarded so a pre-bootstrap VM degrades to allowing the warp.
-    Returns one of the sentinel strings the caller maps to a message."""
+    Nav/save/map room (strands the dialog/map box), or mid-cutscene. Each
+    ``RL.IsIn*`` call is nil-guarded so a pre-bootstrap VM degrades to allowing
+    the warp. Returns one of the sentinel strings the caller maps to a message."""
     return (
         'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
         'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
         'if RL.IsInNavRoom and RL.IsInNavRoom() then return "in_nav" end '
         'if RL.IsInSaveRoom and RL.IsInSaveRoom() then return "in_save" end '
+        'if RL.IsInMapRoom and RL.IsInMapRoom() then return "in_map" end '
         'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
         f'Game.LoadScenario("{WARP_LEVEL_ID}", {scenario_lua}, {actor_lua}, "", 1) '
         'return "ok"'
@@ -599,6 +711,17 @@ SAVE_STATION_CAMERAS: dict[str, dict[str, str]] = {
     },
 }
 
+# Map Stations — blocked from /warp for the same reason as Nav/Save rooms, and an
+# equally-safe over-block: a map room is a hub you can just walk out of, so
+# refusing a /warp there costs nothing, while warping out with the map console
+# overlay up risks the same kind of stranded UI box. Derived from MAP_STATIONS
+# (the spawnable map consoles) rather than hand-curated — those are exactly the
+# rooms where the player interacts with the map. Same per-scenario shape, same RL
+# warp guard, same OnSubAreaChange tracking.
+MAP_STATION_CAMERAS: dict[str, dict[str, str]] = {}
+for _m in MAP_STATIONS:
+    MAP_STATION_CAMERAS.setdefault(_m.scenario, {})[_m.camera] = "Map Station"
+
 # Lua bareword key pattern — scenario ids and collision-camera ids are emitted
 # as table keys (`{s020_magma={collision_camera_063=true}}`), so both must be
 # valid identifiers or the rendered Lua is malformed.
@@ -639,6 +762,12 @@ def build_save_rooms_lua_table() -> str:
     """Render :data:`SAVE_STATION_CAMERAS` as the ``RL.SaveRooms`` table literal
     (emitted as its own bootstrap block)."""
     return _build_camera_table_lua(SAVE_STATION_CAMERAS, "save-room")
+
+
+def build_map_rooms_lua_table() -> str:
+    """Render :data:`MAP_STATION_CAMERAS` as the ``RL.MapRooms`` table literal
+    (emitted as its own bootstrap block)."""
+    return _build_camera_table_lua(MAP_STATION_CAMERAS, "map-room")
 
 
 def build_set_received_pickups_lua(count: int) -> str:

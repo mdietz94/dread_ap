@@ -28,6 +28,7 @@ from typing import Optional
 
 from .protocol import (
     build_boss_arenas_lua_table,
+    build_map_rooms_lua_table,
     build_nav_rooms_lua_table,
     build_save_rooms_lua_table,
 )
@@ -134,12 +135,13 @@ def build_bootstrap_code(items_rows: list[dict], locations_rows: list[dict]) -> 
 
     # Warp-guard collision-camera tables, each emitted as its OWN block so
     # warp_guard.lua's code stays well under the send buffer while the tables
-    # grow (boss arenas + Nav/Adam rooms + Save Stations). RL.IsIn*() read these
-    # globals only at /warp time, so these may run in any order relative to the
-    # warp_guard function block — they just have to precede the first /warp.
+    # grow (boss arenas + Nav/Adam rooms + Save Stations + Map Stations).
+    # RL.IsIn*() read these globals only at /warp time, so these may run in any
+    # order relative to the warp_guard function block — just before the 1st /warp.
     blocks.append("RL.BossArenas = " + build_boss_arenas_lua_table())
     blocks.append("RL.NavRooms = " + build_nav_rooms_lua_table())
     blocks.append("RL.SaveRooms = " + build_save_rooms_lua_table())
+    blocks.append("RL.MapRooms = " + build_map_rooms_lua_table())
 
     # Our own (non-vendored) extra functions. No templates to fill, but run
     # _substitute anyway to catch an accidental TEMPLATE() in a hand-edited file.
