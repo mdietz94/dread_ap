@@ -53,8 +53,8 @@ from .protocol import (
     pickup_class_for,
     pickup_resource_stage,
     NAV_HINT_STATIONS,
-    SAVE_STATIONS_BY_REGION,
-    SAVE_STATION_BY_CAMERA,
+    WARP_TARGETS_BY_REGION,
+    WARP_TARGET_BY_CAMERA,
     _lua_string,
 )
 from .scout_cache import ScoutCache, request_scout
@@ -219,18 +219,20 @@ class DreadClientCommandProcessor(ClientCommandProcessor):
         ``/warp`` (no arg) warps to the STARTING save station — the same
         ``Scenario.CheckWarpToStart`` primitive Randovania exposes via ZL+ZR at a
         save station, but invokable from anywhere. ``/warp <region> [station]``
-        warps to a specific save station you have VISITED (e.g. ``/warp dairon`` or
-        ``/warp dairon west``) — the recovery for a player who toggled themselves
-        out of a region's only local route (e.g. the Cataris thermal-device trap
-        that can sever the through-room path to Dairon). It restores access you
-        already had; you can't warp to a save station you never reached.
-        ``/warp list`` shows the recorded targets. Inventory and per-pickup
-        collected bits persist (same primitive every door transition uses); save
-        at the destination to commit them.
+        warps to a specific station you have VISITED — a save, navigation
+        ("Adam"), or map station (e.g. ``/warp dairon``, ``/warp dairon west``,
+        ``/warp dairon nav north``, ``/warp dairon map``) — the recovery for a
+        player who toggled themselves out of a region's only local route (e.g. the
+        Cataris thermal-device trap that can sever the through-room path to
+        Dairon). It restores access you already had; you can't warp to a station
+        you never reached. ``/warp list`` shows the recorded targets. Inventory and
+        per-pickup collected bits persist (same primitive every door transition
+        uses); save at the destination to commit them.
         """
         ctx = self.ctx
         region = args[0] if args else ""
-        station = args[1] if len(args) > 1 else ""
+        # Station names can be multi-word ("nav north"), so take the rest.
+        station = " ".join(args[1:])
         async def _go():
             if not region:
                 msg = await ctx._warp_to_start()
@@ -292,11 +294,13 @@ class DreadContext(CommonContext):
         # used for friendlier /warp errors ("you've been to Dairon but not at a
         # save station there yet").
         self._visited_scenarios: set[str] = set()
-        # Save stations the player has stood in, as (scenario, collision_camera)
-        # keys into protocol.SAVE_STATION_BY_CAMERA. Accumulated each poll from the
-        # live subarea the warp guard tracks; gates ``/warp <region> [station]`` so
-        # it only restores access you ALREADY had. Client-owned, so it survives a
-        # Lua re-bootstrap (reconnect); reset only on a fresh client session.
+        # Warp targets (save / nav / map stations) the player has stood in, as
+        # (scenario, collision_camera) keys into protocol.WARP_TARGET_BY_CAMERA.
+        # Accumulated each poll from the live subarea the warp guard tracks; gates
+        # ``/warp <region> [station]`` so it only restores access you ALREADY had.
+        # Client-owned, so it survives a Lua re-bootstrap (reconnect); reset only
+        # on a fresh client session. (Named ``_visited_saves`` from when save
+        # stations were the only warp targets.)
         self._visited_saves: set[tuple[str, str]] = set()
 
         # Nav Station hint registration. Built from slot_data on connect:
@@ -1074,10 +1078,10 @@ class DreadContext(CommonContext):
 
     async def _record_room_visit(self, timeout: float) -> None:
         """Read the live (scenario, collision-camera) the warp guard tracks and
-        react to where the player is: record a save station (for
-        ``/warp <region>``) and/or register a Nav Station's hint with the AP
-        server. Non-fatal — a failed read or an untracked subarea just means
-        nothing happens this tick."""
+        react to where the player is: record a warp target — save / nav / map
+        station — (for ``/warp <region>``) and/or register a Nav Station's hint
+        with the AP server. Non-fatal — a failed read or an untracked subarea just
+        means nothing happens this tick."""
         assert self._bridge is not None
         try:
             resp = await self._bridge.run_lua(
@@ -1091,11 +1095,10 @@ class DreadContext(CommonContext):
         key = (scenario.strip(), camera.strip())
         if "" in key:
             return
-        station = SAVE_STATION_BY_CAMERA.get(key)
-        if station is not None and key not in self._visited_saves:
+        target = WARP_TARGET_BY_CAMERA.get(key)
+        if target is not None and key not in self._visited_saves:
             self._visited_saves.add(key)
-            log.info("/warp: recorded save station %s %s",
-                     station.region, station.name)
+            log.info("/warp: recorded %s %s", target.region, target.label)
         if key in self._nav_hint_by_camera:
             await self._register_nav_hints(key)
 
@@ -1317,33 +1320,34 @@ class DreadContext(CommonContext):
             "the starting save station")
 
     def _warp_list(self) -> str:
-        """``/warp list`` — the save stations recovery can warp to (the ones the
-        player has been observed standing in)."""
-        from .protocol import SAVE_STATION_BY_CAMERA
-        visited = [SAVE_STATION_BY_CAMERA[k] for k in self._visited_saves
-                   if k in SAVE_STATION_BY_CAMERA]
+        """``/warp list`` — the stations recovery can warp to (the save / nav /
+        map stations the player has been observed standing in)."""
+        visited = [WARP_TARGET_BY_CAMERA[k] for k in self._visited_saves
+                   if k in WARP_TARGET_BY_CAMERA]
         if not visited:
-            return ("no save stations recorded yet — stand at one for a moment, "
-                    "then it becomes a /warp target")
-        visited.sort(key=lambda s: (s.region, s.name))
-        return "visited save stations: " + ", ".join(
-            f"{s.region} {s.name}" for s in visited)
+            return ("no stations recorded yet — stand at a save, nav, or map "
+                    "station for a moment, then it becomes a /warp target")
+        visited.sort(key=lambda s: (s.region, s.kind, s.name))
+        return "visited stations: " + ", ".join(
+            f"{s.region} {s.label}" for s in visited)
 
     async def _warp_to_region(self, region: str, station: str = "") -> str:
-        """``/warp <region> [station]`` — warp to a specific save station the
-        player has VISITED. Recovers someone who toggled themselves out of a
-        region's only local route (e.g. the Cataris thermal-device trap severing
-        the path to Dairon): it restores access you ALREADY had, never grants new.
+        """``/warp <region> [station]`` — warp to a specific station (save / nav /
+        map) the player has VISITED. Recovers someone who toggled themselves out
+        of a region's only local route (e.g. the Cataris thermal-device trap
+        severing the path to Dairon): it restores access you ALREADY had, never
+        grants new.
 
-        Only save stations the client has seen the player stand in
-        (``_visited_saves``) are eligible — you can't warp somewhere you never
-        reached. With multiple eligible stations in a region, ``station`` (a
-        directional name like ``west``) disambiguates. Otherwise identical to
-        warp-to-start (same guards + the inventory/cursor/collected rewind)."""
+        Only stations the client has seen the player stand in (``_visited_saves``)
+        are eligible — you can't warp somewhere you never reached. With multiple
+        eligible stations in a region, ``station`` disambiguates by matching the
+        target's kind-prefixed label (e.g. ``west``, ``nav north``, ``map``).
+        Otherwise identical to warp-to-start (same guards + the
+        inventory/cursor/collected rewind)."""
         key = region.strip().lower()
-        stations = SAVE_STATIONS_BY_REGION.get(key)
+        stations = WARP_TARGETS_BY_REGION.get(key)
         if stations is None:
-            known = ", ".join(sorted(SAVE_STATIONS_BY_REGION))
+            known = ", ".join(sorted(WARP_TARGETS_BY_REGION))
             return f"unknown region {region!r}; try one of: {known}"
         region_name = stations[0].region
         visited = [s for s in stations
@@ -1351,30 +1355,30 @@ class DreadContext(CommonContext):
         if not visited:
             if stations[0].scenario in self._visited_scenarios:
                 return (f"you've been to {region_name} but I haven't seen you at "
-                        "a save station there yet — stand at one for a moment, "
-                        "then retry")
+                        "a save, nav, or map station there yet — stand at one for "
+                        "a moment, then retry")
             return (f"you haven't been to {region_name} yet this session "
                     "(warp only restores access you already had)")
         if station:
             kw = station.strip().lower()
-            matches = [s for s in visited if kw in s.name.lower()]
+            matches = [s for s in visited if kw in s.label.lower()]
             if not matches:
-                names = ", ".join(s.name for s in visited)
-                return (f"no visited {region_name} save station matches "
-                        f"{station!r}; visited: {names}")
+                labels = ", ".join(s.label for s in visited)
+                return (f"no visited {region_name} station matches "
+                        f"{station!r}; visited: {labels}")
             if len(matches) > 1:
-                names = ", ".join(s.name for s in matches)
-                return f"{station!r} is ambiguous in {region_name}: {names}"
+                labels = ", ".join(s.label for s in matches)
+                return f"{station!r} is ambiguous in {region_name}: {labels}"
             chosen = matches[0]
         elif len(visited) == 1:
             chosen = visited[0]
         else:
-            names = ", ".join(s.name for s in visited)
-            return (f"multiple {region_name} save stations visited ({names}) — "
-                    f"pick one, e.g. /warp {key} {visited[0].name.lower()}")
+            labels = ", ".join(s.label for s in visited)
+            return (f"multiple {region_name} stations visited ({labels}) — "
+                    f"pick one, e.g. /warp {key} {visited[0].label.lower()}")
         return await self._warp(
             _lua_string(chosen.scenario), _lua_string(chosen.spawn),
-            f"the {chosen.region} {chosen.name} save station")
+            f"the {chosen.region} {chosen.label} station")
 
     async def _warp(self, scenario_lua: str, actor_lua: str,
                     where: str) -> str:
@@ -1401,10 +1405,11 @@ class DreadContext(CommonContext):
         in-Lua on (b) ``Game.GetCurrentGameModeID() == "INGAME"``,
         (c) ``not RL.IsInBossArena()`` — refusing to warp out of a boss arena,
         which corrupts the encounter (the Kraid brick: re-entry breaks the
-        fight, death-respawn bricks the game) — (c2) ``not RL.IsInNavRoom()`` and
-        (c3) ``not RL.IsInSaveRoom()`` — refusing to warp out of a Navigation
-        (Adam) room or a save station, where the conversation / save dialog
-        survives the reload and strands an undismissable box (these collision-camera
+        fight, death-respawn bricks the game) — (c2) ``not RL.IsInNavRoom()``,
+        (c3) ``not RL.IsInSaveRoom()`` and (c4) ``not RL.IsInMapRoom()`` —
+        refusing to warp out of a Navigation (Adam) room, a save station, or a
+        map station, where the conversation / save dialog / map overlay survives
+        the reload and strands an undismissable box (these collision-camera
         detections live in ``lua/warp_guard.lua``) — and (d)
         ``Scenario.IsUserInteractionEnabled(true)``, so a /warp issued from the
         title screen, a boss fight, a Nav/save room, or mid-cutscene returns a
@@ -1460,6 +1465,10 @@ class DreadContext(CommonContext):
                         "a safe room, and a warp here can strand the save dialog. "
                         "Save and reload from the title if you're stuck, or step "
                         "out of the room before /warp.")
+            if body == "in_map":
+                return ("blocked: you're at a map station — a safe room you can "
+                        "walk out of, and a warp here can strand the map overlay. "
+                        "Step out of the room before /warp.")
             if body == "no_interaction":
                 return "blocked: cutscene/cinematic in progress — try again in a moment"
             if body != "ok":

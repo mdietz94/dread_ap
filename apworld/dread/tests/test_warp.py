@@ -247,9 +247,12 @@ async def test_warp_unknown_payload(ctx):
 
 # ---- /warp <region> [station] (per-station recovery) ----------------------
 
-# (scenario, camera) keys for two real Dairon save stations.
-_DAIRON_EAST = ("s030_baselab", "collision_camera_000")
-_DAIRON_WEST = ("s030_baselab", "collision_camera_032")
+# (scenario, camera) keys for real Dairon stations (save / nav / map).
+_DAIRON_EAST = ("s030_baselab", "collision_camera_000")       # save East
+_DAIRON_WEST = ("s030_baselab", "collision_camera_032")       # save West
+_DAIRON_NAV_NORTH = ("s030_baselab", "collision_camera_044")  # nav North
+_DAIRON_NAV_SOUTH = ("s030_baselab", "collision_camera_014")  # nav South
+_DAIRON_MAP = ("s030_baselab", "collision_camera_023")        # map station
 
 
 @pytest.mark.asyncio
@@ -275,9 +278,9 @@ async def test_warp_region_never_visited_refused(ctx):
 async def test_warp_region_visited_but_no_save_station(ctx):
     _smart_bridge(ctx, mode="INGAME")
     ctx._visited_scenarios = {"s030_baselab"}  # been to Dairon...
-    ctx._visited_saves = set()                 # ...but not at a save station
+    ctx._visited_saves = set()                 # ...but not at a station
     msg = await ctx._warp_to_region("dairon")
-    assert "haven't seen you at a save station" in msg
+    assert "haven't seen you at a save, nav, or map station" in msg
 
 
 @pytest.mark.asyncio
@@ -321,18 +324,108 @@ async def test_warp_station_keyword_no_match(ctx):
     _smart_bridge(ctx, mode="INGAME")
     ctx._visited_saves = {_DAIRON_EAST}
     msg = await ctx._warp_to_region("dairon", "north")
-    assert "no visited" in msg and "East" in msg
+    assert "no visited" in msg and "Save East" in msg
+
+
+# ---- nav + map stations as warp targets -----------------------------------
+
+# Artaria has both a Save North and a Nav North, so it exercises kind ambiguity.
+_ARTARIA_SAVE_NORTH = ("s010_cave", "collision_camera_076")
+_ARTARIA_NAV_NORTH = ("s010_cave", "collision_camera_065")
+
+
+@pytest.mark.asyncio
+async def test_warp_nav_station_loads_spawn(ctx):
+    bridge = _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_saves = {_DAIRON_NAV_NORTH}
+    msg = await ctx._warp_to_region("dairon", "nav north")
+    assert "warped" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert '"s030_baselab"' in src
+    assert '"accesspoint_001_platform"' in src   # Dairon Nav North access point
+
+
+@pytest.mark.asyncio
+async def test_warp_map_station_loads_spawn(ctx):
+    bridge = _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_saves = {_DAIRON_MAP}
+    msg = await ctx._warp_to_region("dairon", "map")  # single token, unambiguous
+    assert "warped" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert '"maproom_000_platform"' in src          # Dairon Map Station platform
+
+
+@pytest.mark.asyncio
+async def test_warp_kind_keyword_disambiguates_save_vs_nav(ctx):
+    # Both a Save North and a Nav North are visited in Artaria. A bare "north" is
+    # ambiguous; the kind keyword picks one.
+    bridge = _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_saves = {_ARTARIA_SAVE_NORTH, _ARTARIA_NAV_NORTH}
+    msg = await ctx._warp_to_region("artaria", "north")
+    assert "ambiguous" in msg and "Save North" in msg and "Nav North" in msg
+
+    msg = await ctx._warp_to_region("artaria", "nav north")
+    assert "warped" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert '"PRP_CV_AccessPoint002_WeightPlate"' in src  # the Nav North platform
+
+
+@pytest.mark.asyncio
+async def test_warp_hanubia_reachable_via_nav_only(ctx):
+    # Hanubia has no save station; its nav station is the only /warp target.
+    bridge = _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_saves = {("s080_shipyard", "collision_camera_003")}
+    msg = await ctx._warp_to_region("hanubia")  # single visited -> no keyword needed
+    assert "warped" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert '"s080_shipyard"' in src
+    assert '"weightactivatedplatform_access_000"' in src
+
+
+@pytest.mark.asyncio
+async def test_record_nav_and_map_visits(ctx):
+    # A poll read at a nav or map camera records it as a warp target.
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True, payload=b"s030_baselab,collision_camera_044"))
+    ctx._bridge = bridge
+    await ctx._record_room_visit(1.0)
+    assert _DAIRON_NAV_NORTH in ctx._visited_saves
+
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True, payload=b"s030_baselab,collision_camera_023"))
+    await ctx._record_room_visit(1.0)
+    assert _DAIRON_MAP in ctx._visited_saves
+
+
+@pytest.mark.asyncio
+async def test_warp_blocked_in_map_room(ctx):
+    _stub_bridge(ctx, connected=True, response=Response(success=True, payload=b"in_map"))
+    msg = await ctx._warp_to_start()
+    assert "blocked" in msg and "map station" in msg
 
 
 def test_warp_list(ctx):
     ctx._visited_saves = {_DAIRON_EAST, ("s020_magma", "collision_camera_062")}
     msg = ctx._warp_list()
-    assert "Cataris West" in msg and "Dairon East" in msg
+    assert "Cataris Save West" in msg and "Dairon Save East" in msg
+
+
+def test_warp_list_includes_nav_and_map(ctx):
+    # A nav station and a map station the player has stood in show up, labelled.
+    ctx._visited_saves = {_DAIRON_NAV_NORTH, _DAIRON_MAP}
+    msg = ctx._warp_list()
+    assert "Dairon Nav North" in msg and "Dairon Map" in msg
 
 
 def test_warp_list_empty(ctx):
     ctx._visited_saves = set()
-    assert "no save stations recorded" in ctx._warp_list()
+    assert "no stations recorded" in ctx._warp_list()
 
 
 @pytest.mark.asyncio

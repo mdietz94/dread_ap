@@ -827,6 +827,42 @@ single-visited warp loads the right scenario/spawn, ambiguous-lists /
 keyword-disambiguation, /warp list, visit recorded from a poll subarea read,
 current-location guards still apply).
 
+UPDATE (nav + map stations are now `/warp` targets too): the original `/warp
+<region>` only offered the 17 save stations. But EVERY "save-ish" room in Dread —
+save station, Navigation ("Adam") station, Map station — is a
+`valid_starting_location` node in RDV's logic, so each already carries a real
+`start_point_actor_name` (access-point / map-room weight plate) that
+`Game.LoadScenario` can land Samus on — the spawn actor was the ONLY thing that
+made save stations special. So nav (11) + map (6) stations were added with zero
+RE work: the `SaveStation` dataclass is generalized to `WarpTarget` (adds a
+`kind` ∈ {save,nav,map} + a kind-prefixed `label` — "Save East" / "Nav North" /
+"Map"), `protocol.WARP_TARGETS{,_BY_CAMERA,_BY_REGION}` unify all 34 (an
+import-time assert proves the per-scenario cameras are disjoint, so a camera key
+maps to exactly one target), and `_visited_saves` / `_record_room_visit` /
+`_warp_to_region` / `_warp_list` key off the unified tables. Hanubia (s080) gains
+its ONLY warp target via its nav station (no save station there); map stations
+cover the 6 regions with a map console. Visit detection was already half-built —
+nav-room cameras already fire `_record_room_visit` for hint registration, so a
+nav visit now ALSO records the warp target; map cameras were added to the same
+poll signal. `/warp dairon nav north` / `/warp dairon map` disambiguate by
+matching the kind-prefixed `label` (so Artaria's "Save North" vs "Nav North" are
+separable); `_cmd_warp` now joins `args[1:]` so multi-word station names work.
+Warp guards are destination-agnostic — warping TO a nav/map room is safe (you land
+ON the platform; the Adam/map box only appears on activation) — and map rooms were
+ALSO added to the warp-OUT guard (`RL.IsInMapRoom` / `RL.MapRooms` /
+`MAP_STATION_CAMERAS` / `build_map_rooms_lua_table`, mirroring nav/save: a safe hub
+you can walk out of, blocking costs nothing, and it prevents stranding the map
+overlay). The `valid_starting_location` enumeration also surfaced 6 Map-room start
+points, 1 Intro-Room start, and the Itorash→Hanubia elevator landing as spawnable;
+the last two were DELIBERATELY left out (the Itorash escape-capsule landing is the
+post-Raven-Beak corruption risk — see the capsule trap above; the Intro Room is
+just the seed start). `SaveStation`/`SAVE_STATION_BY_CAMERA`/`SAVE_STATIONS_BY_REGION`
+remain as back-compat aliases. Tests: `test_protocol` (map table shape/barewords,
+4-way disjointness, in_map guard, nav/map targets + Hanubia-via-nav + label
+distinctness), `test_warp` (nav/map spawn loads, save-vs-nav kind disambiguation,
+Hanubia nav-only, nav/map visit recording, in_map block), `test_bootstrap`
+(RL.MapRooms block + IsInMapRoom).
+
 UPDATE (Nav Station hints → free AP server hints on visit): the in-game Nav
 Station ("Adam") plaques already showed REAL cross-world placement facts
 (`World._generate_nav_hints` bakes them post-fill — "Your Grapple is at P2's Foo",

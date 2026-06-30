@@ -15,6 +15,9 @@ from dread.client.protocol import (  # noqa: E402
     DEATH_COUNT_PROP, BOSS_ARENA_CAMERAS, build_boss_arenas_lua_table,
     NAV_ROOM_CAMERAS, build_nav_rooms_lua_table,
     SAVE_STATION_CAMERAS, build_save_rooms_lua_table,
+    MAP_STATION_CAMERAS, build_map_rooms_lua_table,
+    build_warp_src, WARP_TARGET_BY_CAMERA, WARP_TARGETS_BY_REGION,
+    NAV_STATIONS, MAP_STATIONS,
 )
 
 
@@ -108,21 +111,71 @@ def test_save_room_keys_are_lua_barewords():
             assert ident.match(cam), cam
 
 
+def test_map_rooms_lua_table_shape():
+    lua = build_map_rooms_lua_table()
+    # Same nested-table shape; s020_magma's Map Station (collision_camera_030).
+    assert lua.startswith("{") and lua.endswith("}")
+    assert "s020_magma={" in lua
+    assert "collision_camera_030=true" in lua
+    assert '"' not in lua
+
+
+def test_map_room_keys_are_lua_barewords():
+    import re as _re
+    ident = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+    for scenario, cams in MAP_STATION_CAMERAS.items():
+        assert ident.match(scenario), scenario
+        for cam in cams:
+            assert ident.match(cam), cam
+
+
 def test_warp_block_tables_disjoint_per_scenario():
-    # Within a single scenario, the three no-warp camera sets must not overlap, or
+    # Within a single scenario, the four no-warp camera sets must not overlap, or
     # the guards would contradict / a room would be misclassified. (The SAME camera
     # id in DIFFERENT scenarios is fine — every guard keys on the live scenario.)
     tables = {
         "boss": BOSS_ARENA_CAMERAS,
         "nav": NAV_ROOM_CAMERAS,
         "save": SAVE_STATION_CAMERAS,
+        "map": MAP_STATION_CAMERAS,
     }
     scenarios = set().union(*(t.keys() for t in tables.values()))
     for scenario in scenarios:
         sets = {name: set(t.get(scenario, {})) for name, t in tables.items()}
-        for a, b in (("boss", "nav"), ("boss", "save"), ("nav", "save")):
-            overlap = sets[a] & sets[b]
-            assert not overlap, (scenario, a, b, overlap)
+        names = list(tables)
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                overlap = sets[a] & sets[b]
+                assert not overlap, (scenario, a, b, overlap)
+
+
+def test_warp_src_guards_in_map_room():
+    # The /warp src refuses while standing in a map station (alongside boss / nav
+    # / save), so warping out can't strand the map console overlay.
+    src = build_warp_src("Init.sStartingScenario", "Init.sStartingActor")
+    assert 'RL.IsInMapRoom and RL.IsInMapRoom() then return "in_map"' in src
+    assert 'then return "in_save"' in src  # ordering: the other guards survive
+
+
+def test_warp_targets_include_nav_and_map():
+    # Nav + map stations are now /warp targets, keyed by (scenario, camera).
+    # Hanubia (s080_shipyard) gains its only target via the nav station.
+    nav = WARP_TARGET_BY_CAMERA[("s080_shipyard", "collision_camera_003")]
+    assert nav.kind == "nav" and nav.region_key == "hanubia"
+    assert nav.spawn == "weightactivatedplatform_access_000"
+    mp = WARP_TARGET_BY_CAMERA[("s020_magma", "collision_camera_030")]
+    assert mp.kind == "map" and mp.label == "Map" and mp.spawn == "maproom_platform"
+    # Hanubia is reachable as a region only through its nav station.
+    assert {t.kind for t in WARP_TARGETS_BY_REGION["hanubia"]} == {"nav"}
+    # Every nav/map target carries a real spawn actor and a unique camera key.
+    assert all(t.spawn for t in NAV_STATIONS + MAP_STATIONS)
+
+
+def test_warp_target_labels_distinguish_kinds_in_a_region():
+    # Artaria has both a "Save North" and a "Nav North"; labels keep them apart so
+    # /warp can disambiguate by kind keyword.
+    labels = {t.label for t in WARP_TARGETS_BY_REGION["artaria"]}
+    assert {"Save North", "Nav North", "Map"} <= labels
 
 
 def test_to_lua_table_list():
