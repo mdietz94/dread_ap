@@ -681,6 +681,47 @@ Tests: `test_door_start` (`test_itorash_capsule_rides_never_shuffled`,
 NOTE: needs `python scripts/extract_dread_rules.py --all` to regen the gitignored
 `logic_graph.json` at schema 6 (conftest auto-regens when the script is newer).
 
+CONFIRMED — DO NOT RE-ENABLE the capsule shuffle without proving the post-Raven-Beak
+escape works in-game. A follow-up investigation nearly reverted this exclusion on a
+WRONG premise, so the trap is documented here: Randovania's `all_settings` patch-data
+fixture (`test/test_files/patcher_data/dread/dread/all_settings/world_1.json`) DOES
+shuffle both capsules (capsulelaunchershipyard -> Burenia; capsuleelevatorskybase ->
+Burenia) with the exact `elevators` entry shape we emit — so the capsule looks
+"supportable" and our config looks faithful to RDV. It is a TRAP: RDV ships
+teleporters VANILLA in every preset, so that fixture is patch DATA that was never
+played through the Dread ending. The decisive evidence the exclusion is right: in the
+crashing seed the client room-name-display log shows the player at `commander_elevator`
+(Raven Beak's elevator in Itorash) AT the crash — they rode it UP fine, beat the boss
+(`DefeatedBossID 4`), then crashed on the way OUT, i.e. the post-RB ESCAPE (which rides
+`capsuleelevatorskybase` back to Hanubia). Itorash (`s090_skybase`) has ZERO
+rando-eligible doors, so door rando is excluded as the cause. A user's "Itorash access
+from lower Burenia" RDV memory was the ACCESS path (capsulelaunchershipyard up-launch),
+which works; the ESCAPE is a different scripted path that shuffling breaks.
+
+IMPORTANT nuance (don't over-read the exclusion as "RDV can't do it"): RDV's GUI
+(`dread_teleporters_tab._create_source_teleporters` + `on_preset_changed`) lists EVERY
+transporter — capsule included — as a checkbox that is CHECKED (= shuffled) by default
+unless the user adds it to `excluded_teleporters`. There is NO capsule special-casing.
+So real RDV users on "Two-way, between regions" DO shuffle this capsule. That means the
+exclusion is a SAFE STOPGAP, not proof RDV is incapable: the open question is whether
+RDV's post-RB escape actually survives a shuffled escape-capsule in-game (we have not
+tested an RDV build through the ending), OR whether OUR patcher output diverges from
+RDV's for these connections. Judge stability by what RDV's GUI exposes, NOT by the
+shipped presets (which are vanilla). Resolve definitively with the crashing seed's
+`ap_patcher_input.json` (diff our s080/s090 `elevators` + `door_patches` + pickups vs
+RDV's shape) — the user still has the seed. Full capsule support, if pursued, would
+need whatever drives the post-RB escape transition (none found in open-dread-rando:
+`static_fixes._apply_boss_cutscene_fixes`, `game_patches` chozocommander tweaks, and
+the `remove_grapple_block_path_to_itorash` / `hanubia_easier_path_to_itorash` options
+are the only Itorash-area patches, and none repoint the escape).
+Lower-confidence sibling risk (NOT excluded, no crash report yet):
+the other cutscene-variant transports — `elevator_with_cutscene_aqua_000` (Artaria) —
+could break similarly; the Flipper (`wagontrain_quarantine_with_cutscene`) is handled
+by the dual-actor patch above. The reported "2 entrances to Hanubia" crashes are
+consistent with the two capsule directions but not independently confirmed from logs;
+100% confirmation of the full set would need the seed's `ap_patcher_input.json` or a
+post-fix playthrough.
+
 The real-hardware end-to-end integration smoke is DONE: validated on real hardware
 (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop, and checks
 register. The manual validation gate is cleared; the counter/cutscene semantics
