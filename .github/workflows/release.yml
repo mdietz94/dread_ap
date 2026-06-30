@@ -2,15 +2,25 @@ name: Release apworld
 
 # Builds dread.apworld and attaches it to a GitHub Release.
 #
-# Triggers:
-#   - Tag push matching `v*` (e.g. `git tag v0.1.0 && git push --tags`).
-#   - Manual dispatch — useful for testing the build without cutting a tag.
-#     The manual run uploads a workflow artifact instead of creating a release.
+# NOTE: tag-push auto-publishing is DISABLED. The sysmodule build needs the
+# devkitPro toolchain, whose pacman pulls its package db from
+# pkg.devkitpro.org — that host sits behind Cloudflare's WAF, which 403s the
+# download on GitHub-hosted (Azure) runners regardless of user-agent (it's
+# IP/bot-based, not a UA spoof the dkp-apt/dkp-pacman trick can fix; see
+# devkitPro/pacman#63). So the toolchain install can't run here yet.
+#
+# Until that's solved (e.g. lifting the prebuilt toolchain out of devkitPro's
+# official Docker image `devkitpro/devkita64` via `docker cp`, or running the
+# whole job in a `container:`), releases are built and published LOCALLY:
+#
+#   python scripts/cache_randovania_logic.py
+#   python scripts/install_apworld.py --mode apworld --output dist/dread.apworld
+#   gh release create vX.Y.Z dist/dread.apworld --generate-notes
+#
+# This workflow is kept on `workflow_dispatch` so the toolchain fix can be
+# iterated without cutting a tag (manual runs upload an artifact, not a release).
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
