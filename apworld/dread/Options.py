@@ -132,9 +132,12 @@ class TrickOverride(Choice):
     default = FOLLOW_GLOBAL
 
 
-# One option per non-hidden Dread trick (Suitless is hidden in Randovania's own
-# UI and always follows the global baseline). Generated from the single-source
-# Tricks.VISIBLE_TRICKS table so the option set tracks the logic database.
+# One option per non-hidden Dread trick. Generated from the single-source
+# Tricks.VISIBLE_TRICKS table so the option set tracks the logic database. Every
+# Dread trick is currently visible — Suitless (Heat/Cold Runs), which Randovania
+# hides in its own UI, is exposed here so it can be disabled independently (the
+# global Trick Level has no 'disabled' tier, so a hidden Suitless could never be
+# turned off).
 _TRICK_OPTION_CLASSES: dict[str, type] = {}
 for _trick in VISIBLE_TRICKS:
     _TRICK_OPTION_CLASSES[_trick.attr] = type(

@@ -15,9 +15,13 @@ trick) while a global ``Trick Level`` supplies the baseline for any left on
 "follow global".
 
 The short_name / long_name / hide flags are functional Randovania identifiers,
-not Nintendo IP — safe to commit (CLAUDE.md). ``Suitless`` (Heat/Cold runs) is
-hidden in Randovania's own UI, so it gets no per-trick option and always follows
-the global baseline.
+not Nintendo IP — safe to commit (CLAUDE.md). Randovania hides ``Suitless``
+(Heat/Cold runs) in its own UI, but we expose it as a normal per-trick option so
+it CAN be disabled independently — there is no ``disabled`` choice on the global
+``Trick Level``, so a hidden Suitless could never be turned off (it would stay at
+the Beginner floor), which blocked a faithful port of the all-tricks-disabled
+starter preset. The ``hidden`` field is retained for future use but no Dread
+trick currently sets it.
 """
 from __future__ import annotations
 
@@ -47,7 +51,7 @@ DREAD_TRICKS: list[TrickDef] = [
     TrickDef("Speedbooster", "Speed Booster Conservation",
              "trick_speed_booster_conservation", False),
     TrickDef("Walljump", "Wall Jump", "trick_wall_jump", False),
-    TrickDef("Suitless", "Heat/Cold Runs", "trick_suitless", True),
+    TrickDef("Suitless", "Heat/Cold Runs", "trick_suitless", False),
     TrickDef("RGrapple", "Reverse Grapple Block", "trick_reverse_grapple", False),
     TrickDef("DBoost", "Damage Boost", "trick_damage_boost", False),
     TrickDef("FrozenEnemy", "Stand on Frozen Enemy", "trick_frozen_enemy", False),
@@ -85,8 +89,8 @@ VISIBLE_TRICKS: list[TrickDef] = [t for t in DREAD_TRICKS if not t.hidden]
 def effective_trick_levels(options) -> dict[str, int]:
     """Resolve every trick's effective level for one slot.
 
-    A trick left on ``follow_global`` (or hidden, like Suitless) takes the
-    global ``trick_level`` baseline; an explicit per-trick override wins. The
+    A trick left on ``follow_global`` (or any hidden trick) takes the global
+    ``trick_level`` baseline; an explicit per-trick override wins. The
     returned ``{short_name: level}`` map is consumed by ``Rules.compile_to_lambda``
     to evaluate symbolic trick atoms (``level <= effective`` ⇒ assumed)."""
     global_level = int(options.trick_level.value)

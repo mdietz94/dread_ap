@@ -43,17 +43,20 @@ def _fake_options(global_level: int, **overrides) -> SimpleNamespace:
 
 def test_trick_table_shape():
     assert len(Tricks.DREAD_TRICKS) == 26
-    assert len(Tricks.VISIBLE_TRICKS) == 25  # Suitless hidden
+    # Every Dread trick is now visible (Suitless un-hidden so it can be disabled
+    # independently of the global baseline).
+    assert len(Tricks.VISIBLE_TRICKS) == 26
     # attrs unique and namespaced
     attrs = [t.attr for t in Tricks.VISIBLE_TRICKS]
     assert len(set(attrs)) == len(attrs)
     assert all(a.startswith("trick_") for a in attrs)
     suitless = next(t for t in Tricks.DREAD_TRICKS if t.short_name == "Suitless")
-    assert suitless.hidden
+    assert not suitless.hidden
+    assert suitless.attr == "trick_suitless"
 
 
 # --------------------------------------------------------------------------- #
-# effective_trick_levels: baseline / override / hidden
+# effective_trick_levels: baseline / override
 # --------------------------------------------------------------------------- #
 
 def test_follow_global_default_uses_baseline():
@@ -62,9 +65,19 @@ def test_follow_global_default_uses_baseline():
     assert lv["Movement"] == 2
 
 
-def test_hidden_trick_always_follows_global():
+def test_suitless_follows_global_by_default():
+    # Suitless is now a normal visible trick: on follow_global it tracks the
+    # baseline, exactly like the others.
     lv = Tricks.effective_trick_levels(_fake_options(3))
-    assert lv["Suitless"] == 3  # no option, tracks baseline
+    assert lv["Suitless"] == 3
+
+
+def test_suitless_can_be_disabled():
+    # The whole point of un-hiding it: Suitless can be turned off independently
+    # of the global baseline (reproduces the all-tricks-disabled starter preset).
+    lv = Tricks.effective_trick_levels(_fake_options(3, trick_suitless=0))
+    assert lv["Suitless"] == 0
+    assert lv["Walljump"] == 3  # other tricks untouched
 
 
 def test_override_beats_global():

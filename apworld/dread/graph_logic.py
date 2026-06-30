@@ -24,7 +24,7 @@ from typing import Any
 
 from ._data_loader import load_json
 from .Rules import compile_to_lambda
-from .Tricks import effective_trick_levels
+from .Tricks import TRICK_LEVEL_NAMES, effective_trick_levels
 
 EXPECTED_GRAPH_SCHEMA = 6
 
@@ -193,6 +193,71 @@ def _event_atoms(ast: dict, out: set | None = None) -> set:
         for c in ast["items"]:
             _event_atoms(c, out)
     return out
+
+
+def _trick_names(ast: dict, out: set | None = None) -> set:
+    if out is None:
+        out = set()
+    if ast.get("type") == "trick":
+        out.add(ast["name"])
+    for c in ast.get("items", []):
+        _trick_names(c, out)
+    return out
+
+
+def unreachable_pickup_locations(
+    graph: dict, trick_levels: dict, *, start_comp: int | None = None,
+    transport_matching: dict | None = None, dock_assignments: dict | None = None,
+    energy_per_tank: int = 100, ammo_amounts: dict | None = None,
+) -> tuple[list[str], set[str]]:
+    """Pickup AP-names that are unreachable even with a FULL loadout under this
+    config, plus the trick short_names gating the stranded frontier.
+
+    Reachability with every item is the fill-independent oracle for "no placement
+    can ever make this location reachable": if a pickup is out of reach with all
+    items, then NO fill can reach it, so it fails ``accessibility: full`` (and the
+    ``items`` alias). Under ``minimal`` such a location simply holds filler — the
+    Randovania-faithful behavior (Randovania's starter preset disables every
+    trick and only guarantees beatability, not full reachability). Used by the
+    World's accessibility guard to turn a cryptic late FillError into an
+    actionable up-front OptionError."""
+    from .DoorRando import early_reachable, _resolve_docks
+    from .TransportRando import _ALL_ITEMS
+
+    full = {nm: 99 for nm in _ALL_ITEMS}
+
+    def _missing(tl):
+        reach, _ = early_reachable(
+            graph, full, tl, start_comp, use_events=True,
+            transport_matching=transport_matching, energy_per_tank=energy_per_tank,
+            ammo_amounts=ammo_amounts, dock_assignments=dock_assignments)
+        return reach, [name for comp, name in graph["pickups"] if comp not in reach]
+
+    reach, unreachable = _missing(trick_levels)
+    if not unreachable:
+        return [], set()
+
+    # Candidate tricks: those on any reachable->unreachable frontier edge.
+    candidates: set[str] = set()
+    ds, wreq = graph["dock_sides"], graph["weakness_requirements"]
+    da = dock_assignments or {}
+    for c0, c1, ast in graph["entrances"]:
+        if c0 in reach and c1 not in reach:
+            _trick_names(_resolve_docks(ast, da, ds, wreq), candidates)
+
+    # Narrow to tricks that ACTUALLY recover a stranded location when raised
+    # alone (precise "enable this" guidance). Only runs on the error path, so the
+    # extra per-candidate sweeps are free. Fall back to the raw candidate set if
+    # nothing single-handedly helps (a location may need a trick combo).
+    base = len(unreachable)
+    recoverers = set()
+    for name in candidates:
+        bumped = dict(trick_levels)
+        bumped[name] = max(TRICK_LEVEL_NAMES)  # raise this one to the top tier
+        _, missing = _missing(bumped)
+        if len(missing) < base:
+            recoverers.add(name)
+    return unreachable, (recoverers or candidates)
 
 
 def set_graph_rules(world) -> None:

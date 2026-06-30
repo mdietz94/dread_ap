@@ -93,6 +93,34 @@ def test_matching_to_room_names(graph):
 
 
 @graph_required
+def test_unreachable_pickup_locations_all_tricks_disabled(graph):
+    """The full-accessibility guard's oracle: with every trick disabled, exactly
+    the 8 Speed-Booster-Conservation pickups are unreachable even with a full
+    loadout, and the helper pinpoints Speedbooster as the recovering trick. With
+    all tricks at Beginner (the default), nothing is stranded."""
+    from dread.graph_logic import unreachable_pickup_locations
+    from dread.Tricks import DREAD_TRICKS
+
+    all_off = {t.short_name: 0 for t in DREAD_TRICKS}
+    unreachable, gating = unreachable_pickup_locations(graph, all_off)
+    assert set(unreachable) == {
+        "Burenia: Early Gravity Speedboost Room 1 - Missile+ Tank",
+        "Cataris: Dairon Transport Access",
+        "Dairon: Freezer - Missile Tank - Lower",
+        "Dairon: Storm Missile Gate Room",
+        "Dairon: Energy Recharge Station West",
+        "Elun: Fan Room",
+        "Ferenia: Speedboost Slopes Maze",
+        "Ferenia: Space Jump Room - Missile+ Tank",
+    }
+    # Narrowed to the single real gate, not the whole frontier trick set.
+    assert gating == {"Speedbooster"}
+
+    beginner = {t.short_name: 1 for t in DREAD_TRICKS}
+    assert unreachable_pickup_locations(graph, beginner) == ([], set())
+
+
+@graph_required
 def test_max_no_suit_threshold_matches_world_constant(graph):
     """The faithful HP model in World.py sizes the energy progression pool from
     MAX_NO_SUIT_HP (the largest no-suit damage_threshold in logic). If upstream

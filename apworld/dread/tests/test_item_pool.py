@@ -415,8 +415,8 @@ def test_trick_levels_in_slot_data():
     # Every Randovania trick is present, keyed by its short_name.
     assert set(levels) == {t.short_name for t in DREAD_TRICKS}
     assert levels == effective_trick_levels(world.options)
-    # The per-trick override wins; a follow-global trick takes the baseline; the
-    # hidden Suitless trick always follows global.
+    # The per-trick override wins; a follow-global trick takes the baseline;
+    # Suitless (now a normal visible trick) defaults to follow-global here.
     assert levels["IBJ"] == 5
     assert levels["Knowledge"] == 2
     assert levels["Suitless"] == 2
