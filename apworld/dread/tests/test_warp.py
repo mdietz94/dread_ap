@@ -243,3 +243,192 @@ async def test_warp_unknown_payload(ctx):
     )
     msg = await ctx._warp_to_start()
     assert "unexpected" in msg
+
+
+# ---- /warp <region> [station] (per-station recovery) ----------------------
+
+# (scenario, camera) keys for two real Dairon save stations.
+_DAIRON_EAST = ("s030_baselab", "collision_camera_000")
+_DAIRON_WEST = ("s030_baselab", "collision_camera_032")
+
+
+@pytest.mark.asyncio
+async def test_warp_region_unknown(ctx):
+    _smart_bridge(ctx, mode="INGAME")
+    msg = await ctx._warp_to_region("atlantis")
+    assert "unknown region" in msg
+    assert "cataris" in msg  # lists the known regions
+
+
+@pytest.mark.asyncio
+async def test_warp_region_never_visited_refused(ctx):
+    bridge = _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_scenarios = set()
+    ctx._visited_saves = set()
+    msg = await ctx._warp_to_region("dairon")
+    assert "haven't been to Dairon" in msg
+    assert not any("Game.LoadScenario" in c.args[0]
+                   for c in bridge.run_lua.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_warp_region_visited_but_no_save_station(ctx):
+    _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_scenarios = {"s030_baselab"}  # been to Dairon...
+    ctx._visited_saves = set()                 # ...but not at a save station
+    msg = await ctx._warp_to_region("dairon")
+    assert "haven't seen you at a save station" in msg
+
+
+@pytest.mark.asyncio
+async def test_warp_station_visited_loads_that_scenario(ctx):
+    bridge = _smart_bridge(ctx, inventory_before="ITEM_MISSILE_TANKS=3",
+                           inventory_after="ITEM_MISSILE_TANKS=3", mode="INGAME")
+    ctx._visited_saves = {_DAIRON_EAST}
+    msg = await ctx._warp_to_region("Dairon")  # case-insensitive, single visited
+    assert "warped" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert '"s030_baselab"' in src
+    assert '"savestation_000_platform"' in src   # the East platform
+    assert "Init.sStartingScenario" not in src
+
+
+@pytest.mark.asyncio
+async def test_warp_station_ambiguous_lists_options(ctx):
+    bridge = _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_saves = {_DAIRON_EAST, _DAIRON_WEST}
+    msg = await ctx._warp_to_region("dairon")  # no station -> ambiguous
+    assert "multiple" in msg and "East" in msg and "West" in msg
+    assert not any("Game.LoadScenario" in c.args[0]
+                   for c in bridge.run_lua.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_warp_station_keyword_disambiguates(ctx):
+    bridge = _smart_bridge(ctx, inventory_before="", inventory_after="",
+                           mode="INGAME")
+    ctx._visited_saves = {_DAIRON_EAST, _DAIRON_WEST}
+    msg = await ctx._warp_to_region("dairon", "west")
+    assert "warped" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert '"savestation_001_platform"' in src   # the West platform
+
+
+@pytest.mark.asyncio
+async def test_warp_station_keyword_no_match(ctx):
+    _smart_bridge(ctx, mode="INGAME")
+    ctx._visited_saves = {_DAIRON_EAST}
+    msg = await ctx._warp_to_region("dairon", "north")
+    assert "no visited" in msg and "East" in msg
+
+
+def test_warp_list(ctx):
+    ctx._visited_saves = {_DAIRON_EAST, ("s020_magma", "collision_camera_062")}
+    msg = ctx._warp_list()
+    assert "Cataris West" in msg and "Dairon East" in msg
+
+
+def test_warp_list_empty(ctx):
+    ctx._visited_saves = set()
+    assert "no save stations recorded" in ctx._warp_list()
+
+
+@pytest.mark.asyncio
+async def test_record_save_station_visit(ctx):
+    # A poll read reporting the player at the Dairon East save-station camera
+    # records it; a non-save subarea does not.
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True, payload=b"s030_baselab,collision_camera_000"))
+    ctx._bridge = bridge
+    await ctx._record_room_visit(1.0)
+    assert _DAIRON_EAST in ctx._visited_saves
+
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True, payload=b"s030_baselab,collision_camera_099"))
+    await ctx._record_room_visit(1.0)
+    assert ("s030_baselab", "collision_camera_099") not in ctx._visited_saves
+
+
+@pytest.mark.asyncio
+async def test_warp_station_keeps_current_location_guards(ctx):
+    # A station warp is still blocked from a boss arena (guard is location-based).
+    _stub_bridge(ctx, connected=True, response=Response(success=True, payload=b"in_boss"))
+    ctx._visited_saves = {_DAIRON_EAST}
+    msg = await ctx._warp_to_region("dairon")
+    assert "blocked" in msg and "boss arena" in msg
+
+
+# ---- Nav Station hint registration (visit -> free AP server hint) ----------
+
+from dread.client.protocol import NAV_HINT_STATIONS  # noqa: E402
+
+
+def _subarea_bridge(ctx, scenario: str, camera: str):
+    """A bridge whose subarea read reports the player at (scenario, camera)."""
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True,
+                              payload=f"{scenario},{camera}".encode()))
+    ctx._bridge = bridge
+    return bridge
+
+
+def _capture_msgs(ctx) -> list:
+    sent: list = []
+    ctx.send_msgs = unittest.mock.AsyncMock(side_effect=lambda m: sent.extend(m))
+    return sent
+
+
+def test_build_nav_hint_map_aligns_to_stations(ctx):
+    ctx._build_nav_hint_map({"nav_hints": [
+        {"text": "a", "loc": [1, 5000]},   # plaque 0 -> station 0
+        {"text": "b", "loc": [2, 6000]},   # plaque 1 -> station 1
+        {"text": "filler"},                # plaque 2 -> no loc -> skipped
+    ]})
+    assert ctx._nav_hint_by_camera[NAV_HINT_STATIONS[0]] == [(1, 5000)]
+    assert ctx._nav_hint_by_camera[NAV_HINT_STATIONS[1]] == [(2, 6000)]
+    assert NAV_HINT_STATIONS[2] not in ctx._nav_hint_by_camera
+
+
+@pytest.mark.asyncio
+async def test_nav_visit_registers_own_location_via_scouts(ctx):
+    ctx.slot = 1
+    ctx._nav_hint_by_camera = {NAV_HINT_STATIONS[0]: [(1, 5000)]}
+    sent = _capture_msgs(ctx)
+    _subarea_bridge(ctx, *NAV_HINT_STATIONS[0])
+    await ctx._record_room_visit(1.0)
+    # Own location -> free LocationScouts create_as_hint.
+    assert sent == [{"cmd": "LocationScouts", "locations": [5000],
+                     "create_as_hint": 2}]
+    assert (1, 5000) in ctx._registered_nav_hints
+    # Re-visit must not re-send.
+    sent.clear()
+    await ctx._record_room_visit(1.0)
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_nav_visit_registers_cross_world_via_createhints(ctx):
+    ctx.slot = 1
+    ctx._nav_hint_by_camera = {NAV_HINT_STATIONS[1]: [(2, 6000)]}
+    sent = _capture_msgs(ctx)
+    _subarea_bridge(ctx, *NAV_HINT_STATIONS[1])
+    await ctx._record_room_visit(1.0)
+    # Another world's location (our item there) -> free CreateHints.
+    assert sent == [{"cmd": "CreateHints", "player": 2, "locations": [6000]}]
+
+
+@pytest.mark.asyncio
+async def test_nav_visit_elsewhere_registers_nothing(ctx):
+    ctx.slot = 1
+    ctx._nav_hint_by_camera = {NAV_HINT_STATIONS[0]: [(1, 5000)]}
+    sent = _capture_msgs(ctx)
+    _subarea_bridge(ctx, "s050_forest", "collision_camera_999")  # not a nav plaque
+    await ctx._record_room_visit(1.0)
+    assert sent == []
+    assert not ctx._registered_nav_hints

@@ -166,6 +166,23 @@ def test_nav_hints_do_not_register_ap_server_hints():
 
 
 @pytestmark_runtime
+def test_nav_hints_carry_target_location():
+    """Each plaque carries ``loc = [owner_slot, location_id]`` so the client can
+    register it as a free AP server hint when the player reaches the station. The
+    loc must point at a real filled location."""
+    world, mw = _make_world(_scenario())
+    hints = world._generate_nav_hints()
+    real = {(loc.player, loc.address)
+            for locs in mw._filled.values() for loc in locs}
+    for h in hints:
+        loc = h.get("loc")
+        assert loc is not None and len(loc) == 2
+        owner, addr = loc
+        assert isinstance(owner, int) and isinstance(addr, int)
+        assert (owner, addr) in real
+
+
+@pytestmark_runtime
 def test_nav_hints_are_deterministic_under_seed():
     a, _ = _make_world(_scenario())
     b, _ = _make_world(_scenario())

@@ -297,6 +297,155 @@ def build_mark_collected_lua(pickup_indices: list[int]) -> str:
     )
 
 
+# Generalized warp targets ---------------------------------------------------
+#
+# ``/warp`` with no argument reloads at the STARTING save station
+# (``Init.sStarting*``). ``/warp <region> [station]`` instead reloads at a
+# specific save station the player has VISITED — the recovery for someone who
+# toggled themselves out of a region's only local route (e.g. the Cataris
+# thermal-device trap, which can sever the through-room path to Dairon). It
+# restores access you ALREADY had: the client only offers a save station it has
+# observed the player standing in (``DreadContext._visited_saves``, accumulated
+# from the live collision-camera the warp guard tracks).
+#
+# ``SAVE_STATIONS`` is every reloadable save station — the 17 with an actual save
+# platform (a subset of ``SAVE_STATION_CAMERAS``, which also lists access/tunnel
+# rooms that have no spawn point). Each carries the scenario id (what
+# ``Game.GetScenarioID`` reports), the collision-camera id (how a visit is
+# detected — same id the warp guard keys on), and the spawn actor (the weight
+# plate the player stands on). All are functional identifiers from Randovania's
+# published Dread logic. Hanubia is omitted: no save station (final escape run).
+# ``WARP_LEVEL_ID`` is the constant Dread level container passed as
+# ``Game.LoadScenario``'s first arg (same as warp-to-start).
+WARP_LEVEL_ID = "c10_samus"
+
+
+@dataclass(frozen=True)
+class SaveStation:
+    """A reloadable save station: a /warp <region> [name] target."""
+    region: str       # display region name, e.g. "Dairon"
+    region_key: str   # lowercase command key, e.g. "dairon"
+    scenario: str     # scenario id, e.g. "s030_baselab"
+    camera: str       # collision-camera id used to detect a visit
+    name: str         # short directional name, e.g. "East" / "Main"
+    spawn: str        # save-platform spawn actor
+
+
+def _save_stations() -> list[SaveStation]:
+    # (region, region_key, scenario): [(camera, short name, spawn actor), ...]
+    raw = {
+        ("Artaria", "artaria", "s010_cave"): [
+            ("collision_camera_012", "West", "PRP_CV_SaveStation003_WeightPlate"),
+            ("collision_camera_025", "East", "PRP_CV_SaveStation002_WeightPlate"),
+            ("collision_camera_063", "South", "PRP_CV_SaveStation001_WeightPlate"),
+            ("collision_camera_076", "North", "PRP_CV_SaveStation004_WeightPlate"),
+        ],
+        ("Burenia", "burenia", "s040_aqua"): [
+            ("collision_camera_011", "Middle", "savestation_000_platform"),
+            ("collision_camera_027", "South", "savestation_001_platform"),
+            ("collision_camera_030", "North", "savestation_002_platform"),
+        ],
+        ("Cataris", "cataris", "s020_magma"): [
+            ("collision_camera_033", "East", "savestation_001_platform"),
+            ("collision_camera_062", "West", "savestation_000_platform"),
+        ],
+        ("Dairon", "dairon", "s030_baselab"): [
+            ("collision_camera_000", "East", "savestation_000_platform"),
+            ("collision_camera_032", "West", "savestation_001_platform"),
+        ],
+        ("Elun", "elun", "s060_quarantine"): [
+            ("collision_camera_012", "Main", "weightactivatedplatform_save"),
+        ],
+        ("Ferenia", "ferenia", "s070_basesanc"): [
+            ("collision_camera_029", "North", "savestation_000_platform"),
+            ("collision_camera_041", "Southeast", "savestation_001_platform"),
+        ],
+        ("Ghavoran", "ghavoran", "s050_forest"): [
+            ("collision_camera_022", "Center", "savestation_000_platform"),
+            ("collision_camera_040", "East", "weightactivatedplatform_save"),
+        ],
+        ("Itorash", "itorash", "s090_skybase"): [
+            ("collision_camera_000", "Main", "savestation_000_platform"),
+        ],
+    }
+    out: list[SaveStation] = []
+    for (region, region_key, scenario), stations in raw.items():
+        for camera, name, spawn in stations:
+            out.append(SaveStation(region, region_key, scenario, camera, name, spawn))
+    return out
+
+
+SAVE_STATIONS: list[SaveStation] = _save_stations()
+
+# Fast lookups: (scenario, camera) -> SaveStation (visit detection); region_key ->
+# [SaveStation] (command resolution).
+SAVE_STATION_BY_CAMERA: dict[tuple[str, str], SaveStation] = {
+    (s.scenario, s.camera): s for s in SAVE_STATIONS
+}
+SAVE_STATIONS_BY_REGION: dict[str, list[SaveStation]] = {}
+for _s in SAVE_STATIONS:
+    SAVE_STATIONS_BY_REGION.setdefault(_s.region_key, []).append(_s)
+
+
+def build_read_current_subarea_lua() -> str:
+    """Read the live (scenario, collision-camera) the warp guard tracks, as
+    ``"scenario,camera"`` (empty halves if untracked — e.g. warp guard not
+    installed, or no subarea transition since connect). The client uses this to
+    record which save stations the player has stood in, and to register a Nav
+    Station's hint with the AP server when the player reaches it."""
+    return ('return tostring(RL.CurrentScenario or "").."," '
+            '..tostring(RL.CurrentSubArea or "")')
+
+
+# Navigation Station hint plaques, in the SAME order as the patcher template's
+# ``hints`` array (CAVE_2, CAVE_1, MAGMA_1, ...) — which is the order
+# ``World._generate_nav_hints`` fills and ``patcher_pipeline._apply_nav_hints``
+# maps onto the in-game plaques. So plaque/slot-data index i is shown at the Nav
+# Station NAV_HINT_STATIONS[i], i.e. at (scenario, collision-camera). The client
+# uses this to register slot_data ``nav_hints[i]``'s revealed location as a (free)
+# AP server hint when the player reaches that station's room (detected via the
+# live collision camera, same signal as the save-station tracking + warp guard).
+# Each camera is also in NAV_ROOM_CAMERAS; the access-point actor -> camera
+# pairing was resolved from Randovania's published logic. Keep this aligned with
+# the template order and with ``World.NAV_HINT_COUNT`` (== len here).
+NAV_HINT_STATIONS: list[tuple[str, str]] = [
+    ("s010_cave", "collision_camera_065"),      # CAVE_2  — Nav Station North
+    ("s010_cave", "collision_camera_068"),      # CAVE_1  — Nav Station South
+    ("s020_magma", "collision_camera_002"),     # MAGMA_1 — Nav Station Southeast
+    ("s020_magma", "collision_camera_058"),     # MAGMA_2 — Nav Station Northwest
+    ("s030_baselab", "collision_camera_014"),   # LAB_1   — Nav Station South
+    ("s030_baselab", "collision_camera_044"),   # LAB_2   — Nav Station North
+    ("s040_aqua", "collision_camera_009"),       # AQUA_1  — Nav Station North
+    ("s040_aqua", "collision_camera_016"),       # AQUA_2  — Nav Station South
+    ("s070_basesanc", "collision_camera_016"),  # SANC_1  — Nav Station
+    ("s050_forest", "collision_camera_006"),     # FOREST_1— Nav Station
+    ("s080_shipyard", "collision_camera_003"),  # SHIP_1  — Nav Station
+]
+
+
+def build_warp_src(scenario_lua: str, actor_lua: str) -> str:
+    """Build the guarded ``Game.LoadScenario`` source for a /warp.
+
+    ``scenario_lua`` / ``actor_lua`` are Lua *expressions* (not values) for the
+    target scenario and spawn actor — ``Init.sStartingScenario`` /
+    ``Init.sStartingActor`` for warp-to-start, or quoted literals (via
+    ``_lua_string``) for a region warp. The guards are identical either way and
+    all inspect the CURRENT location, so they apply regardless of destination:
+    refuse outside INGAME, out of a boss arena (corrupts the fight), out of a
+    Nav/save room (strands the dialog box), or mid-cutscene. Each ``RL.IsIn*``
+    call is nil-guarded so a pre-bootstrap VM degrades to allowing the warp.
+    Returns one of the sentinel strings the caller maps to a message."""
+    return (
+        'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
+        'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
+        'if RL.IsInNavRoom and RL.IsInNavRoom() then return "in_nav" end '
+        'if RL.IsInSaveRoom and RL.IsInSaveRoom() then return "in_save" end '
+        'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
+        f'Game.LoadScenario("{WARP_LEVEL_ID}", {scenario_lua}, {actor_lua}, "", 1) '
+        'return "ok"'
+    )
+
+
 # Boss-arena warp guard ------------------------------------------------------
 #
 # Warping out of a boss arena with ``Game.LoadScenario`` corrupts the encounter:

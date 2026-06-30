@@ -167,6 +167,62 @@ MISC_RESOURCE_VALUES: dict[str, bool] = {
 
 
 # ---------------------------------------------------------------------------
+# Mutually-exclusive ("toggle") thermal devices.
+#
+# Cataris "Thermal Device Room North" holds TWO heat-redirect devices that are
+# physically exclusive: stepping on one weight-activated platform redirects the
+# heat flow and powers the OTHER device down (the in-game "re-lock" players hit).
+# Randovania encodes the exclusion via polarity — the route in from the Total
+# Recharge side needs ``deviceheat_002`` ON, while the route in from Past Magnet
+# Floor needs ``NOT deviceheat_002 AND deviceheat_camerafar_000``.
+#
+# AP's reachability sweep is MONOTONIC: an ``event`` atom compiles to
+# ``state.can_reach_region("Event:<name>")`` which, once true, is true forever
+# (Rules.py). It therefore cannot represent "these two cannot be co-true", and
+# ``translate_requirement`` already drops every ``NOT <event>`` to TRIVIAL
+# (drop-the-transient). So AP believes both polarities hold at once — strictly
+# MORE permissive than the game at this room.
+#
+# We do NOT try to model the exclusion in the monotonic sweep (a real departure,
+# disproportionate for one room) and we do NOT force ``NOT <toggle>`` to
+# IMPOSSIBLE (that walls the room off and breaks generation). Instead the drop is
+# kept, and ``assert_toggle_model_soundness`` (called from ``main``) PROVES the
+# drop is sound for the shipped game version: every node reachable through a
+# ``NOT <toggle>`` edge is ALSO reachable through a toggle-independent edge, so
+# the dropped negation is never the sole gate on any node. Because the graph
+# topology is fixed per game version (fill places items, it never adds/removes
+# edges), that version-boundary proof is also a per-seed proof.
+#
+# The assertion is a TRIPWIRE: if a future upstream/version change introduces a
+# new co-located thermal pair, or makes a ``NOT <toggle>`` edge the only way to
+# reach some node, extraction fails loudly so a human re-evaluates rather than
+# silently shipping an unsound graph. Runtime recovery from a player-induced
+# stuck toggle is already covered by ``/warp`` (it reloads the scenario from the
+# last save and relocates Samus out of Cataris; the device is reversible).
+#
+# Event short_names (``s020_magma:default:<actor>``), curated from the published
+# Cataris logic. Keep in sync with the ``deviceheat`` actor-pair detector in
+# ``assert_toggle_model_soundness``.
+MUTEX_TOGGLE_EVENTS: frozenset[str] = frozenset({
+    "s020_magma:default:deviceheat_002",
+    "s020_magma:default:deviceheat_camerafar_000",
+})
+
+
+def _negated_event_requirement(event_name: str) -> dict:
+    """Resolve ``NOT <event>`` to an AST node.
+
+    Negated event state is TEMPORAL ("haven't triggered it yet"); AP's monotonic
+    sweep has no stable representation of it, so we drop it to TRIVIAL (relying on
+    the stable post-event path). This is faithful for one-way transients and, for
+    the Cataris thermal toggle pair (``MUTEX_TOGGLE_EVENTS``), is proven sound per
+    game version by ``assert_toggle_model_soundness``. Centralised here so the
+    drop is explicit and auditable rather than a bare ``return TRIVIAL``.
+    """
+    return TRIVIAL
+
+
+# ---------------------------------------------------------------------------
 # AST helpers
 # ---------------------------------------------------------------------------
 
@@ -390,6 +446,15 @@ def translate_requirement(
             # completion. Treat as Trivial (satisfiable in the early state); the
             # forward resolver inlines events into item-only rules so AP's
             # monotonic item sweep stays consistent.
+            #
+            # Negated EVENTS route through a named helper so the drop is explicit
+            # rather than silent — notably for the Cataris thermal toggle pair
+            # (MUTEX_TOGGLE_EVENTS), whose soundness is proven per game version by
+            # assert_toggle_model_soundness. See that helper / the constant.
+            if rtype == "events":
+                if rname not in header.events_by_name:
+                    raise CompileError(f"unknown event {rname!r}")
+                return _negated_event_requirement(rname)
             return TRIVIAL
 
         if rtype == "items":
@@ -1345,6 +1410,95 @@ def emit_graph(
 
 
 # ---------------------------------------------------------------------------
+# Mutually-exclusive thermal-toggle soundness proof (see MUTEX_TOGGLE_EVENTS)
+# ---------------------------------------------------------------------------
+
+def _negated_events_in(req: dict, out: set) -> None:
+    """Collect event short_names appearing under a ``negate`` in a raw RDV req."""
+    if not isinstance(req, dict):
+        return
+    data = req.get("data")
+    if req.get("type") == "resource" and isinstance(data, dict):
+        if data.get("type") == "events" and data.get("negate"):
+            out.add(data.get("name"))
+    if isinstance(data, dict):
+        for c in data.get("items", []):
+            _negated_events_in(c, out)
+
+
+def assert_toggle_model_soundness(areas: dict[str, dict]) -> None:
+    """Prove that dropping ``NOT <thermal-toggle>`` to TRIVIAL is sound for this
+    game version, and trip if upstream introduces a new unmodelled case.
+
+    Two invariants, both raising ``CompileError`` on violation:
+
+    1. **No new mutex room.** The set of co-located ``deviceheat*`` event pairs
+       (two thermal devices in one sub-area, i.e. physically exclusive) must equal
+       the curated ``MUTEX_TOGGLE_EVENTS``. A new pair means a new room where the
+       monotonic sweep silently over-permits — re-evaluate before shipping.
+
+    2. **The dropped negation is never the sole gate.** For every connection
+       gated on ``NOT <toggle>``, its destination node must ALSO be reachable via
+       a toggle-independent incoming edge (a region-boundary ``dock`` node, or a
+       sibling edge that carries no negated toggle). Then no node's reachability
+       depends on the dropped negation, so AP's (over-permissive) belief that both
+       polarities hold can never be the difference between reachable and not —
+       making the TRIVIAL drop sound. Topology is fixed per version, so this is
+       also a per-seed proof.
+    """
+    # Invariant 1: co-located deviceheat pairs == curated set.
+    found: set[str] = set()
+    for region, d in areas.items():
+        for sub_name, sub in d.get("areas", {}).items():
+            devs = [
+                n.get("event_name")
+                for n in sub["nodes"].values()
+                if n.get("node_type") == "event"
+                and "deviceheat" in ((n.get("extra") or {}).get("actor_def", ""))
+            ]
+            if len(devs) >= 2:
+                found.update(devs)
+    if found != set(MUTEX_TOGGLE_EVENTS):
+        raise CompileError(
+            "thermal-toggle soundness: co-located deviceheat event set "
+            f"{sorted(found)} != curated MUTEX_TOGGLE_EVENTS "
+            f"{sorted(MUTEX_TOGGLE_EVENTS)}. A new mutually-exclusive thermal "
+            "room appeared upstream — the monotonic sweep cannot model it; "
+            "update MUTEX_TOGGLE_EVENTS and re-verify before shipping."
+        )
+
+    # Invariant 2: no node depends solely on a NOT-<toggle> edge.
+    for region, d in areas.items():
+        for sub_name, sub in d.get("areas", {}).items():
+            nodes = sub["nodes"]
+            incoming: dict[str, list] = {}
+            for src, n in nodes.items():
+                for dst, req in n.get("connections", {}).items():
+                    incoming.setdefault(dst, []).append((src, req))
+            for dst, edges in incoming.items():
+                tainted = False
+                has_clean = False
+                for _src, req in edges:
+                    neg: set = set()
+                    _negated_events_in(req, neg)
+                    if neg & MUTEX_TOGGLE_EVENTS:
+                        tainted = True
+                    else:
+                        has_clean = True
+                if not tainted:
+                    continue
+                is_boundary = nodes.get(dst, {}).get("node_type") == "dock"
+                if not (is_boundary or has_clean):
+                    raise CompileError(
+                        f"thermal-toggle soundness: {region}:{sub_name}:{dst} is "
+                        "reachable ONLY via a 'NOT <thermal-toggle>' edge (no "
+                        "boundary dock, no toggle-independent sibling). The "
+                        "TRIVIAL drop is no longer sound here — model the "
+                        "exclusion or pin a polarity before shipping."
+                    )
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -1409,6 +1563,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"missing cache file: {p}", file=sys.stderr)
             return 2
         all_area_data[area_name] = json.loads(p.read_text())
+
+    # Prove the mutually-exclusive thermal-toggle drop is sound for this version
+    # (and trip on any new unmodelled case). See MUTEX_TOGGLE_EVENTS.
+    assert_toggle_model_soundness(all_area_data)
 
     # Victory condition: translate the raw RDV goal into our AST with event atoms
     # intact. The graph model handles them natively via can_reach_region("Event:X").

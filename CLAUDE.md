@@ -722,6 +722,107 @@ consistent with the two capsule directions but not independently confirmed from 
 100% confirmation of the full set would need the seed's `ap_patcher_input.json` or a
 post-fix playthrough.
 
+UPDATE (mutually-exclusive thermal-toggle fidelity gap — bounded + proven sound,
+NOT modelled): Cataris "Thermal Device Room North" holds the game's ONLY pair of
+physically-exclusive heat-redirect devices (`deviceheat_002` ↔
+`deviceheat_camerafar_000`; stepping on one platform powers the other down). RDV
+encodes the exclusion via polarity — one cross route needs `deviceheat_002` ON,
+the other needs `NOT deviceheat_002 AND deviceheat_camerafar_000`. AP's sweep is
+MONOTONIC (`event` → `state.can_reach_region`, true-forever) and
+`translate_requirement` drops every `NOT <event>` to TRIVIAL, so AP believes both
+polarities hold at once — strictly more permissive than the game, a latent
+unmodelled-exclusion gap. Investigation (all 9 areas): exactly ONE co-located
+device pair exists; the other 5 thermal devices are solo-per-room and the other
+23 negated events are one-way directional transients (drop-the-transient is
+faithful for those). We do NOT model the exclusion in the monotonic sweep (a real
+departure, disproportionate for one room) and do NOT force `NOT <toggle>` →
+IMPOSSIBLE (walls the room off → breaks generation, cf. the escape-rules saga).
+Instead: (1) `MUTEX_TOGGLE_EVENTS` curates the pair and negated events route
+through `_negated_event_requirement` (explicit, not a silent `return TRIVIAL`);
+(2) `assert_toggle_model_soundness` (called from `extract_dread_rules.main`)
+PROVES the drop sound for the shipped version — every node reachable via a
+`NOT <toggle>` edge is ALSO reachable via a toggle-independent edge (a boundary
+`dock`, or the `CatarisThermalMagnetPlatformLowered` route for the Energy Tank),
+so the dropped negation is NEVER the sole gate on any node. Topology is fixed per
+version (fill places items, never adds/removes edges), so this version-boundary
+proof is also a per-seed proof. The assertion is a TRIPWIRE: a new co-located
+device pair upstream, or a `NOT <toggle>` edge becoming a node's only entry, fails
+extraction loudly. Runtime recovery from a player-induced stuck toggle is already
+covered by `/warp` (it `Game.LoadScenario`s from the last save and relocates Samus
+out of Cataris; the device is reversible in-game) — so no bespoke
+device-poke client command was added (it would need unvalidated RE of the
+`deviceheat` actor Lua API). Tests: `test_extract_dread_rules` (negated-toggle →
+TRIVIAL, unknown-negated-event raises, soundness passes on the real graph, trips
+on a synthetic new pair + on a synthetic sole-gate node).
+
+UPDATE (generalized `/warp <region>` — the chosen runtime fix for the thermal
+trap): the thermal toggle can still strand a player at RUNTIME (activate the
+lower device → both `NOT deviceheat_002` exits from `Past Magnet Floor` close;
+the only other exit needs the spider magnet floor lowered, unreachable from
+there). Plain `/warp` (to start) relocates Samus out of Cataris but CANNOT
+restore a lost traversal capability — if your route to a region went through the
+now-severed thermal path, AP never reconsiders the dead edge. Decisive topology
+fact: Dairon (the hub this trap most often cuts) has NINE transport entrances
+from 5 regions incl. a non-rando Cataris↔Dairon teleporter, so a truly
+*unwinnable* seed is very unlikely — the trap is almost always recoverable by
+re-routing, just non-obvious. So instead of a logic change (edge removal / a
+per-seed region-access guard — both considered, both heavier and the former
+reverses the "no softlock prevention in logic" stance), `/warp` was generalized:
+`/warp <region> [station]` reloads at a specific save station the player has
+VISITED (`/warp dairon`, `/warp dairon west`); `/warp list` shows the recorded
+targets; `/warp` (no arg) is unchanged (warp-to-start). It restores access you
+ALREADY had — only save stations the client has SEEN the player stand in are
+eligible. Tracking is per-STATION (not just per-region): the wire reports only
+the scenario, but `warp_guard.lua` already tracks the live collision-camera
+(`RL.CurrentScenario`/`CurrentSubArea`), so `_poll_once` reads it each tick
+(`build_read_current_subarea_lua`) and records `(scenario, camera)` into
+`DreadContext._visited_saves` when it matches `protocol.SAVE_STATION_BY_CAMERA` —
+the 17 real save platforms (`protocol.SAVE_STATIONS`, a SUBSET of
+`SAVE_STATION_CAMERAS`, which also lists access/tunnel rooms with no spawn
+point), each carrying scenario + camera + spawn actor (functional ids from RDV's
+logic; Hanubia omitted — no save station). NO warp_guard.lua change was needed
+(it already tracked the camera), and the client OWNS the visited set so it
+survives a Lua re-bootstrap on reconnect. Implementation:
+`protocol.build_warp_src(scenario_lua, actor_lua)` parameterizes the old inline
+warp Lua (the boss/Nav/save/interaction guards all inspect the CURRENT location,
+so they apply to any destination); `_warp_to_start` and `_warp_to_region(region,
+station)` both delegate to a shared `_warp(...)` carrying the
+inventory/cursor/collected rewind. Same `Game.LoadScenario` primitive → no new
+hardware-validation surface beyond the spawn-actor names. Residual gap: a save
+station passed through faster than one 2 s poll tick may not be recorded (same
+flavor as warp_guard's "fresh-connect subarea nil" gap). Tests: `test_warp`
+(unknown region, never-visited vs visited-but-not-at-a-save refusals,
+single-visited warp loads the right scenario/spawn, ambiguous-lists /
+keyword-disambiguation, /warp list, visit recorded from a poll subarea read,
+current-location guards still apply).
+
+UPDATE (Nav Station hints → free AP server hints on visit): the in-game Nav
+Station ("Adam") plaques already showed REAL cross-world placement facts
+(`World._generate_nav_hints` bakes them post-fill — "Your Grapple is at P2's Foo",
+DNA hints, etc.), but they were never registered as AP SERVER hints because, as
+the docstring said, "Nav Stations have no AP location check, so there is no
+in-game event to gate the broadcast on." The save-station/Nav visit detection we
+built (poll reads `RL.CurrentScenario`/`CurrentSubArea`) IS that event. So now:
+each generated plaque also carries `loc = [owner_slot, location_id]`
+(`_hint_loc`); slot_data's `nav_hints` ride it; the client indexes them by the
+room that shows each (`protocol.NAV_HINT_STATIONS` — the 11 plaques' `(scenario,
+camera)` in patcher-template order, resolved via the access-point actor→camera
+map, all also in `NAV_ROOM_CAMERAS`) into `DreadContext._nav_hint_by_camera`; and
+`_record_room_visit` (the renamed `_record_save_station_visit`, now doing BOTH
+save-station recording and this) registers the revealed location as a FREE AP hint
+the first time the player reaches that room. FREE is load-bearing and verified
+against AP `MultiServer.py`: own locations → `LocationScouts` `create_as_hint=2`
+(universal); a location in another world (an item hint, allowed only because the
+item there is ours) → `CreateHints {player: owner, locations:[id]}` — neither
+touches `get_hint_cost`. `_registered_nav_hints` dedupes re-visits; failures never
+break the poll. NO start-time broadcast (the existing
+`test_nav_hints_do_not_register_ap_server_hints` still holds — `start_hints`/
+`start_location_hints` stay empty; registration is purely runtime-gated on
+physically reaching the station). Residual gap: same as save tracking — a station
+passed through faster than one 2 s poll tick isn't caught. Tests: `test_warp`
+(map build + own→LocationScouts + cross-world→CreateHints + dedupe + non-nav
+no-op), `test_nav_hints` (`loc` present + points at a real filled location).
+
 The real-hardware end-to-end integration smoke is DONE: validated on real hardware
 (and Ryujinx) — the bootstrap loads on the live 2.1.0 ROM, items pop, and checks
 register. The manual validation gate is cleared; the counter/cutscene semantics

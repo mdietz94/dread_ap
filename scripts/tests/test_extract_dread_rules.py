@@ -19,9 +19,11 @@ from extract_dread_rules import (  # noqa: E402
     CompileError,
     Header,
     IMPOSSIBLE,
+    MUTEX_TOGGLE_EVENTS,
     RDV_ITEM_TO_AP,
     TRIVIAL,
     absorb_or,
+    assert_toggle_model_soundness,
     ast_to_dnf,
     dnf_to_ast,
     enumerate_paths,
@@ -354,3 +356,110 @@ def test_start_comp_prefers_start_point_actor_name():
     assert resolve({
         "actor_name": "some_entity",
     }) == "some_entity"
+
+
+# ---------------------------------------------------------------------------
+# Mutually-exclusive thermal-toggle handling (MUTEX_TOGGLE_EVENTS) + soundness
+# ---------------------------------------------------------------------------
+
+def _header_with_events(*event_names: str) -> Header:
+    hdr = _empty_header()
+    hdr.events_by_name = {n: {"long_name": n} for n in event_names}
+    return hdr
+
+
+def test_negated_mutex_toggle_event_is_trivial():
+    """``NOT <thermal toggle>`` still drops to TRIVIAL (drop-the-transient); the
+    drop is proven sound per game version by assert_toggle_model_soundness, not by
+    over-restricting it to IMPOSSIBLE (which would wall the room off)."""
+    name = "s020_magma:default:deviceheat_002"
+    assert name in MUTEX_TOGGLE_EVENTS
+    hdr = _header_with_events(name)
+    req = {"type": "resource", "data": {
+        "type": "events", "name": name, "amount": 1, "negate": True}}
+    assert translate_requirement(req, hdr) == TRIVIAL
+
+
+def test_negated_unknown_event_raises():
+    """A negated event must still resolve to a known event (symmetry with the
+    positive branch) — a typo no longer silently passes through as TRIVIAL."""
+    hdr = _header_with_events("Cool Event")
+    req = {"type": "resource", "data": {
+        "type": "events", "name": "Nonexistent", "amount": 1, "negate": True}}
+    with pytest.raises(CompileError):
+        translate_requirement(req, hdr)
+
+
+# -- assert_toggle_model_soundness ------------------------------------------
+
+_DEV2 = "s020_magma:default:deviceheat_002"
+_DEV1 = "s020_magma:default:deviceheat_camerafar_000"
+_DEVDEF = "actordef:actors/props/deviceheat/charclasses/deviceheat.bmsad"
+
+
+def _ev_node(name: str) -> dict:
+    return {"node_type": "event", "event_name": name,
+            "extra": {"actor_def": _DEVDEF}, "connections": {}}
+
+
+def _not(event: str) -> dict:
+    return {"type": "resource",
+            "data": {"type": "events", "name": event, "negate": True}}
+
+
+def _clean() -> dict:
+    return {"type": "resource",
+            "data": {"type": "items", "name": "Morph", "amount": 1}}
+
+
+def _good_mutex_area() -> dict:
+    """A minimal area mirroring Cataris Thermal Device Room North: the curated
+    toggle pair co-located, every NOT-toggle edge backed by a boundary dock or a
+    toggle-independent sibling."""
+    return {
+        "Cataris": {"areas": {"Thermal Device Room North": {"nodes": {
+            "EventDev2": _ev_node(_DEV2),
+            "EventDev1": _ev_node(_DEV1),
+            # Boundary door: reachable from the neighbouring region regardless.
+            "DoorA": {"node_type": "dock", "connections": {}},
+            # Interior pickup: a NOT-toggle edge AND a toggle-independent sibling.
+            "Pickup": {"node_type": "pickup", "connections": {}},
+            "SrcTainted": {"node_type": "generic",
+                           "connections": {"Pickup": _not(_DEV2),
+                                           "DoorA": _not(_DEV2)}},
+            "SrcClean": {"node_type": "generic",
+                         "connections": {"Pickup": _clean()}},
+        }}}},
+    }
+
+
+def test_mutex_toggle_constant_matches_cataris_pair():
+    assert MUTEX_TOGGLE_EVENTS == frozenset({_DEV2, _DEV1})
+
+
+def test_toggle_soundness_passes_on_well_formed_area():
+    # Should not raise.
+    assert_toggle_model_soundness(_good_mutex_area())
+
+
+def test_toggle_soundness_trips_on_new_colocated_pair():
+    """A NEW co-located deviceheat pair (unmodelled mutex room) must fail loudly
+    so a human re-evaluates before shipping."""
+    area = _good_mutex_area()
+    area["Cataris"]["areas"]["Some Other Room"] = {"nodes": {
+        "EvA": _ev_node("s020_magma:default:deviceheat_777"),
+        "EvB": _ev_node("s020_magma:default:deviceheat_888"),
+    }}
+    with pytest.raises(CompileError, match="new mutually-exclusive thermal room"):
+        assert_toggle_model_soundness(area)
+
+
+def test_toggle_soundness_trips_when_negation_is_sole_gate():
+    """An interior node reachable ONLY via a NOT-<toggle> edge (no boundary dock,
+    no toggle-independent sibling) means the dropped negation is the sole gate —
+    the TRIVIAL drop is unsound there and must fail."""
+    area = _good_mutex_area()
+    # Strip the clean sibling so Pickup depends solely on the NOT-toggle edge.
+    del area["Cataris"]["areas"]["Thermal Device Room North"]["nodes"]["SrcClean"]
+    with pytest.raises(CompileError, match="no longer sound here"):
+        assert_toggle_model_soundness(area)

@@ -1110,9 +1110,11 @@ class DreadWorld(World):
         Runs after fill so every location has its item. The rendered text is
         stashed on ``self`` for :meth:`_build_placements_payload`, which bakes
         it into the patcher output so the game's Nav Station plaques show real
-        placement facts. No AP server hints are registered here — Nav Stations
-        have no AP location check, so there is no in-game event to gate the
-        broadcast on."""
+        placement facts. No AP server hint is registered HERE (at generation):
+        each plaque also carries its revealed ``loc``, and the client registers
+        that as a free AP hint only when the player actually reaches the station
+        (``DreadContext._register_nav_hints``) — so nothing is broadcast at
+        session start."""
         self._nav_hints = self._generate_nav_hints()
 
     def _generate_nav_hints(self) -> list[dict[str, Any]]:
@@ -1132,6 +1134,13 @@ class DreadWorld(World):
             if loc.player == me:
                 return f"{{c5}}{loc.name}{{c0}}"
             return f"{{c5}}{mw.get_player_name(loc.player)}{{c0}}'s {{c5}}{loc.name}{{c0}}"
+
+        def _hint_loc(loc: Any) -> list[int] | None:
+            # [location-owner slot, location id] for the client to register as a
+            # free AP server hint (CreateHints / LocationScouts) when the player
+            # reaches the Nav Station showing this plaque. None for an addressless
+            # (event) location, which can't be hinted.
+            return None if loc.address is None else [loc.player, loc.address]
 
         # "location" candidates: this slot's own filled pickups.
         my_locs = [loc for loc in mw.get_filled_locations(me)
@@ -1175,7 +1184,8 @@ class DreadWorld(World):
                     continue
                 used.add(key)
                 hints.append({"text": f"Your {{c1}}{loc.item.name}{{c0}} "
-                                      f"is at {place(loc)}."})
+                                      f"is at {place(loc)}.",
+                              "loc": _hint_loc(loc)})
 
         def take_location_hint() -> dict[str, Any] | None:
             for loc in loc_pool:
@@ -1190,7 +1200,7 @@ class DreadWorld(World):
                     who = mw.get_player_name(item.player)
                     text = (f"{place(loc)} holds {{c1}}{item.name}{{c0}} "
                             f"for {{c5}}{who}{{c0}}.")
-                return {"text": text}
+                return {"text": text, "loc": _hint_loc(loc)}
             return None
 
         def take_item_hint() -> dict[str, Any] | None:
@@ -1200,7 +1210,7 @@ class DreadWorld(World):
                     continue
                 used.add(key)
                 text = f"Your {{c1}}{loc.item.name}{{c0}} is at {place(loc)}."
-                return {"text": text}
+                return {"text": text, "loc": _hint_loc(loc)}
             return None
 
         # DNA hints (if any) take the front; fill the REMAINING plaque budget
