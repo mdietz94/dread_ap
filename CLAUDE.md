@@ -990,6 +990,47 @@ fields + option restore from defaults, and a door-sensitive reachability check
 PopTracker map-tab (`tracker_world`) integration is NOT done (optional; not needed
 for the in-logic-set fix).
 
+UPDATE (UT `/explain` + `/get_logical_path` now human-readable): SHIPPED. UT's
+default explain introspects the world's access rules — ours are opaque lambdas
+(`Rules.compile_to_lambda`) on entrances named `e{i}` between regions named
+`R{comp}`, so UT printed internal nodes (`R37 (True): e5 : True`). UT exposes
+three optional world hooks (probed via `hasattr`, see the cloned
+`worlds/tracker/TrackerClient.py` + `docs/apworld-integration.md`):
+`explain_rule(target_name, state)` (→ `/explain`), `explain_path(entrance, state)`
+(per-hop rendering inside UT's default `/get_logical_path` walk), and
+`get_logical_path` (full override — NOT implemented; we let UT's `state.path`
+BFS drive and only style each hop). We render our OWN symbolic rule ASTs (the
+dicts `graph_logic` feeds to `compile_to_lambda`) into `JSONMessagePart` lists,
+coloring each atom green/salmon by evaluating it via `compile_to_lambda` itself
+(so the explanation can't drift from the logic). NO rule_builder migration —
+that would force the real access rules to become `Rule.Resolved` objects and
+change the proven generation path; the hooks avoid all of it. New
+`apworld/dread/ut_explain.py` (`render_ast` + `ExplainCtx` + `build_comp_labels`,
+AP-import-free, unit-tested with a fake state) holds the renderer; `DreadWorld`
+gains `explain_path`/`explain_rule`/`_explain_ctx`/`_region_label`;
+`graph_logic.build_regions` stashes `world._explain_asts` (name→resolved AST for
+non-trivial `e{i}`) + `world._explain_labels` (comp→human label). Atom text:
+item→name(`×N`), event→`reach <name>`, trick→`trick: <long> [level]` (green iff
+enabled this seed), sum→`Missiles/Power Bombs ≥ N`, damage_threshold→`survive N
+dmg (<suits> or energy)`, and/or→`(a & b)`/`(a | b)`. **Graph schema 6→7**: new
+`comp_regions` (every component's RDV region name) so a hop labels by region
+("Artaria") instead of the bare `R{comp}` when it has no pickup/event; pickup
+names still win. `build_comp_labels` layers pickup > event > start > region.
+Event names are humanized by `ut_explain.humanize_event`: CamelCase RDV events →
+spaced words with a few expansions (`ArtariaEmmiMagnetPlatformLowered` → "Artaria
+EMMI Magnet Platform Lowered", CU→Central Unit); RDV's unnamed
+`scenario:subarea:actor` fallback ids → "<Region>: <cleaned actor>" via a baked
+`_SCENARIO_REGION` map (s010_cave→Artaria … 9 scenarios, all functional Dread
+ids, safe to commit). Residual: genuinely opaque door-barrier actor codes
+(`PRP_DB_CV_008` → "Artaria: PRP DB CV") can't be decoded further without a
+hand-curated 100+ actor dictionary — region-grouped is the ceiling; the
+requirement text and region hops are fully readable. NOTE: needs
+`python scripts/extract_dread_rules.py --all` to regen the gitignored
+`logic_graph.json` at schema 7 (conftest auto-regens when the script is newer).
+Tests: `tests/test_ut_explain.py` (AP-free renderer matrix + `build_comp_labels`
+layering + gated real-world `explain_path`/`explain_rule` through
+`setup_multiworld`); `test_graph_logic` schema pin 6→7 + `comp_regions` shape.
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**
