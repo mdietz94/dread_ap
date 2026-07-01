@@ -44,8 +44,10 @@ def graph():
 
 @graph_required
 def test_graph_schema_and_shape(graph):
-    assert graph["graph_schema_version"] == 6
+    assert graph["graph_schema_version"] == 7
     assert graph["n_regions"] > 0
+    assert len(graph["comp_regions"]) == graph["n_regions"]
+    assert all(r for r in graph["comp_regions"])   # every component has a region
     assert len(graph["pickups"]) == 149
     assert graph["entrances"]
     # Victory may reference event atoms (compiled in graph_mode to

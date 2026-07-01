@@ -26,7 +26,7 @@ from ._data_loader import load_json
 from .Rules import compile_to_lambda
 from .Tricks import TRICK_LEVEL_NAMES, effective_trick_levels
 
-EXPECTED_GRAPH_SCHEMA = 6
+EXPECTED_GRAPH_SCHEMA = 7
 
 
 def load_graph() -> dict:
@@ -152,6 +152,12 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
         start_comp = g["start_comp"]
     menu.connect(regions[start_comp], "Menu->start")
 
+    # Per-entrance resolved AST + component labels, stashed for Universal
+    # Tracker's /explain (see ut_explain.py + World.explain_path/explain_rule).
+    # Only non-trivial ``e{i}`` carry a rule; trivial / transport / event hops
+    # render as a plain label. Harmless in real generation (never read).
+    explain_asts: dict[str, dict] = {}
+
     indirect: list = []
     for i, (csrc, cdst, ast) in enumerate(g["entrances"]):
         resolved = _resolve_docks(ast, assign, dock_sides, wreq)
@@ -166,6 +172,7 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
             rule=compile_to_lambda(resolved, player, tl, graph_mode=True,
                                    energy_per_tank=ept, ammo_amounts=amm,
                                    door_lock_rando=dlr))
+        explain_asts[f"e{i}"] = resolved
         for en in _event_atoms(resolved):
             if en in ev_region:
                 indirect.append((ev_region[en], ent))
@@ -181,6 +188,9 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
 
     world._graph_indirect = indirect
     world._graph_victory = g["victory_condition"]
+    world._explain_asts = explain_asts
+    from .ut_explain import build_comp_labels
+    world._explain_labels = build_comp_labels(g)
 
 
 def _event_atoms(ast: dict, out: set | None = None) -> set:

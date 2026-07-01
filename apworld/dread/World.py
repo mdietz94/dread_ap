@@ -686,6 +686,120 @@ class DreadWorld(World):
         from .graph_logic import set_graph_rules
         set_graph_rules(self)
 
+    # ------------------------------------------------------------------
+    # Universal Tracker logic explanation (see ut_explain.py).
+    #
+    # UT probes the regenerated world for these methods with ``hasattr`` and
+    # uses them to render /explain and /get_logical_path. Without them UT falls
+    # back to introspecting our opaque access-rule lambdas, printing internal
+    # names (``R37 (True): e5 : True``). Here we render the symbolic rule ASTs
+    # stashed by ``graph_logic.build_regions`` into human-readable message parts,
+    # coloring each atom by evaluating it against the tracker's state.
+    # ------------------------------------------------------------------
+    def _explain_ctx(self):
+        from .ut_explain import ExplainCtx
+        from .Tricks import effective_trick_levels
+        from .graph_logic import ammo_amounts_from_options
+        labels = getattr(self, "_explain_labels", {})
+        return ExplainCtx(
+            player=self.player,
+            trick_levels=effective_trick_levels(self.options),
+            energy_per_tank=int(self.options.energy_per_tank.value),
+            ammo_amounts=ammo_amounts_from_options(self.options),
+            door_lock_rando=int(self.options.door_lock_rando.value) != 0,
+            comp_label=lambda c: labels.get(c, f"R{c}"),
+        )
+
+    def _region_label(self, region) -> str:
+        """Human name for one of our machine-named regions."""
+        nm = getattr(region, "name", "?")
+        if nm == "Menu":
+            return "Start"
+        if nm.startswith("Event:"):
+            from .ut_explain import humanize_event
+            return f"{humanize_event(nm[6:])} (event)"
+        if nm.startswith("R"):
+            try:
+                comp = int(nm[1:])
+            except ValueError:
+                return nm
+            return getattr(self, "_explain_labels", {}).get(comp, nm)
+        return nm
+
+    def _explain_entrance_parts(self, entrance, ctx, state) -> list:
+        """Render one hop: ``<src> [reachable] → <dst> : <requirement>``."""
+        from .ut_explain import _text, _colored, render_ast, _LABEL
+        src = entrance.parent_region
+        reach = bool(src.can_reach(state)) if (src and state is not None) else None
+        mark = ("reachable" if reach else "blocked") if reach is not None else "?"
+        parts = [
+            _colored(self._region_label(src) if src else "?", _LABEL),
+            _text(f" [{mark}] → "),
+            _colored(self._region_label(entrance.connected_region)
+                     if entrance.connected_region else "?", _LABEL),
+        ]
+        ast = getattr(self, "_explain_asts", {}).get(entrance.name)
+        if ast is not None:
+            parts.append(_text(": "))
+            parts.extend(render_ast(ast, ctx, state))
+        return parts
+
+    def explain_path(self, entrance, state):
+        """UT hook: render ONE hop of the default /get_logical_path walk."""
+        return self._explain_entrance_parts(entrance, self._explain_ctx(), state)
+
+    def _resolve_explain_target(self, name: str):
+        mw = self.multiworld
+        p = self.player
+        locs = {loc.name: loc for loc in mw.get_locations(p)}
+        regs = {reg.name: reg for reg in mw.get_regions(p)}
+        try:
+            from Utils import get_intended_text
+            result, usable, _ = get_intended_text(
+                name, set(locs) | set(regs))
+        except Exception:
+            result, usable = name, (name in locs or name in regs)
+        if not usable:
+            return None
+        if result in locs:
+            return "location", locs[result]
+        if result in regs:
+            return "region", regs[result]
+        return None
+
+    def explain_rule(self, target_name, state):
+        """UT hook: explain the logic gating a location/region for /explain.
+
+        Returns None on an unresolved name so UT falls back to its default
+        (which at least surfaces a name-matching error)."""
+        from .ut_explain import _text, _colored, _GREEN, _SALMON
+        resolved = self._resolve_explain_target(target_name)
+        if resolved is None:
+            return None
+        kind, obj = resolved
+        ctx = self._explain_ctx()
+        if kind == "location":
+            region = obj.parent_region
+            ok = bool(obj.can_reach(state)) if state is not None else None
+            head = _colored(obj.name, _GREEN if ok else _SALMON)
+            suffix = (" — reachable" if ok
+                      else " — not reachable") if ok is not None else ""
+        else:
+            region = obj
+            ok = bool(region.can_reach(state)) if state is not None else None
+            head = _colored(self._region_label(region),
+                            _GREEN if ok else _SALMON)
+            suffix = (" — reachable" if ok
+                      else " — not reachable") if ok is not None else ""
+        parts = [head, _text(suffix)]
+        entrances = list(region.entrances) if region else []
+        if not entrances:
+            parts.append(_text("\n  (no gated entrances)"))
+        for ent in entrances:
+            parts.append(_text("\n  "))
+            parts.extend(self._explain_entrance_parts(ent, ctx, state))
+        return parts
+
     # Progressive-item logic translation. The compiled access rules reference
     # the individual tier items by name (e.g. state.has("Wave Beam")), but when
     # a progressive group is enabled those tiers aren't in the pool — only the

@@ -1120,7 +1120,11 @@ GlobalKey = tuple                  # (region, sub_area, node)
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
-GRAPH_SCHEMA_VERSION = 6   # v6: transports carry their USABLE `component` (so
+GRAPH_SCHEMA_VERSION = 7   # v7: `comp_regions` gives every component its RDV
+                           # region name, so Universal Tracker's /explain can
+                           # label a hop by region instead of the bare "R{comp}"
+                           # machine name (see apworld/dread/ut_explain.py).
+                           # v6: transports carry their USABLE `component` (so
                            # transport rando can exclude scripted capsule rides)
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
@@ -1310,6 +1314,15 @@ def emit_graph(
     comp = _trivial_scc(nodes, conn_edges)
     n_regions = (max(comp.values()) + 1) if comp else 0
 
+    # Representative RDV region name per component (first node wins). Every node
+    # belongs to a region, so every component gets a human region label — the
+    # base fallback for Universal Tracker's /explain hop rendering.
+    comp_regions: list = [None] * n_regions
+    for key in nodes:
+        ci = comp[key]
+        if comp_regions[ci] is None:
+            comp_regions[ci] = key[0]
+
     # Cross-region entrances (intra-component edges are free → dropped).
     entrances: list = []
     for u, v, ast in conn_edges + dock_edges:
@@ -1389,6 +1402,7 @@ def emit_graph(
     return {
         "graph_schema_version": GRAPH_SCHEMA_VERSION,
         "n_regions": n_regions,
+        "comp_regions": comp_regions,
         "start_comp": comp[start_key],
         "start_comps": start_comps,
         "entrances": entrances,
