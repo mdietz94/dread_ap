@@ -270,7 +270,6 @@ class DreadWorld(World):
         transport_on = int(self.options.transport_rando.value) != 0
         area = int(self.options.starting_area.value)
         if not (door_on or transport_on or area != 0):
-            self._guard_full_accessibility()
             return
 
         from .graph_logic import load_graph
@@ -316,26 +315,33 @@ class DreadWorld(World):
                 doors_to_change=set(self.options.doors_to_change.value),
                 change_doors_to=set(self.options.change_doors_to.value))
 
-        self._guard_full_accessibility()
-
-    def _guard_full_accessibility(self) -> None:
-        """Fail fast with an actionable OptionError when the trick / door /
-        transport / start config leaves pickup locations unreachable AND the
-        slot demands full accessibility.
+    def _compute_dropped_locations(self) -> set[str]:
+        """AP-names of pickup locations that are unreachable even with a FULL
+        loadout under this config — the set we DROP under ``accessibility:
+        full``/``items`` so generation succeeds instead of failing.
 
         Randovania's starter preset disables every trick and only guarantees the
         seed is BEATABLE — its trick-gated pickups (e.g. the Speed-Booster-
         Conservation speedboost rooms) simply hold filler. That is exactly AP's
         ``accessibility: minimal``, under which fill places only filler in the
-        unreachable spots and generation succeeds. ``full`` (and its ``items``
-        alias) instead require every location reachable, which an all-tricks-off
-        config genuinely cannot satisfy — so without this guard AP would raise a
-        cryptic late ``FillError``. We pre-empt it with a message naming the
-        stranded locations, the gating trick(s), and the two fixes (raise the
-        trick or switch to ``accessibility: minimal``)."""
+        unreachable spots and we drop nothing. ``full`` (and its ``items`` alias)
+        instead require every location reachable, which an all-tricks-off config
+        genuinely cannot satisfy. Rather than raise a late ``FillError`` (or the
+        earlier up-front ``OptionError``), we simply don't create those
+        locations: ``build_regions`` skips them and ``create_items`` trims a
+        matching number of non-advancement copies, so the pool stays balanced.
+        The physical in-game spot is untouched — the patcher merges per-location
+        overrides onto the full starter-preset template, so an uncreated location
+        keeps whatever item the template baked there (a real, collectable-but-
+        untracked pickup). Deterministic in (options, rolled graph state), so a
+        Universal Tracker re-gen reproduces the same drop set.
+
+        Returns the empty set under ``minimal`` (unreachable spots stay as
+        tracked filler, the Randovania-faithful behavior) and whenever the config
+        leaves nothing stranded (the default Beginner config)."""
         acc = self.options.accessibility
         if acc.value == acc.option_minimal:
-            return  # minimal => unreachable locations hold filler (RDV-faithful)
+            return set()
 
         from .graph_logic import (
             load_graph, ammo_amounts_from_options, unreachable_pickup_locations,
@@ -350,31 +356,35 @@ class DreadWorld(World):
             energy_per_tank=int(self.options.energy_per_tank.value),
             ammo_amounts=ammo_amounts_from_options(self.options))
         if not unreachable:
-            return
+            return set()
 
-        from Options import OptionError
+        import logging
         long_name = {t.short_name: t.long_name for t in DREAD_TRICKS}
         tricks = sorted(long_name.get(s, s) for s in gating)
         shown = ", ".join(unreachable[:6]) + (
             f", ... (+{len(unreachable) - 6} more)" if len(unreachable) > 6 else "")
-        raise OptionError(
-            f"Metroid Dread [{self.player_name}]: {len(unreachable)} location(s) "
-            f"are unreachable under this configuration even with a full item "
-            f"loadout, so 'accessibility: full' cannot be satisfied: {shown}. "
-            f"These are gated by trick(s) you have disabled: "
-            f"{', '.join(tricks) or '(see logic)'}. Fix EITHER by enabling the "
-            f"gating trick(s) (raise their per-trick level or the global Trick "
-            f"Level), OR by setting 'accessibility: minimal' -- the latter mirrors "
-            f"Randovania's starter preset, which disables all tricks and lets "
-            f"such spots hold filler.")
+        logging.getLogger(__name__).info(
+            "Metroid Dread [%s]: dropping %d location(s) unreachable under this "
+            "configuration even with a full loadout, so 'accessibility: %s' can "
+            "be satisfied: %s. These are gated by trick(s) you have disabled: %s. "
+            "Their in-game pickups keep the starter-preset item (collectable but "
+            "not AP-tracked); enable the gating trick(s) or use 'accessibility: "
+            "minimal' to keep them as tracked filler instead.",
+            self.player_name, len(unreachable), acc.current_key, shown,
+            ", ".join(tricks) or "(see logic)")
+        return set(unreachable)
 
     def create_regions(self) -> None:
         # Events are graph regions; AP's BFS must re-derive event-gated
         # entrances when an event region becomes reachable.
         type(self).explicit_indirect_conditions = True
         from .graph_logic import build_regions
+        # Locations unreachable-by-config under full/items are dropped (not
+        # created) rather than failing generation — see _compute_dropped_locations.
+        self._dropped_locations = self._compute_dropped_locations()
         build_regions(self, getattr(self, "_dock_assignments", None),
-                      getattr(self, "_transport_matching", None))
+                      getattr(self, "_transport_matching", None),
+                      dropped=self._dropped_locations)
 
     def create_items(self) -> None:
         # Pool layout (post-M2 + Dreadvania options):
@@ -548,9 +558,13 @@ class DreadWorld(World):
         # now only for items whose binding is option-independent.
         MIXED_CLASSIFICATION_FIRST_N: dict[str, int] = {}
 
+        # Dropped locations (unreachable-by-config under full/items) are not
+        # created, so the pool target shrinks by that many — _balance_pool_to_
+        # locations then trims a matching number of non-advancement copies
+        # (filler / useful Missile Tanks etc.), keeping the pool balanced.
         non_event_locations = sum(
             1 for l in location_table if l.pickup_type != "event"
-        )
+        ) - len(getattr(self, "_dropped_locations", ()))
 
         # Forced starting items: precollect into AP logic so state.has() is true
         # from turn 0 (the compiled rules reference them; without this the

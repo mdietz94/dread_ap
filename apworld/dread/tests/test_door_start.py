@@ -426,6 +426,7 @@ def _generate(opts):
     distribute_items_restrictive(mw)
     assert mw.has_beaten_game(mw.get_all_state(False), 1)
     assert mw.fulfills_accessibility()
+    return mw
 
 
 @runtime
@@ -545,42 +546,55 @@ def _all_tricks_disabled() -> dict:
 
 
 @runtime
-def test_all_tricks_disabled_full_raises_optionerror():
+def test_all_tricks_disabled_full_drops_unreachable():
     """Disabling every trick (the faithful Randovania starter-preset port:
     minimal_logic off + empty specific_levels) strands the 8 Speed-Booster-
-    Conservation pickups, which 'accessibility: full' cannot satisfy. The world
-    must fail fast with an actionable OptionError naming the gating trick and the
-    'accessibility: minimal' fix — not a cryptic late FillError."""
-    from Options import OptionError
+    Conservation pickups, which 'accessibility: full' cannot satisfy. Rather than
+    fail, the world DROPS those locations (doesn't create them) so generation
+    succeeds and fulfills_accessibility holds over the remaining set. The dropped
+    set must be exactly the 8 unreachable pickups — no created location may be one
+    of them, and the pool stays balanced (asserted implicitly by a clean fill)."""
+    from dread.graph_logic import (
+        load_graph, ammo_amounts_from_options, unreachable_pickup_locations,
+    )
+    from dread.Tricks import effective_trick_levels
     opts = _all_tricks_disabled()
     opts["accessibility"] = "full"
-    with pytest.raises(OptionError) as ei:
-        _generate(opts)
-    msg = str(ei.value)
-    assert "accessibility: minimal" in msg
-    # Pinpoints the real gate, not the whole frontier trick set.
-    assert "Speed Booster Conservation" in msg
+    mw = _generate(opts)  # asserts beatable + fulfills_accessibility (over kept set)
+
+    world = mw.worlds[1]
+    unreachable, _ = unreachable_pickup_locations(
+        load_graph(), effective_trick_levels(world.options),
+        energy_per_tank=int(world.options.energy_per_tank.value),
+        ammo_amounts=ammo_amounts_from_options(world.options))
+    assert unreachable, "fixture assumes all-tricks-off strands the speedboost rooms"
+    assert world._dropped_locations == set(unreachable)
+    created = {loc.name for loc in mw.get_locations(1)}
+    assert not (created & set(unreachable)), "dropped locations must not be created"
 
 
 @runtime
 def test_all_tricks_disabled_minimal_generates():
-    """Under 'minimal' the stranded spots hold filler (Randovania-faithful), so
-    generation succeeds with every trick disabled."""
+    """Under 'minimal' the stranded spots hold filler (Randovania-faithful) and
+    nothing is dropped, so generation succeeds with every trick disabled."""
     opts = _all_tricks_disabled()
     opts["accessibility"] = "minimal"
-    _generate(opts)
+    mw = _generate(opts)
+    assert mw.worlds[1]._dropped_locations == set()
 
 
 @runtime
 def test_only_suitless_disabled_full_generates():
     """The Suitless un-hide in isolation: disabling just Heat/Cold Runs keeps
     every location reachable (the lava/heat gates have suit/HP alternatives), so
-    'full' generates without tripping the guard."""
-    _generate({"trick_suitless": 0, "accessibility": "full"})
+    'full' generates and drops nothing."""
+    mw = _generate({"trick_suitless": 0, "accessibility": "full"})
+    assert mw.worlds[1]._dropped_locations == set()
 
 
 @runtime
-def test_default_full_passes_guard():
-    """The default config (global Beginner, all follow_global) is fully reachable;
-    the guard must not fire."""
-    _generate({"accessibility": "full"})
+def test_default_full_drops_nothing():
+    """The default config (global Beginner, all follow_global) is fully reachable,
+    so no location is dropped."""
+    mw = _generate({"accessibility": "full"})
+    assert mw.worlds[1]._dropped_locations == set()

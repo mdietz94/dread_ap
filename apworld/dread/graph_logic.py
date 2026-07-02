@@ -101,7 +101,8 @@ def transport_pairs(graph: dict, matching: dict[str, str] | None) -> list:
 
 
 def build_regions(world, dock_assignments: dict[str, str] | None = None,
-                  transport_matching: dict[str, str] | None = None) -> None:
+                  transport_matching: dict[str, str] | None = None,
+                  dropped: set | None = None) -> None:
     """Build the native region graph on ``world``'s multiworld.
 
     ``dock_assignments`` maps dock ``side_id`` -> weakness name (door rando);
@@ -109,6 +110,9 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
     ``transport_matching`` maps a transport ``side_id`` -> its destination
     side_id (transport rando); None uses the vanilla pairing. Transport ride
     edges are added here (they're NOT in ``entrances``).
+    ``dropped`` is the set of pickup AP-names to skip creating (unreachable-by-
+    config locations under full/items — see World._compute_dropped_locations);
+    their physical in-game spot is left holding the starter-preset template item.
     Stashes ``world._graph_indirect`` = [(event_region, entrance), ...] for
     explicit-indirect-condition registration in ``set_graph_rules``.
     Stashes ``world._graph_victory`` = the item-only victory AST.
@@ -181,7 +185,10 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
     for ti, (src, dst) in enumerate(transport_pairs(g, transport_matching)):
         regions[src].connect(regions[dst], f"t{ti}")
 
+    drop = dropped or set()
     for comp, ap_name in g["pickups"]:
+        if ap_name in drop:
+            continue
         loc = DreadLocation(player, ap_name, location_name_to_id[ap_name],
                             regions[comp])
         regions[comp].locations.append(loc)
