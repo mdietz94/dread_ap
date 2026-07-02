@@ -412,6 +412,11 @@ def test_patch_refuses_frozen_launcher_by_sys_frozen(monkeypatch, tmp_path):
         return _FakeProc()
 
     monkeypatch.setattr(pp, "verify_romfs_version", lambda d: None)
+    # Isolate the frozen-launcher guard from dep availability: on CI the patcher
+    # deps aren't installed, so an un-stubbed check_dependencies() would fail
+    # first with its own message (it runs before the guard). The guard is what
+    # this test exercises.
+    monkeypatch.setattr(pp, "check_dependencies", lambda py=None: None)
     monkeypatch.setattr(pp.subprocess, "run", _fake_run)
     monkeypatch.setattr(pp.sys, "frozen", True, raising=False)
 
