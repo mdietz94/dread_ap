@@ -477,19 +477,36 @@ Dairon Freezer/Storm Missile Gate/Energy Recharge West, Elun Fan Room) have thei
 ONLY incoming edge gated on the `Speedbooster` (Speed Booster Conservation) trick
 — no item-only path in Randovania either. So this is NOT an extraction gap; it's
 faithful. Under AP `full` (and its `items` alias) those 8 must be reachable,
-which all-tricks-off cannot satisfy, so `World._guard_full_accessibility`
-(generate_early) now pre-empts the cryptic late FillError: it runs
-`graph_logic.unreachable_pickup_locations` (a full-loadout `early_reachable`
-sweep, door/transport/start-aware via the new `dock_assignments` arg threaded
-through `early_reachable`) and, when accessibility != minimal and any pickup is
-unreachable with EVEN a full loadout, raises an `OptionError` naming the stranded
-locations + the recovering trick (narrowed to the actual recoverer by re-probing
-each frontier-trick at max level — error path only, so the extra sweeps are free)
-+ the two fixes (raise the trick / use `accessibility: minimal`). The guard never
-fires for the default Beginner config (146 full gens still pass). Tests:
-`test_door_start.py` (full raises / minimal generates / only-Suitless full /
-default full), `test_graph_logic.py::test_unreachable_pickup_locations_all_tricks_disabled`
-(exact 8-set + `gating=={"Speedbooster"}`, AP-free). Tests: `tests/test_trick_level.py` (rewritten:
+which all-tricks-off cannot satisfy. UPDATE (was a fail-fast guard, now an
+auto-DROP): `World._compute_dropped_locations` (called from `create_regions`)
+runs `graph_logic.unreachable_pickup_locations` (a full-loadout `early_reachable`
+sweep, door/transport/start-aware via the `dock_assignments` arg) and, when
+accessibility != minimal, DROPS the full-loadout-unreachable pickups instead of
+raising: `build_regions(dropped=...)` skips creating those AP locations and
+`create_items` subtracts the count from its pool target so
+`_balance_pool_to_locations` trims a matching number of non-advancement copies
+(pool stays balanced — no explicit item removal). The physical in-game spot is
+UNTOUCHED: the patcher merges per-location overrides onto the full starter-preset
+template, so an uncreated location keeps whatever item the template baked there
+(a real, collectable-but-AP-untracked pickup — if the player reaches it with the
+gating trick, the client maps its pickup_index to a location_id not in the slot
+and the server ignores the check). A `logging.info` names the dropped spots + the
+gating trick (narrowed to the actual recoverer by re-probing each frontier-trick
+at max level) so the drop isn't silent. Under `minimal` nothing is dropped
+(unreachable spots hold tracked filler, RDV-faithful). The drop is a pure
+function of (options, rolled graph state), so a Universal Tracker fake-regen
+reproduces the same set (the created-location set is now per-seed-variable; UT
+relies on this matching). Result: all-tricks-off + `full` now GENERATES (drops
+the 8 speedboost pickups) instead of erroring, while `full`'s reachability
+guarantee still holds over every AP-tracked location. The old up-front
+`OptionError` (naming the trick + the raise-the-trick / use-minimal fixes) is
+gone. Nothing is dropped for the default Beginner config (146 full gens still
+pass). Tests: `test_door_start.py` (full drops the 8 + none created / minimal
+drops nothing / only-Suitless full drops nothing / default full drops nothing),
+`test_ut_tracker.py::test_ut_regen_reproduces_dropped_locations` (fake-regen
+reproduces the drop set + created-location sets match),
+`test_graph_logic.py::test_unreachable_pickup_locations_all_tricks_disabled`
+(exact 8-set + `gating=={"Speedbooster"}`, AP-free — the oracle is unchanged). Tests: `tests/test_trick_level.py` (rewritten:
 effective-level map + symbolic-atom resolution + artifact carries trick atoms),
 `tests/test_rule_compiler.py` + `scripts/tests/test_extract_dread_rules.py`
 (trick translation now symbolic, DNF round-trip, sort-key penalty). Faithful win:

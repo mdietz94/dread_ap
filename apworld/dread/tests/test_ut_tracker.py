@@ -185,3 +185,36 @@ def test_ut_regen_reachable_set_matches_seed_not_a_reroll():
     reach_u = _reachable_locations(regen, _DOOR_SENSITIVE_KIT)
     assert reach_u == reach_a, "UT regen must reproduce the seed's reachable set"
     assert reach_u != reach_b, "UT regen must NOT collapse to the re-roll's set"
+
+
+@runtime
+def test_ut_regen_reproduces_dropped_locations():
+    """When ``accessibility: full`` + all-tricks-off drops the unreachable
+    speedboost pickups (World._compute_dropped_locations), the created-location
+    set becomes per-seed-variable. UT's fake-regen must reproduce the SAME drop
+    set — otherwise its created locations wouldn't match the multidata and
+    reachability would be miscomputed. The drop is a pure function of the
+    (restored) options + graph state, so a regen from slot_data restoring those
+    reproduces it exactly, even seeded differently and starting from defaults."""
+    from test.general import setup_multiworld, gen_steps
+    from dread.Tricks import VISIBLE_TRICKS
+    from dread.World import DreadWorld
+
+    opts = {t.attr: 0 for t in VISIBLE_TRICKS}
+    opts["accessibility"] = "full"
+
+    orig = setup_multiworld(DreadWorld, gen_steps, seed=2, options=opts)
+    ow = orig.worlds[1]
+    assert ow._dropped_locations, "all-tricks-off + full should drop some pickups"
+
+    slot_data = ow.fill_slot_data()
+    regen = _setup_with_passthrough(
+        DreadWorld, options={}, seed=99999, passthrough=slot_data)
+    rw = regen.worlds[1]
+
+    assert rw._ut is True
+    assert rw._dropped_locations == ow._dropped_locations
+    # The created-location sets must match too (the drop is what makes them
+    # per-seed-variable, so this is the property UT actually relies on).
+    assert {loc.name for loc in regen.get_locations(1)} == \
+        {loc.name for loc in orig.get_locations(1)}
