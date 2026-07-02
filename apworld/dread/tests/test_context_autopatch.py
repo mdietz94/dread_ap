@@ -366,3 +366,89 @@ async def test_auto_patch_no_placements_in_slot_data_skips_and_logs(
     assert ran["called"] is False
     assert any("no placements" in r.message for r in caplog.records)
 
+
+# ---- patcher-Python race guard (real _run_patch) ------------------------
+
+@pytest.mark.asyncio
+async def test_run_patch_aborts_when_no_patcher_python(
+    ctx, tmp_path, monkeypatch, caplog
+):
+    """_run_patch must NOT call patch() when no usable patcher Python is
+    resolvable — otherwise patch() falls back to sys.executable (the frozen
+    Archipelago launcher) and dies with a baffling 'unrecognized arguments: -m'
+    argparse error. It should re-resolve once (winning the startup race), then
+    abort with an error status when still unresolved.
+    """
+    import dread.patcher_pipeline as pp
+    import dread._setup.build as build
+
+    called = {"patch": False}
+
+    def _fake_patch(**kwargs):
+        called["patch"] = True
+        raise AssertionError("patch() must not run without a patcher Python")
+
+    monkeypatch.setattr(pp, "patch", _fake_patch)
+    monkeypatch.setattr(build, "resolve_build_outputs", lambda: None)
+
+    ctx.dreadvania_python = None
+    ctx.slot_data = {"placements": []}
+
+    ensured = {"called": False}
+
+    async def _fake_ensure():
+        ensured["called"] = True
+        ctx.patcher_python_status = "deps not installed in any detected Python"
+        # deliberately leaves dreadvania_python None
+
+    ctx._ensure_patcher_python = _fake_ensure  # type: ignore[assignment]
+
+    caplog.set_level(logging.ERROR, logger="Client")
+    await ctx._run_patch(str(tmp_path / "deploy"), str(tmp_path / "romfs"))
+
+    assert ensured["called"] is True, "should re-resolve to win the startup race"
+    assert called["patch"] is False
+    assert ctx.state.patch_status_level == "error"
+    assert "deps not installed" in ctx.state.patch_status_msg
+    assert any("no usable patcher Python" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_run_patch_proceeds_once_python_resolved(
+    ctx, tmp_path, monkeypatch
+):
+    """When _ensure_patcher_python resolves a real interpreter (winning the
+    startup race), _run_patch proceeds to call patch() with it."""
+    import dread.patcher_pipeline as pp
+    import dread._setup.build as build
+
+    captured: dict = {}
+
+    def _fake_patch(**kwargs):
+        captured.update(kwargs)
+
+        class _R:
+            ok = True
+            message = "patched"
+            patcher_input_path = None
+            cli_stderr_tail = ""
+            notes: list = []
+
+        return _R()
+
+    monkeypatch.setattr(pp, "patch", _fake_patch)
+    monkeypatch.setattr(build, "resolve_build_outputs", lambda: None)
+
+    ctx.dreadvania_python = None
+    ctx.slot_data = {"placements": []}
+
+    async def _fake_ensure():
+        ctx.dreadvania_python = "/usr/bin/python3"
+
+    ctx._ensure_patcher_python = _fake_ensure  # type: ignore[assignment]
+
+    await ctx._run_patch(str(tmp_path / "deploy"), str(tmp_path / "romfs"))
+
+    assert captured.get("python_executable") == "/usr/bin/python3"
+    assert ctx.state.patch_status_level == "ok"
+

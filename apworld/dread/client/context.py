@@ -947,6 +947,27 @@ class DreadContext(CommonContext):
 
         log.info("auto-patch: starting…")
 
+        # The patcher runs `<py> -m open_dread_rando`, so it needs a REAL Python
+        # interpreter. When the client IS the frozen Archipelago launcher,
+        # sys.executable is not usable and self.dreadvania_python must be
+        # resolved first. _ensure_patcher_python runs at startup, but auto-patch
+        # fires on AP-connect and can win that race — so (re)resolve here if it
+        # hasn't produced a usable interpreter yet, then abort with an
+        # actionable status rather than letting patch() invoke the launcher.
+        if not self.dreadvania_python:
+            await self._ensure_patcher_python()
+        if not self.dreadvania_python:
+            detail = self.patcher_python_status or (
+                "No usable Python found for the patcher. Install Python 3 and "
+                "the open_dread_rando deps, then re-run /setup so it records "
+                "the interpreter."
+            )
+            self.state.set_patch_status("error", detail)
+            _ap_log.error(
+                "Auto-patch skipped: no usable patcher Python. Click the "
+                "'Patcher' status at the top for setup steps.")
+            return
+
         # MUST be resolve_build_outputs (prefers the apworld's bundled prebuilt
         # sysmodule), NOT collect_build_outputs (local source-build dir only).
         # The patcher writes the UPSTREAM server-mode subsdk9 into exefs via
