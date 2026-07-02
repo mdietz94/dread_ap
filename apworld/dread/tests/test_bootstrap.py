@@ -84,8 +84,9 @@ def test_warp_guard_defined_before_bootstrap_flag(real_rows):
     assert "function RL.IsInNavRoom" in joined
     assert "function RL.IsInSaveRoom" in joined
     assert "function RL.IsInMapRoom" in joined
+    assert "function RL.IsInFlipperTrap" in joined
     assert "Scenario.OnSubAreaChange" in joined
-    # The four camera tables ship as their own assignment blocks (kept out of
+    # The camera tables ship as their own assignment blocks (kept out of
     # warp_guard.lua so its code block fits the send buffer).
     assert "RL.BossArenas = {" in joined
     assert "collision_camera_063=true" in joined  # Kraid arena
@@ -95,6 +96,8 @@ def test_warp_guard_defined_before_bootstrap_flag(real_rows):
     assert "collision_camera_076=true" in joined  # s010_cave North Save Station
     assert "RL.MapRooms = {" in joined
     assert "collision_camera_030=true" in joined  # s020_magma Map Station
+    assert "RL.FlipperTrapRooms = {" in joined
+    assert "collision_camera_007=true" in joined  # s050_forest Flipper Room
     # No TEMPLATE() holes survive anywhere in the bootstrap.
     assert "TEMPLATE(" not in joined
     guard_idx = next(i for i, b in enumerate(blocks)
