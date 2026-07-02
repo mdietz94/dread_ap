@@ -62,6 +62,35 @@ def _should_skip(path: Path) -> bool:
     return any(part in SKIP_NAMES for part in path.parts)
 
 
+def _stamp_and_check_version(version: str | None) -> None:
+    """Keep the shipped apworld version honest.
+
+    Nothing ties ``world_version`` (archipelago.json) and ``__version__``
+    (__init__.py) to the git release tag, and they've drifted before. When
+    packaging a release, pass ``--version X.Y.Z`` (the same string you give
+    ``gh release create vX.Y.Z``) and both files are stamped from it. Either
+    way, before we build we assert the two fields agree — a mismatch means the
+    manifest would ship a different version than ``__init__``, so we fail loudly
+    instead of baking the drift into the artifact.
+    """
+    from set_version import read_versions, set_version  # local import: same dir
+
+    if version is not None:
+        v = set_version(version)
+        print(f"stamped world_version + __version__ = {v}")
+
+    world_version, dunder = read_versions()
+    if world_version != dunder:
+        sys.stderr.write(
+            f"\nversion drift: archipelago.json world_version={world_version!r} "
+            f"but __init__.__version__={dunder!r}. Run\n"
+            f"    python scripts/set_version.py <X.Y.Z>\n"
+            "(or pass --version) so the packaged apworld ships one version.\n"
+        )
+        sys.exit(1)
+    print(f"packaging apworld version {world_version}")
+
+
 def _iter_vendored_patcher() -> list[tuple[Path, Path]]:
     """List ``(absolute_source_path, relative_path_within_open_dread_rando)``
     for every file we ship inside the apworld's bundled patcher copy.
@@ -273,6 +302,13 @@ def main(argv: list[str] | None = None) -> int:
              "Only valid with --mode apworld.",
     )
     parser.add_argument(
+        "--version",
+        default=None,
+        help="Stamp this release version (e.g. 0.19.0, matching the "
+             "'gh release create vX.Y.Z' tag) into archipelago.json "
+             "world_version and __init__.__version__ before building.",
+    )
+    parser.add_argument(
         "--no-build-sysmodule",
         action="store_true",
         help="Skip building subsdk9 + main.npdm and reuse whatever is already "
@@ -281,6 +317,11 @@ def main(argv: list[str] | None = None) -> int:
              "job and staged them).",
     )
     args = parser.parse_args(argv)
+
+    # Release artifacts (apworld mode) must ship a single, tag-matching
+    # version. Stamp when --version is given and always guard against drift.
+    if args.mode == "apworld" or args.version is not None:
+        _stamp_and_check_version(args.version)
 
     _ensure_logic_graph()
     _ensure_prebuilt_sysmodule(args.no_build_sysmodule)

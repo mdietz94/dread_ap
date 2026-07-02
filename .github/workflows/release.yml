@@ -11,11 +11,22 @@ name: Release apworld
 #
 # Until that's solved (e.g. lifting the prebuilt toolchain out of devkitPro's
 # official Docker image `devkitpro/devkita64` via `docker cp`, or running the
-# whole job in a `container:`), releases are built and published LOCALLY:
+# whole job in a `container:`), releases are built and published LOCALLY. Type
+# the version ONCE and let scripts/release.py derive everything else — it stamps
+# the apworld manifest (archipelago.json world_version + __init__.__version__),
+# commits the bump, tags `vX.Y.Z`, and builds dist/dread.apworld from that tag:
 #
-#   python scripts/cache_randovania_logic.py
-#   python scripts/install_apworld.py --mode apworld --output dist/dread.apworld
-#   gh release create vX.Y.Z dist/dread.apworld --generate-notes
+#   python scripts/release.py 0.19.0             # build + commit + tag
+#   git push && git push origin v0.19.0          # then push + publish
+#   gh release create v0.19.0 dist/dread.apworld --generate-notes
+#
+# Or in one shot (pushes still manual): python scripts/release.py 0.19.0 --publish
+#
+# The manifest can't drift from the tag: the version is the single input, and
+# the build re-asserts world_version == __version__ before zipping. The lower-
+# level pieces are still callable directly if you need them —
+# scripts/set_version.py (stamp only) and
+# scripts/install_apworld.py --mode apworld --version X.Y.Z (stamp + build).
 #
 # This workflow is kept on `workflow_dispatch` so the toolchain fix can be
 # iterated without cutting a tag (manual runs upload an artifact, not a release).
