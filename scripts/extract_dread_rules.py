@@ -208,6 +208,39 @@ MUTEX_TOGGLE_EVENTS: frozenset[str] = frozenset({
     "s020_magma:default:deviceheat_camerafar_000",
 })
 
+# One-way "flipper" rotatables: stepping on / turning them rotates the platform
+# 90 degrees IRREVERSIBLY (Wikitroid: "permanently sealing two parts of the room
+# from each other"), depositing you on one specific side. Randovania models the
+# optimistic "turn it and land on the USEFUL side" traversal behind a
+# ``NOT HighDanger`` pass (its own comment: "assumes there are no bad
+# consequences"). With Highly Dangerous Logic off — our only config — that pass
+# is always-true, so the monotonic sweep credits the useful post-turn position as
+# PERMANENTLY reachable. That is a false positive: once the flipper is turned the
+# wrong way (or you leave without capitalising) the useful side is gone, and
+# ``/warp`` cannot restore it (the flip persists in the save). Observed live in
+# Artaria Screw Attack Room — a Spin+Screw player was told the pickup was
+# reachable via the flipper, then stranded in the water with no non-Gravity way
+# up (Universal Tracker showed it "reachable" off this very edge).
+#
+# Fix: within these rooms resolve BOTH the ``NOT HighDanger`` assume-safe pass
+# AND the rotatable's own ``NOT <event>`` turn-edge co-guard PESSIMISTICALLY
+# (Impossible instead of Trivial). The turn edge is ``OR[NOT HighDanger,
+# NOT <event>]`` — it needs BOTH disjuncts neutralised to sever (dropping only
+# HighDanger leaves the co-guard trivial). Severing it forces the pickup onto its
+# DURABLE post-rotation access (the Gravity/Space climb, or an alternate
+# entrance). Crucially this costs NO legitimate leniency: every OTHER
+# ``NOT <event>`` use in Screw Attack Room is additionally AND-ed with positive
+# ``HighDanger`` (already Impossible for us), so only the optimistic turn edge is
+# affected. ``assert_rotatable_model_soundness`` is the tripwire.
+#
+# Ghavoran Flipper Room (GhavoranSupersRotatable) is the same CLASS but its
+# turn-edges are structured differently (gated on ``Teleporters`` / grapple-box
+# events, not HighDanger), so it needs its own analysis and is deliberately NOT
+# curated here yet.
+ONE_WAY_ROTATABLE_EVENTS: frozenset[str] = frozenset({
+    "ArtariaSARotatable",
+})
+
 
 def _negated_event_requirement(event_name: str) -> dict:
     """Resolve ``NOT <event>`` to an AST node.
@@ -220,6 +253,20 @@ def _negated_event_requirement(event_name: str) -> dict:
     drop is explicit and auditable rather than a bare ``return TRIVIAL``.
     """
     return TRIVIAL
+
+
+def _rotatable_pessimistic_neg(sub: dict) -> frozenset[str]:
+    """Pessimistic-negation set for a sub-area (room).
+
+    If the room hosts a one-way rotatable event node (``ONE_WAY_ROTATABLE_EVENTS``),
+    return ``{"HighDanger"}`` plus that room's rotatable event short_names, so
+    ``translate_requirement`` severs the optimistic "assume the turn works out"
+    flipper edge. Empty otherwise (normal Trivial negation everywhere else).
+    """
+    rot = {n.get("event_name") for n in sub["nodes"].values()
+           if n.get("node_type") == "event"
+           and n.get("event_name") in ONE_WAY_ROTATABLE_EVENTS}
+    return frozenset({"HighDanger", *rot}) if rot else frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -370,10 +417,16 @@ def translate_requirement(
     header: Header,
     *,
     template_stack: tuple[str, ...] = (),
+    pessimistic_neg: frozenset[str] = frozenset(),
 ) -> dict:
     """Translate a Randovania requirement tree node into our AST.
 
     `req` is None for missing connections (treated as Impossible).
+
+    ``pessimistic_neg`` names resources (``"HighDanger"`` and one-way rotatable
+    event short_names) whose NEGATION should resolve to Impossible rather than
+    the usual Trivial, scoped to a one-way-rotatable room. See
+    ``ONE_WAY_ROTATABLE_EVENTS``.
     """
     if req is None:
         return IMPOSSIBLE
@@ -381,12 +434,14 @@ def translate_requirement(
     data = req.get("data", {})
 
     if t == "and":
-        children = [translate_requirement(c, header, template_stack=template_stack)
+        children = [translate_requirement(c, header, template_stack=template_stack,
+                                          pessimistic_neg=pessimistic_neg)
                     for c in data.get("items", [])]
         return mk_and(children)
 
     if t == "or":
-        children = [translate_requirement(c, header, template_stack=template_stack)
+        children = [translate_requirement(c, header, template_stack=template_stack,
+                                          pessimistic_neg=pessimistic_neg)
                     for c in data.get("items", [])]
         return mk_or(children)
 
@@ -415,6 +470,7 @@ def translate_requirement(
         return translate_requirement(
             body, header,
             template_stack=template_stack + (name,),
+            pessimistic_neg=pessimistic_neg,
         )
 
     if t == "resource":
@@ -431,6 +487,11 @@ def translate_requirement(
             if rname == "DoorLocks":
                 return {"type": "misc", "name": "DoorLocks",
                         "negate": negate}
+            # One-way-rotatable room: the ``NOT HighDanger`` "assume no bad
+            # consequences" pass is resolved PESSIMISTICALLY to sever the
+            # optimistic flipper turn edge. See ONE_WAY_ROTATABLE_EVENTS.
+            if negate and rname in pessimistic_neg:
+                return IMPOSSIBLE
             val = MISC_RESOURCE_VALUES.get(rname)
             if val is None:
                 print(f"  WARN: unknown misc resource {rname!r}; assuming present",
@@ -454,6 +515,12 @@ def translate_requirement(
             if rtype == "events":
                 if rname not in header.events_by_name:
                     raise CompileError(f"unknown event {rname!r}")
+                # One-way-rotatable room: the rotatable's own ``NOT <event>``
+                # co-guard on the turn edge is resolved PESSIMISTICALLY so the
+                # edge severs (the sibling ``NOT HighDanger`` disjunct alone is
+                # not enough). See ONE_WAY_ROTATABLE_EVENTS.
+                if rname in pessimistic_neg:
+                    return IMPOSSIBLE
                 return _negated_event_requirement(rname)
             return TRIVIAL
 
@@ -662,13 +729,14 @@ def build_graph(
     region_name = area_data["name"]
 
     for sub_name, sub in area_data["areas"].items():
+        pneg = _rotatable_pessimistic_neg(sub)
         for n_name, n in sub["nodes"].items():
             key = (sub_name, n_name)
             nodes[key] = n
             for tgt_name, req in n.get("connections", {}).items():
                 tgt = (sub_name, tgt_name)
                 edges.setdefault(key, []).append(
-                    (tgt, translate_requirement(req, header)),
+                    (tgt, translate_requirement(req, header, pessimistic_neg=pneg)),
                 )
 
     # Add inter-area edges for docks (within the same region) plus
@@ -1226,12 +1294,14 @@ def emit_graph(
     for region, ad in areas.items():
         for sub_name, sub in ad["areas"].items():
             area_cc[(region, sub_name)] = sub.get("extra", {}).get("asset_id")
+            pneg = _rotatable_pessimistic_neg(sub)
             for n_name, n in sub["nodes"].items():
                 key = (region, sub_name, n_name)
                 nodes[key] = n
                 for tgt, req in n.get("connections", {}).items():
                     conn_edges.append((key, (region, sub_name, tgt),
-                                       translate_requirement(req, header)))
+                                       translate_requirement(req, header,
+                                                             pessimistic_neg=pneg)))
 
     # Dock edges + per-side metadata. Rando-eligible doors emit a symbolic atom;
     # transports (elevator/shuttle) are pulled out into a shuffle pool (their
@@ -1512,6 +1582,50 @@ def assert_toggle_model_soundness(areas: dict[str, dict]) -> None:
                     )
 
 
+def assert_rotatable_model_soundness(areas: dict[str, dict], header: Header) -> None:
+    """Tripwire for the one-way-rotatable pessimistic drop (see
+    ``ONE_WAY_ROTATABLE_EVENTS``). Raises ``CompileError`` if:
+
+    1. **Stale curation.** A curated rotatable event no longer exists as an event
+       node upstream (renamed/removed) — the drop would silently target nothing.
+    2. **Silent no-op.** In a curated room, the pessimistic translation changes
+       NO edge (every edge compiles identically with/without the drop). That
+       means upstream restructured the flipper's optimistic turn edge (e.g.
+       dropped the ``NOT HighDanger`` guard), so the false-positive it defends
+       against may have moved — re-verify by hand rather than ship a dead guard.
+    """
+    present: set[str] = set()
+    effective: set[str] = set()
+    for region, ad in areas.items():
+        for sub_name, sub in ad["areas"].items():
+            rot = {n.get("event_name") for n in sub["nodes"].values()
+                   if n.get("node_type") == "event"
+                   and n.get("event_name") in ONE_WAY_ROTATABLE_EVENTS}
+            if not rot:
+                continue
+            present |= rot
+            pneg = _rotatable_pessimistic_neg(sub)
+            for n in sub["nodes"].values():
+                for req in n.get("connections", {}).values():
+                    if (translate_requirement(req, header)
+                            != translate_requirement(req, header,
+                                                     pessimistic_neg=pneg)):
+                        effective |= rot
+                        break
+    missing = set(ONE_WAY_ROTATABLE_EVENTS) - present
+    if missing:
+        raise CompileError(
+            "one-way-rotatable soundness: curated event(s) "
+            f"{sorted(missing)} not found as event nodes upstream — "
+            "stale ONE_WAY_ROTATABLE_EVENTS.")
+    noop = present - effective
+    if noop:
+        raise CompileError(
+            "one-way-rotatable soundness: pessimistic drop is a no-op for "
+            f"{sorted(noop)} — upstream restructured the flipper turn edge; "
+            "re-verify the false-positive guard by hand.")
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -1581,6 +1695,11 @@ def main(argv: list[str] | None = None) -> int:
     # Prove the mutually-exclusive thermal-toggle drop is sound for this version
     # (and trip on any new unmodelled case). See MUTEX_TOGGLE_EVENTS.
     assert_toggle_model_soundness(all_area_data)
+
+    # Trip if a curated one-way rotatable disappeared or its optimistic turn edge
+    # was restructured upstream (making our pessimistic drop a no-op). See
+    # ONE_WAY_ROTATABLE_EVENTS.
+    assert_rotatable_model_soundness(all_area_data, header)
 
     # Victory condition: translate the raw RDV goal into our AST with event atoms
     # intact. The graph model handles them natively via can_reach_region("Event:X").

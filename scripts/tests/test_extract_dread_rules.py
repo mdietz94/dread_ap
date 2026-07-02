@@ -20,9 +20,11 @@ from extract_dread_rules import (  # noqa: E402
     Header,
     IMPOSSIBLE,
     MUTEX_TOGGLE_EVENTS,
+    ONE_WAY_ROTATABLE_EVENTS,
     RDV_ITEM_TO_AP,
     TRIVIAL,
     absorb_or,
+    assert_rotatable_model_soundness,
     assert_toggle_model_soundness,
     ast_to_dnf,
     dnf_to_ast,
@@ -463,3 +465,90 @@ def test_toggle_soundness_trips_when_negation_is_sole_gate():
     del area["Cataris"]["areas"]["Thermal Device Room North"]["nodes"]["SrcClean"]
     with pytest.raises(CompileError, match="no longer sound here"):
         assert_toggle_model_soundness(area)
+
+
+# -- one-way rotatable flipper (ONE_WAY_ROTATABLE_EVENTS) --------------------
+
+_ROT = "ArtariaSARotatable"
+
+
+def _turn_edge_req() -> dict:
+    """The Screw Attack Room flipper turn edge: OR[NOT HighDanger, NOT <rot>].
+    Both disjuncts trivialise by default, so the edge is falsely free."""
+    return {"type": "or", "data": {"items": [
+        {"type": "resource", "data": {"type": "misc", "name": "HighDanger",
+                                      "negate": True}},
+        {"type": "resource", "data": {"type": "events", "name": _ROT,
+                                      "negate": True}},
+    ]}}
+
+
+def test_rotatable_curation_includes_screw_attack():
+    assert _ROT in ONE_WAY_ROTATABLE_EVENTS
+
+
+def test_rotatable_turn_edge_trivial_without_pessimism():
+    """Default (non-rotatable-room) translation still lets the turn edge trivialise
+    — the false-positive behaviour we sever only inside curated rooms."""
+    hdr = _header_with_events(_ROT)
+    assert translate_requirement(_turn_edge_req(), hdr) == TRIVIAL
+
+
+def test_rotatable_turn_edge_severed_with_pessimism():
+    """Inside a curated rotatable room BOTH disjuncts resolve to Impossible, so
+    the optimistic 'assume the turn works out' edge is severed. Dropping only one
+    (HighDanger OR the event) would leave the other trivial and the edge free —
+    hence both must be in the pessimistic set."""
+    hdr = _header_with_events(_ROT)
+    pneg = frozenset({"HighDanger", _ROT})
+    assert translate_requirement(_turn_edge_req(), hdr, pessimistic_neg=pneg) == IMPOSSIBLE
+    # Dropping only HighDanger is NOT enough (the NOT-event co-guard stays trivial).
+    assert translate_requirement(
+        _turn_edge_req(), hdr, pessimistic_neg=frozenset({"HighDanger"})) == TRIVIAL
+
+
+def test_rotatable_pessimism_leaves_positive_event_untouched():
+    """Only NEGATED atoms flip; a positive event reference and normal negated
+    events elsewhere are unaffected."""
+    hdr = _header_with_events(_ROT, "Other Event")
+    pneg = frozenset({"HighDanger", _ROT})
+    pos = {"type": "resource", "data": {"type": "events", "name": _ROT, "amount": 1}}
+    assert translate_requirement(pos, hdr, pessimistic_neg=pneg) == {
+        "type": "event", "name": _ROT}
+    other_neg = {"type": "resource", "data": {"type": "events", "name": "Other Event",
+                                              "negate": True}}
+    assert translate_requirement(other_neg, hdr, pessimistic_neg=pneg) == TRIVIAL
+
+
+def _rot_area(with_turn_edge: bool = True) -> dict:
+    """Minimal area hosting the rotatable event with the severable turn edge."""
+    turn = _turn_edge_req() if with_turn_edge else _clean()
+    return {
+        "Artaria": {"areas": {"Screw Attack Room": {"nodes": {
+            "EventRot": {"node_type": "event", "event_name": _ROT,
+                         "connections": {}},
+            "Entrance": {"node_type": "generic",
+                         "connections": {"EventRot": turn}},
+        }}}},
+    }
+
+
+def test_rotatable_soundness_passes_on_real_turn_edge():
+    hdr = _header_with_events(_ROT)
+    assert_rotatable_model_soundness(_rot_area(with_turn_edge=True), hdr)
+
+
+def test_rotatable_soundness_trips_on_stale_curation():
+    """If the curated event no longer exists upstream, fail loudly."""
+    hdr = _header_with_events(_ROT)
+    area = {"Artaria": {"areas": {"Empty Room": {"nodes": {}}}}}
+    with pytest.raises(CompileError, match="stale ONE_WAY_ROTATABLE_EVENTS"):
+        assert_rotatable_model_soundness(area, hdr)
+
+
+def test_rotatable_soundness_trips_on_silent_noop():
+    """If the room hosts the rotatable but no edge is actually changed by the
+    pessimistic drop (upstream restructured the turn edge), fail loudly."""
+    hdr = _header_with_events(_ROT)
+    with pytest.raises(CompileError, match="no-op"):
+        assert_rotatable_model_soundness(_rot_area(with_turn_edge=False), hdr)

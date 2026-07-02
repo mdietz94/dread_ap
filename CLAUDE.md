@@ -786,6 +786,53 @@ device-poke client command was added (it would need unvalidated RE of the
 TRIVIAL, unknown-negated-event raises, soundness passes on the real graph, trips
 on a synthetic new pair + on a synthetic sole-gate node).
 
+UPDATE (one-way rotatable "flipper" false-positive — FIXED): a DIFFERENT toggle
+class from the thermal mutex. Randovania models one-way flipper platforms
+(stepping on them rotates 90° IRREVERSIBLY and seals two room halves; reconnect
+only with Screw Attack) with an OPTIMISTIC "turn it and land on the useful side"
+traversal gated on `NOT misc:HighDanger` (RDV's own comment: "assumes there are
+no bad consequences"). With Highly Dangerous Logic off — our only config —
+`NOT HighDanger` is always-true, so the monotonic sweep credited the useful
+post-turn position as PERMANENTLY reachable. FALSE POSITIVE: once the flipper is
+turned the wrong way (or you leave before capitalising) the useful side is gone,
+and `/warp` CANNOT restore it (the flip persists in the save — unlike the
+reversible thermal device). It also misled Universal Tracker (`/explain` showed
+the pickup "reachable" off that very edge). Confirmed live in Artaria Screw Attack
+Room: a Spin Boost + Screw Attack player (no Gravity/Space/Speed, all tricks
+disabled) was told the Screw Attack pickup was reachable, then stranded in the
+water. The compiled false path was `elevator-comp → flipper-event-node [TRIVIAL]
+→ Total Recharge [TRIVIAL] → up with Spin`. ROOT CAUSE: the turn edge is
+`OR[NOT HighDanger, NOT ArtariaSARotatable]` and we drop BOTH disjuncts to TRIVIAL
+(`NOT HighDanger` via `MISC_RESOURCE_VALUES`, `NOT <event>` via
+`_negated_event_requirement`) — so removing only the HighDanger atom (the first
+hypothesis) leaves the co-guard trivial and the edge stays free. FIX:
+`ONE_WAY_ROTATABLE_EVENTS` (`scripts/extract_dread_rules.py`, starts with
+`ArtariaSARotatable`) curates the flipper events; `_rotatable_pessimistic_neg`
+computes a per-room set and `translate_requirement(..., pessimistic_neg=...)`
+resolves BOTH `NOT HighDanger` AND the room's rotatable `NOT <event>` to
+IMPOSSIBLE (threaded through the emit loop + `build_graph`). This severs ONLY the
+optimistic turn edge — every OTHER `NOT ArtariaSARotatable` use in the room is
+additionally AND-ed with positive `HighDanger` (already impossible for us), so no
+legitimate pre-rotate leniency is lost. The pickup then falls onto its DURABLE
+post-rotation access (the Gravity/Space climb `Under-left-blocks → Total Recharge`,
+or an alternate entrance). Verified: severed edge is IMPOSSIBLE in the graph; A/B
+from the elevator side with the user's kit (reachable True→False); full-loadout
+oracle `unreachable_pickup_locations` = 0 (no `accessibility: full` regression);
+pickup still reachable at full loadout. `assert_rotatable_model_soundness`
+tripwire (called from `main`) trips on stale curation or a silent no-op (upstream
+restructuring the turn edge). STILL OPEN: Ghavoran Flipper Room
+(`GhavoranSupersRotatable`) is the same class but its turn edges are gated on
+`misc:Teleporters`/grapple-box events (not HighDanger) — RDV even warns "would
+always lead to an incompletable game" and it interacts with transport rando — so
+it needs its own analysis before curating. NOTE: `scripts/graph_to_compiled_rules.py`
+is a STALE offline tool (expects graph schema 5; graph is now 7) — the RUNTIME
+consumes `logic_graph.json` directly via `graph_logic.py` (schema 7), so this fix
+lands through extraction + `graph_logic`, NOT `compiled_rules.json`. Needs
+`python scripts/extract_dread_rules.py --all` to regen the gitignored graph.
+Tests: `test_extract_dread_rules` (curation, turn-edge severed only with BOTH
+atoms pessimistic, HighDanger-only insufficient, positive-event untouched,
+soundness passes/stale/no-op). See [[dread-one-way-rotatable-flippers]].
+
 UPDATE (generalized `/warp <region>` — the chosen runtime fix for the thermal
 trap): the thermal toggle can still strand a player at RUNTIME (activate the
 lower device → both `NOT deviceheat_002` exits from `Past Magnet Floor` close;
