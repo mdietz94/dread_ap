@@ -389,3 +389,75 @@ def test_patcher_error_hint_translates_not_a_valid_version():
 
 def test_patcher_error_hint_none_for_unrelated_error():
     assert pp._patcher_error_hint("Traceback: some other failure") is None
+
+
+# --- frozen-launcher interpreter guard --------------------------------------
+
+
+def test_patch_refuses_frozen_launcher_by_sys_frozen(monkeypatch, tmp_path):
+    """When the client is a frozen AppImage/PyInstaller bundle (sys.frozen) and
+    no python_executable was resolved, sys.executable is the Archipelago
+    launcher — NOT a Python. patch() must refuse with an actionable message and
+    NEVER spawn `<launcher> -m open_dread_rando ...` (which the launcher's own
+    argparse rejects with 'unrecognized arguments: -m' → exit 2)."""
+    mod_dir = tmp_path / "mods" / "contents" / "010093801237c000" / "DreadRandovania"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    spawned = {"ran": False}
+
+    def _fake_run(cmd, **kwargs):
+        spawned["ran"] = True
+        return _FakeProc()
+
+    monkeypatch.setattr(pp, "verify_romfs_version", lambda d: None)
+    monkeypatch.setattr(pp.subprocess, "run", _fake_run)
+    monkeypatch.setattr(pp.sys, "frozen", True, raising=False)
+
+    result = pp.patch(
+        placements=_minimal_placements(),
+        dreadvania_install_dir=mod_dir,
+        vanilla_romfs_dir=romfs,
+        python_executable=None,  # forces the sys.executable fallback
+    )
+
+    assert not result.ok
+    assert "frozen Archipelago launcher" in result.message
+    assert "pip install" in result.message
+    assert not spawned["ran"], "patch() must not exec the frozen launcher"
+
+
+def test_patch_refuses_launcher_by_name(monkeypatch, tmp_path):
+    """Name-based backstop: some frozen builds don't set sys.frozen, but
+    sys.executable still basenames to the launcher. With deps importable
+    in-process (check_dependencies passes) the frozen branch wouldn't fire, so
+    the describe_python name check must still refuse — never exec the launcher."""
+    mod_dir = tmp_path / "mods" / "contents" / "010093801237c000" / "DreadRandovania"
+    mod_dir.mkdir(parents=True)
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+
+    spawned = {"ran": False}
+
+    def _fake_run(cmd, **kwargs):
+        spawned["ran"] = True
+        return _FakeProc()
+
+    monkeypatch.setattr(pp, "verify_romfs_version", lambda d: None)
+    monkeypatch.setattr(pp, "check_dependencies", lambda py=None: None)
+    monkeypatch.setattr(pp.subprocess, "run", _fake_run)
+    # sys.executable basenames to the launcher, but this build didn't set frozen.
+    monkeypatch.setattr(pp.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(pp.sys, "executable", "/opt/Archipelago/ArchipelagoLauncher")
+
+    result = pp.patch(
+        placements=_minimal_placements(),
+        dreadvania_install_dir=mod_dir,
+        vanilla_romfs_dir=romfs,
+        python_executable=None,  # falls back to sys.executable (the launcher)
+    )
+
+    assert not result.ok
+    assert "frozen Archipelago launcher" in result.message
+    assert not spawned["ran"], "patch() must not exec the frozen launcher"

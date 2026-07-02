@@ -1087,6 +1087,29 @@ def patch(
     # 3: run the upstream patcher CLI. Use absolute paths — relative
     # --output-path triggers a recursive romfs/build/ artifact upstream.
     py = python_executable or sys.executable
+    # Guard: the frozen Archipelago launcher is NOT a Python interpreter. When
+    # the client runs inside AP's PyInstaller/AppImage bundle, sys.executable
+    # points at the launcher, so a `<launcher> -m open_dread_rando ...` fallback
+    # is parsed by the launcher's OWN argparse and dies with a baffling
+    # "unrecognized arguments: -m ..." (exit 2). Refuse up front with an
+    # actionable message instead of exec'ing a doomed command. The caller
+    # (_run_patch) resolves a real interpreter first; this backstops a direct
+    # call / a lost race that left python_executable unset.
+    launcher_fallback = python_executable is None and getattr(sys, "frozen", False)
+    if launcher_fallback or "frozen Archipelago launcher" in describe_python(py):
+        return PatchResult(
+            ok=False,
+            message=(
+                "no usable Python found for the patcher — the only interpreter "
+                "available is the frozen Archipelago launcher, which can't run "
+                "open_dread_rando.\n"
+                "Install Python 3 + the patcher deps, then re-run /setup so it "
+                "records the interpreter (or set `dreadvania_python` in "
+                "host.yaml):\n"
+                f"    pip install {' '.join(PATCHER_RUNTIME_DEPS)}"
+            ),
+            patcher_input_path=patcher_input_path,
+        )
     cmd = [
         py, "-m", "open_dread_rando",
         "--input-path", str(vanilla_romfs_dir.resolve()),
