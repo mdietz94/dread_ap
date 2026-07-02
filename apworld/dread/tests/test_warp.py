@@ -204,6 +204,24 @@ async def test_warp_blocked_in_save_room(ctx):
 
 
 @pytest.mark.asyncio
+async def test_warp_blocked_in_flipper_trap(ctx):
+    bridge = _stub_bridge(
+        ctx, connected=True,
+        response=Response(success=True, payload=b"in_flipper_trap")
+    )
+    msg = await ctx._warp_to_start()
+    assert "blocked" in msg
+    # Must direct the player to a checkpoint reload (the only real fix — /warp
+    # preserves the broken flip), and name the offending rooms.
+    assert "checkpoint" in msg.lower()
+    assert "Flipper Room" in msg or "Spider Magnet" in msg
+    src = next(c.args[0] for c in bridge.run_lua.await_args_list
+               if "Game.LoadScenario" in c.args[0])
+    assert "RL.IsInFlipperTrap and RL.IsInFlipperTrap()" in src
+    assert src.index("RL.IsInFlipperTrap") < src.index("Game.LoadScenario")
+
+
+@pytest.mark.asyncio
 async def test_warp_blocked_cutscene(ctx):
     _stub_bridge(
         ctx, connected=True, response=Response(success=True, payload=b"no_interaction")

@@ -543,15 +543,18 @@ def build_warp_src(scenario_lua: str, actor_lua: str) -> str:
     ``_lua_string``) for a region warp. The guards are identical either way and
     all inspect the CURRENT location, so they apply regardless of destination:
     refuse outside INGAME, out of a boss arena (corrupts the fight), out of a
-    Nav/save/map room (strands the dialog/map box), or mid-cutscene. Each
-    ``RL.IsIn*`` call is nil-guarded so a pre-bootstrap VM degrades to allowing
-    the warp. Returns one of the sentinel strings the caller maps to a message."""
+    Nav/save/map room (strands the dialog/map box), out of a Ghavoran flipper-trap
+    room (a warp preserves the broken flip — only a checkpoint reload fixes it), or
+    mid-cutscene. Each ``RL.IsIn*`` call is nil-guarded so a pre-bootstrap VM
+    degrades to allowing the warp. Returns one of the sentinel strings the caller
+    maps to a message."""
     return (
         'if Game.GetCurrentGameModeID() ~= "INGAME" then return "not_ingame" end '
         'if RL.IsInBossArena and RL.IsInBossArena() then return "in_boss" end '
         'if RL.IsInNavRoom and RL.IsInNavRoom() then return "in_nav" end '
         'if RL.IsInSaveRoom and RL.IsInSaveRoom() then return "in_save" end '
         'if RL.IsInMapRoom and RL.IsInMapRoom() then return "in_map" end '
+        'if RL.IsInFlipperTrap and RL.IsInFlipperTrap() then return "in_flipper_trap" end '
         'if not Scenario.IsUserInteractionEnabled(true) then return "no_interaction" end '
         f'Game.LoadScenario("{WARP_LEVEL_ID}", {scenario_lua}, {actor_lua}, "", 1) '
         'return "ok"'
@@ -722,6 +725,30 @@ MAP_STATION_CAMERAS: dict[str, dict[str, str]] = {}
 for _m in MAP_STATIONS:
     MAP_STATION_CAMERAS.setdefault(_m.scenario, {})[_m.camera] = "Map Station"
 
+# One-way "flipper"-trap rooms — blocked from /warp for the OPPOSITE reason to the
+# boss/Nav/save/map guards. Those are safe hubs where a warp is merely pointless
+# (blocking costs nothing). These two Ghavoran rooms are the reverse: if you turn
+# the Ghavoran flipper (``GhavoranSupersRotatable``) WITHOUT the Spider Magnet
+# platform lowered, the platform rotates irreversibly and the area becomes ENTIRELY
+# stuck. ``/warp`` cannot recover it: ``Game.LoadScenario`` preserves the in-memory
+# Blackboard (the flip persists across the warp — same reason it preserves your
+# inventory), so warping only relocates Samus while leaving the room broken. The
+# ONLY fix is to LOAD FROM THE LAST CHECKPOINT (the title-screen "Continue"), which
+# reloads the SAVED Blackboard and resets the flipper. So we refuse /warp here and
+# tell the player to reload — otherwise a reflexive /warp (then a save) can commit
+# the broken state for good. Cameras are the two rooms' collision cameras (RDV
+# sub-area asset_ids for Ghavoran / ``s050_forest``, cross-checked against the boss
+# table's Chozo Warrior Arena = collision_camera_023). Companion logic fix that
+# stops generation from REQUIRING the flip: ``ONE_WAY_ROTATABLE_EVENTS`` in
+# scripts/extract_dread_rules.py (Artaria Screw Attack Room; Ghavoran is the still-
+# open sibling this runtime guard now covers).
+FLIPPER_TRAP_CAMERAS: dict[str, dict[str, str]] = {
+    "s050_forest": {
+        "collision_camera_007": "Flipper Room",
+        "collision_camera_035": "Spider Magnet Elevator",
+    },
+}
+
 # Lua bareword key pattern — scenario ids and collision-camera ids are emitted
 # as table keys (`{s020_magma={collision_camera_063=true}}`), so both must be
 # valid identifiers or the rendered Lua is malformed.
@@ -768,6 +795,12 @@ def build_map_rooms_lua_table() -> str:
     """Render :data:`MAP_STATION_CAMERAS` as the ``RL.MapRooms`` table literal
     (emitted as its own bootstrap block)."""
     return _build_camera_table_lua(MAP_STATION_CAMERAS, "map-room")
+
+
+def build_flipper_trap_lua_table() -> str:
+    """Render :data:`FLIPPER_TRAP_CAMERAS` as the ``RL.FlipperTrapRooms`` table
+    literal (emitted as its own bootstrap block, read by ``lua/warp_guard.lua``)."""
+    return _build_camera_table_lua(FLIPPER_TRAP_CAMERAS, "flipper-trap")
 
 
 def build_set_received_pickups_lua(count: int) -> str:

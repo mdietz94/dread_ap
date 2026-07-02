@@ -50,6 +50,15 @@ function RL.IsInMapRoom()
     return _rl_subarea_in(RL.MapRooms)
 end
 
+-- Ghavoran flipper-trap rooms. Unlike the guards above (safe hubs where a warp is
+-- merely pointless), turning the Ghavoran flipper without the Spider Magnet floor
+-- lowered sticks the area for good; Game.LoadScenario preserves the Blackboard flip
+-- so /warp can't undo it -- only a checkpoint reload can. Refuse /warp here so the
+-- player reloads instead of committing the broken state. Table: RL.FlipperTrapRooms.
+function RL.IsInFlipperTrap()
+    return _rl_subarea_in(RL.FlipperTrapRooms)
+end
+
 -- type-check guards a non-rando / unexpected ROM: if the hook is missing we
 -- skip the wrap (boss detection stays inert, /warp falls back to allowed)
 -- rather than later calling a nil and crashing every subarea transition.

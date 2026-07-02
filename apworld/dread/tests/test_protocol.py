@@ -16,6 +16,7 @@ from dread.client.protocol import (  # noqa: E402
     NAV_ROOM_CAMERAS, build_nav_rooms_lua_table,
     SAVE_STATION_CAMERAS, build_save_rooms_lua_table,
     MAP_STATION_CAMERAS, build_map_rooms_lua_table,
+    FLIPPER_TRAP_CAMERAS, build_flipper_trap_lua_table,
     build_warp_src, WARP_TARGET_BY_CAMERA, WARP_TARGETS_BY_REGION,
     NAV_STATIONS, MAP_STATIONS,
 )
@@ -129,8 +130,28 @@ def test_map_room_keys_are_lua_barewords():
             assert ident.match(cam), cam
 
 
+def test_flipper_trap_lua_table_shape():
+    lua = build_flipper_trap_lua_table()
+    # Nested-table shape; Ghavoran (s050_forest) Flipper Room + Spider Magnet
+    # Elevator collision cameras.
+    assert lua.startswith("{") and lua.endswith("}")
+    assert "s050_forest={" in lua
+    assert "collision_camera_007=true" in lua   # Flipper Room
+    assert "collision_camera_035=true" in lua   # Spider Magnet Elevator
+    assert '"' not in lua
+
+
+def test_flipper_trap_keys_are_lua_barewords():
+    import re as _re
+    ident = _re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+    for scenario, cams in FLIPPER_TRAP_CAMERAS.items():
+        assert ident.match(scenario), scenario
+        for cam in cams:
+            assert ident.match(cam), cam
+
+
 def test_warp_block_tables_disjoint_per_scenario():
-    # Within a single scenario, the four no-warp camera sets must not overlap, or
+    # Within a single scenario, the no-warp camera sets must not overlap, or
     # the guards would contradict / a room would be misclassified. (The SAME camera
     # id in DIFFERENT scenarios is fine — every guard keys on the live scenario.)
     tables = {
@@ -138,6 +159,7 @@ def test_warp_block_tables_disjoint_per_scenario():
         "nav": NAV_ROOM_CAMERAS,
         "save": SAVE_STATION_CAMERAS,
         "map": MAP_STATION_CAMERAS,
+        "flipper": FLIPPER_TRAP_CAMERAS,
     }
     scenarios = set().union(*(t.keys() for t in tables.values()))
     for scenario in scenarios:
@@ -155,6 +177,15 @@ def test_warp_src_guards_in_map_room():
     src = build_warp_src("Init.sStartingScenario", "Init.sStartingActor")
     assert 'RL.IsInMapRoom and RL.IsInMapRoom() then return "in_map"' in src
     assert 'then return "in_save"' in src  # ordering: the other guards survive
+
+
+def test_warp_src_guards_in_flipper_trap():
+    # The /warp src refuses while standing in a Ghavoran flipper-trap room, so a
+    # reflexive warp can't commit the broken flip (the fix is a checkpoint reload).
+    src = build_warp_src("Init.sStartingScenario", "Init.sStartingActor")
+    assert ('RL.IsInFlipperTrap and RL.IsInFlipperTrap() then '
+            'return "in_flipper_trap"') in src
+    assert 'then return "in_boss"' in src  # the other guards survive alongside
 
 
 def test_warp_targets_include_nav_and_map():

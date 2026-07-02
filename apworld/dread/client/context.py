@@ -1491,7 +1491,11 @@ class DreadContext(CommonContext):
         refusing to warp out of a Navigation (Adam) room, a save station, or a
         map station, where the conversation / save dialog / map overlay survives
         the reload and strands an undismissable box (these collision-camera
-        detections live in ``lua/warp_guard.lua``) — and (d)
+        detections live in ``lua/warp_guard.lua``) — (c5)
+        ``not RL.IsInFlipperTrap()`` — refusing to warp out of the Ghavoran
+        Flipper Room / Spider Magnet Elevator, where a mis-turned one-way flipper
+        sticks the area and a warp only preserves the broken flip (the fix is a
+        checkpoint reload, so we direct the player there) — and (d)
         ``Scenario.IsUserInteractionEnabled(true)``, so a /warp issued from the
         title screen, a boss fight, a Nav/save room, or mid-cutscene returns a
         human-readable "blocked" reason instead of firing into invalid state.
@@ -1550,6 +1554,12 @@ class DreadContext(CommonContext):
                 return ("blocked: you're at a map station — a safe room you can "
                         "walk out of, and a warp here can strand the map overlay. "
                         "Step out of the room before /warp.")
+            if body == "in_flipper_trap":
+                return ("blocked: you're in the Ghavoran Flipper Room / Spider "
+                        "Magnet Elevator. If the flipper is stuck, /warp can't fix "
+                        "it — the warp keeps the broken flip. LOAD YOUR LAST "
+                        "CHECKPOINT from the title screen instead; that reloads the "
+                        "save and resets the flipper.")
             if body == "no_interaction":
                 return "blocked: cutscene/cinematic in progress — try again in a moment"
             if body != "ok":
