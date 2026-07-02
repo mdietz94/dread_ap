@@ -741,14 +741,17 @@ class DreadWorld(World):
         return nm
 
     def _explain_entrance_parts(self, entrance, ctx, state) -> list:
-        """Render one hop: ``<src> [reachable] → <dst> : <requirement>``."""
+        """Render one hop: ``<src> [reachable] -> <dst> : <requirement>``.
+
+        The separator is ASCII ``->`` on purpose: the tracker's console font
+        renders a U+2192 arrow as a tofu box."""
         from .ut_explain import _text, _colored, render_ast, _LABEL
         src = entrance.parent_region
         reach = bool(src.can_reach(state)) if (src and state is not None) else None
         mark = ("reachable" if reach else "blocked") if reach is not None else "?"
         parts = [
             _colored(self._region_label(src) if src else "?", _LABEL),
-            _text(f" [{mark}] → "),
+            _text(f" [{mark}] -> "),
             _colored(self._region_label(entrance.connected_region)
                      if entrance.connected_region else "?", _LABEL),
         ]
@@ -806,13 +809,43 @@ class DreadWorld(World):
             suffix = (" — reachable" if ok
                       else " — not reachable") if ok is not None else ""
         parts = [head, _text(suffix)]
+        # When the target is UNREACHABLE, recurse into each blocked source
+        # region so the user can see WHY it's blocked all the way up the chain
+        # — not just a dead-end "Burenia [blocked]". A reachable target only
+        # needs its own gated entrances (one level).
+        recurse = ok is False
+        visited = {region.name} if region is not None else set()
+        self._explain_region_tree(region, ctx, state, parts, 0, visited, recurse)
+        return parts
+
+    def _explain_region_tree(self, region, ctx, state, parts, depth,
+                             visited, recurse) -> None:
+        """Append a region's gated entrances (indented by ``depth``); when
+        ``recurse`` and a source region is itself blocked, descend into it so
+        the explanation shows the full unreachable chain. Guarded by a
+        visited-set (cycles) and a depth cap (bounds output size)."""
+        from .ut_explain import _text
+        MAX_DEPTH = 5
+        indent = "  " * (depth + 1)
         entrances = list(region.entrances) if region else []
         if not entrances:
-            parts.append(_text("\n  (no gated entrances)"))
+            parts.append(_text(f"\n{indent}(no gated entrances)"))
+            return
         for ent in entrances:
-            parts.append(_text("\n  "))
+            parts.append(_text(f"\n{indent}"))
             parts.extend(self._explain_entrance_parts(ent, ctx, state))
-        return parts
+            if not recurse:
+                continue
+            src = ent.parent_region
+            if (state is None or src is None or src.can_reach(state)
+                    or src.name in visited):
+                continue
+            visited.add(src.name)
+            if depth + 1 >= MAX_DEPTH:
+                parts.append(_text(f"\n{indent}  ... (deeper path truncated)"))
+                continue
+            self._explain_region_tree(src, ctx, state, parts, depth + 1,
+                                      visited, recurse)
 
     # Progressive-item logic translation. The compiled access rules reference
     # the individual tier items by name (e.g. state.has("Wave Beam")), but when

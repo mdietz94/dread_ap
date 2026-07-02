@@ -73,6 +73,9 @@ Thumbs.db
 # it into the .apworld zip for end users.
 # ============================================================================
 apworld/dread/data/logic_graph.json
+# Side report emitted alongside logic_graph.json by extract_dread_rules.py;
+# regenerable, not consumed at runtime.
+apworld/dread/data/logic_graph_escape_report.json
 # Flat item-only per-pickup rules derived from the graph by
 # scripts/graph_to_compiled_rules.py for the PopTracker exporter. Large
 # (~8 MB) and fully regenerable; not consumed by the apworld at runtime.
