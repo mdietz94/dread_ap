@@ -240,13 +240,15 @@ def test_explain_hooks_on_real_world():
     state = mw.get_all_state(False)
 
     # explain_path over a real entrance that carries a rule renders a hop
-    # ("<src> [reachable] → <dst> : <requirement>") with no bare "e{i}" name.
+    # ("<src> [reachable] -> <dst> : <requirement>") with no bare "e{i}" name.
+    # The separator is ASCII (the tracker font can't render U+2192).
     assert world._explain_asts, "expected non-trivial entrances to be stashed"
     ent_name = next(iter(world._explain_asts))
     ent = mw.get_entrance(ent_name, 1)
     hop = world.explain_path(ent, state)
     hop_text = "".join(p["text"] for p in hop)
-    assert "→" in hop_text and ":" in hop_text
+    assert "->" in hop_text and ":" in hop_text
+    assert "→" not in hop_text               # no non-ASCII arrow
     assert ent_name not in hop_text          # machine name is not surfaced
 
     # explain_rule resolves a location and lists its gating entrances.
@@ -259,3 +261,41 @@ def test_explain_hooks_on_real_world():
 
     # unresolved target -> None (UT falls back to its default error path).
     assert world.explain_rule("definitely not a real location", state) is None
+
+
+@runtime
+def test_explain_rule_recurses_into_blocked_sources():
+    """A NOT-reachable target expands the blocked chain upstream: at least one
+    unreachable location's explanation nests deeper than the single first-level
+    indent, so a bare "Burenia [blocked]" source is drilled into, not dead-ended.
+    A reachable target stays one level deep."""
+    from BaseClasses import CollectionState
+    from test.general import setup_multiworld, gen_steps
+    from Fill import distribute_items_restrictive
+    from dread.World import DreadWorld
+
+    mw = setup_multiworld(DreadWorld, gen_steps, seed=2, options={})
+    distribute_items_restrictive(mw)
+    world = mw.worlds[1]
+    empty = CollectionState(mw)  # nothing collected -> deep spots are blocked
+
+    # Find a location that is unreachable from an empty state and whose chain
+    # goes at least two regions deep (a blocked source with a blocked source).
+    deep = None
+    for loc in mw.get_locations(1):
+        if loc.can_reach(empty):
+            continue
+        parts = world.explain_rule(loc.name, empty)
+        text = "".join(p["text"] for p in parts)
+        if "\n    " in text:   # a second-level (depth>=1) indent appeared
+            deep = text
+            break
+    assert deep is not None, "expected at least one deeply-blocked location"
+    assert "blocked" in deep
+    assert "→" not in deep     # still ASCII throughout the tree
+
+    # A reachable target does not fan out the blocked-chain recursion.
+    full = mw.get_all_state(False)
+    reachable = next(l for l in mw.get_locations(1) if l.can_reach(full))
+    flat = "".join(p["text"] for p in world.explain_rule(reachable.name, full))
+    assert "\n    " not in flat
