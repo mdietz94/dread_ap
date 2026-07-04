@@ -14,13 +14,22 @@ name: Release apworld
 # whole job in a `container:`), releases are built and published LOCALLY. Type
 # the version ONCE and let scripts/release.py derive everything else — it stamps
 # the apworld manifest (archipelago.json world_version + __init__.__version__),
-# commits the bump, tags `vX.Y.Z`, and builds dist/dread.apworld from that tag:
+# commits the bump, tags `vX.Y.Z`, and builds dist/dread.apworld from that tag.
 #
-#   python scripts/release.py 0.19.0             # build + commit + tag
-#   git push && git push origin v0.19.0          # then push + publish
-#   gh release create v0.19.0 dist/dread.apworld --generate-notes
+# PREREQ: init the vendored patcher submodule first, or the build makes no zip:
+#   git submodule update --init vendor/open-dread-rando
 #
-# Or in one shot (pushes still manual): python scripts/release.py 0.19.0 --publish
+# Build + publish the release (publish reads straight from the tag):
+#   python scripts/release.py 0.19.0 --publish   # build + commit + tag + gh release
+#
+# Then land the version bump on main. main is branch-protected (requires the
+# `test` check), so there is NO direct push to main — the release commit rides a
+# PR, auto-merged as a MERGE COMMIT (squash would orphan the tagged commit and
+# leave v0.19.0 pointing off main's history):
+#   git push origin v0.19.0
+#   git push -u origin <release-branch>
+#   gh pr create --base main --title "chore(release): v0.19.0" --body ...
+#   gh pr merge --merge --auto
 #
 # The manifest can't drift from the tag: the version is the single input, and
 # the build re-asserts world_version == __version__ before zipping. The lower-

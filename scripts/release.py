@@ -8,6 +8,11 @@ shipped artifact can never disagree:
     python scripts/release.py 0.19.0           # build, commit, tag (no publish)
     python scripts/release.py 0.19.0 --publish # + gh release create
 
+PREREQ: the ``vendor/open-dread-rando`` submodule must be initialized — the
+apworld bundles its source, so the build silently produces no zip without it:
+
+    git submodule update --init vendor/open-dread-rando
+
 Steps (in order):
 
   1. Guard: clean working tree, on a branch, tag ``vX.Y.Z`` doesn't already
@@ -19,11 +24,26 @@ Steps (in order):
   5. Fetch the Randovania logic cache + build ``dist/dread.apworld`` (the build
      re-derives the version from disk and re-asserts the two fields agree).
   6. ``--publish``: ``gh release create vX.Y.Z dist/dread.apworld
-     --generate-notes``. Without it, print the exact command to run by hand.
+     --generate-notes``. Without it, print the exact commands to run by hand.
 
-Nothing here is pushed — you review the commit/tag and push (or publish) when
-ready. On any failure after the commit/tag, the script tells you how to unwind
-(``git tag -d`` / ``git reset``) rather than leaving a half-cut release.
+Nothing here is pushed — you review the commit/tag first. On any failure after
+the commit/tag, the script tells you how to unwind (``git tag -d`` /
+``git reset``) rather than leaving a half-cut release.
+
+LANDING THE BUMP ON ``main`` — via a PR, NOT a direct push. ``main`` is
+branch-protected (requires the ``test`` status check), so a direct
+``git push origin HEAD:main`` is rejected. The release commit rides a PR:
+
+    git push origin vX.Y.Z              # push the tag (release page reads it)
+    git push -u origin <branch>         # push the release-commit branch
+    gh pr create --base main --title "chore(release): vX.Y.Z" --body ...
+    gh pr merge <n> --merge --auto      # MERGE COMMIT (not squash) + auto-merge
+
+Merge as a MERGE COMMIT or REBASE, never SQUASH: squash orphans the tagged
+commit so ``vX.Y.Z`` would point off ``main``'s history. The GitHub release
+(``--publish`` / ``gh release create``) publishes straight from the tag and is
+independent of the PR merge — the download is live immediately; the PR just
+lands the source bump on ``main``.
 """
 from __future__ import annotations
 
@@ -146,10 +166,20 @@ def main(argv: list[str] | None = None) -> int:
         _publish(tag)
     else:
         print(
-            "not published (no --publish). When ready:\n"
-            f"    git push && git push origin {tag}\n"
+            f"not published (no --publish). When ready:\n"
             f"    gh release create {tag} {DIST} --generate-notes"
         )
+    # The bump still has to land on main. main is branch-protected, so this
+    # goes through a PR (auto-merged as a MERGE COMMIT, not squash, so the tag
+    # stays on main's history). Printed for both --publish and not.
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    print(
+        f"\nland the bump on main (main is protected — no direct push):\n"
+        f"    git push origin {tag}\n"
+        f"    git push -u origin {branch}\n"
+        f'    gh pr create --base main --title "chore(release): {tag}" --body ...\n'
+        f"    gh pr merge --merge --auto   # merge commit, NOT squash"
+    )
     return 0
 
 
