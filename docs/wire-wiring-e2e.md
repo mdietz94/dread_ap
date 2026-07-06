@@ -312,7 +312,7 @@ docstring:
 ```json
 {
   "layout_uuid": "<derived>",
-  "configuration_identifier": "AP-<seed>-<slot>",
+  "configuration_identifier": "AP-<seed[:8]>",
   "starting_location": {"scenario": "s010_cave", "actor": "StartPoint0"},
   "starting_items": {...},
   "pickup_resources": {
@@ -343,8 +343,14 @@ docstring:
 - `layout_uuid`: derive from seed_id + slot_name (stable per slot,
   unique per seed). Format must match the UUID regex in
   `vendor/open-dread-rando/src/open_dread_rando/files/schema.json` line 16.
-- `configuration_identifier`: human-readable, e.g.
-  `f"AP-{seed_id[:8]}-{slot_name}"`.
+- `configuration_identifier`: human-readable, `f"AP-{seed_id[:8]}"`. The
+  slot name is deliberately EXCLUDED: the identifier feeds the Switch
+  save-profile entry name `RDV_<cfg_id>_<layout_uuid>_0`, which Nintendo's
+  save-data filesystem caps at 64 bytes (a 16-char slot name pushed it to
+  ~71 and save creation failed on real hardware — Ryujinx's host-fs saves
+  never catch it). `layout_uuid` already makes the name unique per
+  (seed, slot). See `SWITCH_SAVE_ENTRY_MAX_BYTES` in
+  `apworld/dread/patcher_pipeline.py`.
 
 **For non-actor pickups** (boss/EMMI/cutscene — pickup_type != "actor"
 in locations.json): they don't go in `pickup_resources` because the
