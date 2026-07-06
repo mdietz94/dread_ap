@@ -289,12 +289,14 @@ def test_transport_matching_two_way_within_type(graph):
 
 
 @graph_required
-def test_itorash_capsule_rides_never_shuffled(graph):
-    """The Hanubia<->Itorash capsule rides (``CCapsuleUsableComponent``) must stay
-    vanilla: the up-launch and the post-Raven-Beak escape are scripted around the
-    capsule actor + its special landing platform, so repointing either direction
-    crashes the game on the ride. Regression for the reported Hanubia-entrance /
-    post-Raven-Beak crashes."""
+def test_itorash_capsule_rides_shufflable(graph):
+    """The Hanubia<->Itorash capsule rides (``CCapsuleUsableComponent``) are back
+    in the shuffle pool. The old exclusion pinned a Hanubia/post-Raven-Beak
+    strlen(NULL) crash on shuffled capsules, but the identical crash reproduced
+    with transport+door rando fully disabled — attribution falsified, exclusion
+    reverted (mirrors Randovania, which shuffles every transporter with no
+    capsule special-casing). Capsules are typed ``elevator`` so they join the
+    general elevator pool and can land somewhere non-vanilla."""
     import random
     from dread.TransportRando import roll_matching
     tr = graph["transports"]
@@ -302,11 +304,47 @@ def test_itorash_capsule_rides_never_shuffled(graph):
                 if m.get("component") == "CCapsuleUsableComponent"]
     # Both Itorash capsule endpoints are present and tagged.
     assert len(capsules) == 2, capsules
-    # They are never assigned a partner across many rolls (kept vanilla).
-    for seed in range(100):
+    moved = False
+    for seed in range(50):
         m = roll_matching(graph, random.Random(seed))
-        assert not any(c in m for c in capsules), \
-            f"capsule shuffled at seed {seed}: {[c for c in capsules if c in m]}"
+        # In the pool: every roll assigns each capsule endpoint a partner.
+        assert all(c in m for c in capsules), \
+            f"capsule missing from matching at seed {seed}"
+        if any(m[c] != tr[c]["default_dest"] for c in capsules):
+            moved = True
+    assert moved, "no sampled seed ever moved a capsule off vanilla"
+
+
+@graph_required
+def test_shuffled_capsule_matching_keeps_itorash_reachable(graph):
+    """An ACCEPTED (connected) matching that moves a capsule must keep Itorash
+    reachable at full loadout. Itorash holds no pickups, so the pickup-baseline
+    criterion alone can't see it — this pins the endpoint-room clause of
+    ``_no_reachability_regression`` (a stranded Itorash would otherwise only
+    surface as a FillError in the victory sweep)."""
+    import random
+    from dread.DoorRando import early_reachable
+    from dread.TransportRando import roll_connected_matching, _ALL_ITEMS
+    from dread.Tricks import DREAD_TRICKS
+    tl = {t.short_name: 5 for t in DREAD_TRICKS}
+    tr = graph["transports"]
+    capsules = {sid for sid, m in tr.items()
+                if m.get("component") == "CCapsuleUsableComponent"}
+    itorash_comps = {tr[sid]["comp"] for sid in capsules
+                     if tr[sid]["scenario"] == "s090_skybase"}
+    assert itorash_comps, "expected an Itorash-side capsule endpoint"
+    full = {nm: 99 for nm in _ALL_ITEMS}
+    for seed in range(50):
+        m = roll_connected_matching(graph, random.Random(seed), tl)
+        if not any(m.get(c) not in (None, tr[c]["default_dest"]) for c in capsules):
+            continue  # this accepted roll left the capsules vanilla
+        reach, _ = early_reachable(graph, full, tl, use_events=True,
+                                   transport_matching=m)
+        assert itorash_comps <= reach, \
+            f"accepted matching strands Itorash (seed {seed})"
+        return
+    import pytest as _pytest
+    _pytest.skip("no sampled accepted matching moved a capsule")
 
 
 @graph_required

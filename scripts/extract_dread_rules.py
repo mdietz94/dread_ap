@@ -1192,8 +1192,9 @@ GRAPH_SCHEMA_VERSION = 7   # v7: `comp_regions` gives every component its RDV
                            # region name, so Universal Tracker's /explain can
                            # label a hop by region instead of the bare "R{comp}"
                            # machine name (see apworld/dread/ut_explain.py).
-                           # v6: transports carry their USABLE `component` (so
-                           # transport rando can exclude scripted capsule rides)
+                           # v6: transports carry their USABLE `component`
+                           # (kept for diagnostics; the capsule-ride shuffle
+                           # exclusion that motivated it has been reverted)
 
 # Dock types whose weakness can be randomized (door-lock rando). Transports
 # (elevator/teleporter/shuttle) are handled by transport rando (separate); tunnel
@@ -1347,11 +1348,11 @@ def emit_graph(
                 # display rewrite under transport rando.
                 "source_cc": area_cc.get((region, sub_name)),
                 # The actor's USABLE component type (CElevatorUsableComponent /
-                # CTrainUsableComponent / CCapsuleUsableComponent / ...). Transport
-                # rando uses it to exclude the Hanubia<->Itorash capsule rides
-                # (CCapsuleUsableComponent): the up-launch and the post-Raven-Beak
-                # escape are scripted around the capsule actor + its special
-                # landing platform, so shuffling either direction crashes the game.
+                # CTrainUsableComponent / CCapsuleUsableComponent / ...). Once
+                # used to exclude the Hanubia<->Itorash capsule rides from
+                # transport rando; that crash attribution was falsified (the
+                # crash reproduced with rando disabled) and the exclusion was
+                # reverted. Kept for tagging/diagnostics.
                 "component": ex.get("elevator_component"),
             }
             continue

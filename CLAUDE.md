@@ -704,71 +704,60 @@ which force-shows transport names when room names are off). Tests:
 `test_seed_to_patcher` (camera-dict merge + empty no-op), `test_door_start`
 (`test_transport_rando_rewrites_room_names`, full World→payload→patcher path).
 
-UPDATE (transport rando crash fix — Itorash capsules + Flipper dual-actor): a user
-hit a game-side `strlen(NULL)` crash (cazadora.nss) at both Hanubia entrances and
-after killing Raven Beak with transport+door rando on. Root cause: the two
-Hanubia↔Itorash rides are NOT ordinary elevators — they use
-`CCapsuleUsableComponent` (`capsulelaunchershipyard` up-launch +
-`capsuleelevatorskybase`, the post-Raven-Beak ESCAPE ride) and their landing is a
-special scripted platform. Our extractor typed them `elevator` and dropped them in
-the normal shuffle pool, so a shuffled capsule (or a normal ride routed onto its
-platform) loads a room that can't resolve the capsule's scripted spawn/cutscene
-actor → null-string deref on the ride. Randovania never ships transport rando
-enabled (both Dread presets keep teleporters vanilla), so this was never exercised
-upstream. Fix: graph schema 5→6 now threads each transport's USABLE `component`;
-`TransportRando._by_type`/`_shufflable` exclude `CCapsuleUsableComponent` endpoints
-(kept vanilla — they're each other's only same-type pair, so zero variety lost;
-`transport_pairs` still emits their `default_dest` edge so Itorash/Raven Beak stays
-reachable — strictly easier, no fill regression). Also fixed a co-located bug: the
-Ghavoran "Flipper" shuttle has a cutscene actor AND a plain actor in one room;
-open-dread-rando only repoints the one we pass, so `matching_to_elevators` now
+UPDATE (transport rando — Itorash capsule exclusion ADDED then REVERTED; Flipper
+dual-actor fix stands): a user hit a game-side `strlen(NULL)` crash
+(cazadora.nss+0x11ac3d8) at both Hanubia entrances and after killing Raven Beak
+with transport+door rando on. It was attributed to the two Hanubia↔Itorash
+capsule rides (`capsulelaunchershipyard` up-launch + `capsuleelevatorskybase`
+post-Raven-Beak ESCAPE ride, USABLE component `CCapsuleUsableComponent` —
+scripted landing platform, not an ordinary elevator), so graph schema 5→6
+threaded each transport's `component` and `TransportRando` excluded capsule
+endpoints from the shuffle pool. That attribution is now FALSIFIED (July 2026):
+the EXACT same crash signature reproduced on a seed with transport rando AND
+door rando fully DISABLED (`elevators: []`), so the crash is a separate
+Hanubia-transport-arrival bug (being investigated independently) and the capsule
+shuffle was never shown to be at fault. Per the project owner's direction the
+exclusion is REVERTED: `_by_type` pools every transport endpoint again (the
+`_NON_SHUFFLED_COMPONENTS`/`_shufflable` machinery is gone; the graph's
+`component` field stays, schema unchanged, for tagging/diagnostics). Capsules
+are typed `elevator` by the extractor, so they shuffle in the GENERAL elevator
+pool — exactly RDV's semantics: RDV's GUI
+(`dread_teleporters_tab._create_source_teleporters`) lists EVERY transporter,
+capsule included, as a shuffled-by-default checkbox with NO capsule
+special-casing, and RDV's `all_settings` patch-data fixture shuffles both
+capsules into ordinary elevator destinations with the exact `elevators` entry
+shape we emit. Because Itorash holds ZERO pickups, re-pooling the capsules
+exposed a guard gap: `_no_reachability_regression` (the connected-matching
+acceptance test) now ALSO requires every vanilla-reachable transport-ENDPOINT
+room to stay reachable, so a roll that strands Itorash (→ victory unreachable →
+FillError) is rejected and re-rolled like any other bad matching.
+
+OPEN VALIDATION ITEM (carried forward from the exclusion era — do not drop): the
+post-Raven-Beak escape has NEVER been play-verified in-game with a SHUFFLED
+escape capsule — not by us, and not verifiably by RDV either (RDV ships every
+preset with teleporters vanilla; its `all_settings` fixture is patch DATA that
+was never played through the Dread ending). In the original crashing seed the
+player rode UP fine, beat Raven Beak (`DefeatedBossID 4`), and crashed on the
+way OUT at `commander_elevator` — that specific escape-path crash is now
+explained by the rando-independent Hanubia bug, but if a NEW crash appears only
+on the escape ride of a capsule-shuffled seed, re-examine: open-dread-rando has
+no patch that repoints the escape transition (`static_fixes.
+_apply_boss_cutscene_fixes`, the chozocommander `game_patches`, and the
+`*_path_to_itorash` options are the only Itorash-area patches). Diagnose with
+the seed's `ap_patcher_input.json` (diff s080/s090 `elevators` vs RDV's
+`all_settings` shape). Sibling note (no crash report): the other
+cutscene-variant transport `elevator_with_cutscene_aqua_000` (Artaria) has
+always been shuffled; the Ghavoran Flipper (`wagontrain_quarantine_with_
+cutscene`) is covered by the dual-actor fix below.
+
+Flipper dual-actor fix (independent of the capsule saga, KEPT): the Ghavoran
+"Flipper" shuttle has a cutscene actor AND a plain actor in one room;
+open-dread-rando only repoints the one we pass, so `matching_to_elevators`
 duplicates the entry onto `wagontrain_quarantine_000` (mirrors Randovania's
 `create_game_specific_data`), or later rides snapped back to the vanilla dest.
-Tests: `test_door_start` (`test_itorash_capsule_rides_never_shuffled`,
-`test_flipper_shuttle_patches_both_actors`), `test_graph_logic` (schema==6).
-NOTE: needs `python scripts/extract_dread_rules.py --all` to regen the gitignored
-`logic_graph.json` at schema 6 (conftest auto-regens when the script is newer).
-
-CONFIRMED — DO NOT RE-ENABLE the capsule shuffle without proving the post-Raven-Beak
-escape works in-game. A follow-up investigation nearly reverted this exclusion on a
-WRONG premise, so the trap is documented here: Randovania's `all_settings` patch-data
-fixture (`test/test_files/patcher_data/dread/dread/all_settings/world_1.json`) DOES
-shuffle both capsules (capsulelaunchershipyard -> Burenia; capsuleelevatorskybase ->
-Burenia) with the exact `elevators` entry shape we emit — so the capsule looks
-"supportable" and our config looks faithful to RDV. It is a TRAP: RDV ships
-teleporters VANILLA in every preset, so that fixture is patch DATA that was never
-played through the Dread ending. The decisive evidence the exclusion is right: in the
-crashing seed the client room-name-display log shows the player at `commander_elevator`
-(Raven Beak's elevator in Itorash) AT the crash — they rode it UP fine, beat the boss
-(`DefeatedBossID 4`), then crashed on the way OUT, i.e. the post-RB ESCAPE (which rides
-`capsuleelevatorskybase` back to Hanubia). Itorash (`s090_skybase`) has ZERO
-rando-eligible doors, so door rando is excluded as the cause. A user's "Itorash access
-from lower Burenia" RDV memory was the ACCESS path (capsulelaunchershipyard up-launch),
-which works; the ESCAPE is a different scripted path that shuffling breaks.
-
-IMPORTANT nuance (don't over-read the exclusion as "RDV can't do it"): RDV's GUI
-(`dread_teleporters_tab._create_source_teleporters` + `on_preset_changed`) lists EVERY
-transporter — capsule included — as a checkbox that is CHECKED (= shuffled) by default
-unless the user adds it to `excluded_teleporters`. There is NO capsule special-casing.
-So real RDV users on "Two-way, between regions" DO shuffle this capsule. That means the
-exclusion is a SAFE STOPGAP, not proof RDV is incapable: the open question is whether
-RDV's post-RB escape actually survives a shuffled escape-capsule in-game (we have not
-tested an RDV build through the ending), OR whether OUR patcher output diverges from
-RDV's for these connections. Judge stability by what RDV's GUI exposes, NOT by the
-shipped presets (which are vanilla). Resolve definitively with the crashing seed's
-`ap_patcher_input.json` (diff our s080/s090 `elevators` + `door_patches` + pickups vs
-RDV's shape) — the user still has the seed. Full capsule support, if pursued, would
-need whatever drives the post-RB escape transition (none found in open-dread-rando:
-`static_fixes._apply_boss_cutscene_fixes`, `game_patches` chozocommander tweaks, and
-the `remove_grapple_block_path_to_itorash` / `hanubia_easier_path_to_itorash` options
-are the only Itorash-area patches, and none repoint the escape).
-Lower-confidence sibling risk (NOT excluded, no crash report yet):
-the other cutscene-variant transports — `elevator_with_cutscene_aqua_000` (Artaria) —
-could break similarly; the Flipper (`wagontrain_quarantine_with_cutscene`) is handled
-by the dual-actor patch above. The reported "2 entrances to Hanubia" crashes are
-consistent with the two capsule directions but not independently confirmed from logs;
-100% confirmation of the full set would need the seed's `ap_patcher_input.json` or a
-post-fix playthrough.
+Tests: `test_door_start` (`test_itorash_capsule_rides_shufflable`,
+`test_shuffled_capsule_matching_keeps_itorash_reachable`,
+`test_flipper_shuttle_patches_both_actors`).
 
 UPDATE (mutually-exclusive thermal-toggle fidelity gap — bounded + proven sound,
 NOT modelled): Cataris "Thermal Device Room North" holds the game's ONLY pair of
@@ -918,8 +907,9 @@ ALSO added to the warp-OUT guard (`RL.IsInMapRoom` / `RL.MapRooms` /
 you can walk out of, blocking costs nothing, and it prevents stranding the map
 overlay). The `valid_starting_location` enumeration also surfaced 6 Map-room start
 points, 1 Intro-Room start, and the Itorash→Hanubia elevator landing as spawnable;
-the last two were DELIBERATELY left out (the Itorash escape-capsule landing is the
-post-Raven-Beak corruption risk — see the capsule trap above; the Intro Room is
+the last two were DELIBERATELY left out (the Itorash escape-capsule landing rides
+the never-play-verified post-Raven-Beak escape path — see the capsule OPEN
+VALIDATION ITEM above; the Intro Room is
 just the seed start). `SaveStation`/`SAVE_STATION_BY_CAMERA`/`SAVE_STATIONS_BY_REGION`
 remain as back-compat aliases. Tests: `test_protocol` (map table shape/barewords,
 4-way disjointness, in_map guard, nav/map targets + Hanubia-via-nav + label

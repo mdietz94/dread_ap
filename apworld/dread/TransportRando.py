@@ -22,31 +22,28 @@ from __future__ import annotations
 from typing import Any
 
 
-# USABLE component of the two Hanubia<->Itorash capsule rides. These are NOT
-# ordinary elevators: the up-launch (``capsulelaunchershipyard``) and the
-# post-Raven-Beak escape (``capsuleelevatorskybase``) are scripted around the
-# capsule actor and its special landing platform, so repointing either direction
-# loads a room that can't resolve the capsule's spawn/cutscene actor and crashes
-# the game on the ride (null-string deref). Randovania never ships transport
-# rando enabled (both Dread presets keep teleporters vanilla), so this was never
-# exercised upstream. We keep these two endpoints vanilla. They share a type and
-# are each other's only same-type partner, so excluding them costs no shuffle
-# variety. open-dread-rando classifies the component as a TRANSPORT and would
-# happily patch it — the crash is in-game scripting, not the patcher.
-_NON_SHUFFLED_COMPONENTS = frozenset({"CCapsuleUsableComponent"})
-
-
-def _shufflable(meta: dict) -> bool:
-    """A transport endpoint is in the shuffle pool unless its USABLE component is
-    one we keep vanilla (the scripted Itorash capsule rides)."""
-    return meta.get("component") not in _NON_SHUFFLED_COMPONENTS
+# NOTE on the Hanubia<->Itorash capsule rides (``capsulelaunchershipyard``
+# up-launch + ``capsuleelevatorskybase`` post-Raven-Beak escape, USABLE component
+# ``CCapsuleUsableComponent``): these WERE excluded from the shuffle pool after a
+# game-side strlen(NULL) crash (cazadora.nss) at the Hanubia entrances /
+# post-Raven-Beak was attributed to a shuffled capsule. That attribution was
+# FALSIFIED (July 2026): the identical crash signature reproduced on a seed with
+# transport AND door rando fully disabled (``elevators: []``), so the crash is a
+# separate Hanubia-arrival bug, not the capsule shuffle. The exclusion has been
+# reverted per the project owner's direction. Capsules are typed ``elevator`` by
+# the extractor, so they shuffle in the GENERAL elevator pool — exactly matching
+# Randovania, whose teleporter GUI lists every transporter (capsules included) as
+# a shuffled-by-default checkbox with NO capsule special-casing, and whose
+# ``all_settings`` patch-data fixture shuffles both capsules into ordinary
+# elevator destinations with the same ``elevators`` entry shape we emit.
+# OPEN VALIDATION ITEM: the post-Raven-Beak escape ride has never been
+# play-verified in-game with a SHUFFLED escape capsule (neither by us nor,
+# verifiably, by Randovania) — if the escape breaks, this is the first suspect.
 
 
 def _by_type(graph: dict) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = {}
     for sid, meta in graph.get("transports", {}).items():
-        if not _shufflable(meta):
-            continue
         groups.setdefault(meta["type"], []).append(sid)
     # Deterministic order before shuffling (rng drives the actual permutation).
     for g in groups.values():
@@ -84,15 +81,24 @@ def _no_reachability_regression(graph: dict, matching: dict[str, str],
     Requiring full reachability there would reject every roll and silently fall
     back to vanilla. The correct invariant — like DoorRando's start-frontier
     guard — is that shuffling transports never makes reachability WORSE than the
-    vanilla baseline."""
+    vanilla baseline.
+
+    Besides pickups, every vanilla-reachable TRANSPORT ENDPOINT room must stay
+    reachable. This matters since the Itorash capsule rides re-entered the pool:
+    Itorash holds zero pickups (the pickup criterion alone can't see it) but the
+    victory sweep needs it, so a matching that strands an endpoint-only room
+    would surface only as a FillError at generation. Rejecting the roll here
+    keeps the retry loop the recovery path, like every other bad roll."""
     from .DoorRando import early_reachable
     full = {nm: 99 for nm in _ALL_ITEMS}
     base, _ = early_reachable(graph, full, tl, use_events=True,
                               transport_matching={})
     baseline_pickups = {comp for comp, _name in graph["pickups"] if comp in base}
+    baseline_endpoints = {m["comp"] for m in graph["transports"].values()
+                          if m["comp"] in base}
     reach, _ = early_reachable(graph, full, tl, use_events=True,
                                transport_matching=matching)
-    return baseline_pickups <= reach
+    return baseline_pickups <= reach and baseline_endpoints <= reach
 
 
 _ALL_ITEMS = (
