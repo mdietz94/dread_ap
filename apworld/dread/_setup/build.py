@@ -37,7 +37,12 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Hard fork: github.com/mdietz94/open-dread-rando-exlaunch.
 # bridge-networking (Switch-dials-PC, UDP discovery, JSON envelope) has been
 # merged into main. Bump this hash when the fork lands new commits to ship.
-PINNED_EXLAUNCH_COMMIT = "dcb4a64"
+# 392869c6 = merge of PR #6 ("fix/no-worker-thread-fs", head 2aa652a): the
+# save-breaking nn::fs unclosed-accessor abort (Result 2002-6455) fix —
+# rom:/ap_config.json is read once on the game thread inside the RomMounted
+# window, and OpenAndReadFile closes handles on all failure paths.
+# (Crashing NSO build id 39B5F4A9…; fixed build id FCB054ED….)
+PINNED_EXLAUNCH_COMMIT = "392869c64693f84e77aec794271ce694ccba7c4b"
 EXLAUNCH_REPO = "https://github.com/mdietz94/open-dread-rando-exlaunch.git"
 
 

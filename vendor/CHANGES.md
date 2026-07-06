@@ -35,6 +35,23 @@ separate `git apply` step.
   separate `(index, jsonArrStr)` args (`inventory`); the C senders
   build the JSON envelope around the bootstrap-composed inner values.
 
+### 2026-07-06 — nn::fs worker-thread fix LANDED (fork PR #6)
+
+- PR #6 on `mdietz94/open-dread-rando-exlaunch`
+  ("fs: never touch nn::fs from the worker thread; close handles on all
+  paths", branch `fix/no-worker-thread-fs`, head `2aa652a`) is MERGED to
+  main as `392869c64693f84e77aec794271ce694ccba7c4b`.
+- Fixes the save-breaking `nn::fs` unclosed-accessor abort (Result
+  2002-6455): `rom:/ap_config.json` is now read once on the game thread
+  inside the RomMounted window, and `OpenAndReadFile` closes handles on
+  all failure paths. Crashing NSO build id was `39B5F4A9…`; the fixed
+  build is `FCB054ED…`.
+- `PINNED_EXLAUNCH_COMMIT` in `apworld/dread/_setup/build.py` is bumped
+  to the merge commit, so user builds (and the release workflow's
+  prebuilt sysmodule) pick up the fix. Note: a rebuild before this bump
+  would have clobbered manually-deployed fixed binaries with the old
+  pin — that hazard is now closed.
+
 The remainder of this file describes the OLD soft-fork model that the
 bridge work superseded.
 
