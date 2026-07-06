@@ -407,6 +407,93 @@ def test_configuration_identifier_includes_seed_prefix_only():
     assert out["configuration_identifier"] == "AP-12345678"
 
 
+# ---- Switch save-fs entry-name budget (64-byte hardware cap) ---------------
+#
+# open-dread-rando derives the in-game save profile directory as
+# RDV_{configuration_identifier}_{layout_uuid}, and the exlaunch sysmodule
+# appends _0/_1/_2. Nintendo's save-data filesystem caps entry names at
+# 64 bytes; an over-long name fails save creation on REAL HARDWARE ONLY
+# (Ryujinx maps saves to the host fs and never catches it). AP slot names
+# go up to 16 characters (Generate.py truncates at [:16]) and are NOT byte-
+# limited, so the identifier must never embed the slot — layout_uuid
+# (sha256 of seed:slot) already disambiguates.
+
+def _save_entry_helpers():
+    from dread.patcher_pipeline import (
+        SWITCH_SAVE_ENTRY_MAX_BYTES,
+        save_entry_name,
+    )
+    return SWITCH_SAVE_ENTRY_MAX_BYTES, save_entry_name
+
+
+@pytest.mark.parametrize("slot_name", [
+    "WWWWWWWWWWWWWWWW",          # 16-char worst case (AP's max slot name)
+    "サムス・アラン" * 2 + "夢夢",  # 16 chars, multi-byte UTF-8
+    "Samus",
+])
+def test_save_entry_name_fits_switch_savefs(slot_name):
+    """The FINAL save entry name must stay under the 64-byte Switch cap for
+    any AP slot name, including the 16-char maximum and non-ASCII names."""
+    max_bytes, save_entry_name = _save_entry_helpers()
+    placements = {
+        "slot_name": slot_name,
+        "seed_id": "98765432109876543210",  # AP seed_name: up to 20 digits
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [],
+    }
+    out = placements_to_overrides(placements)
+    entry = save_entry_name(out["configuration_identifier"], out["layout_uuid"])
+    n = len(entry.encode("utf-8"))
+    assert n <= max_bytes, f"{entry!r} is {n} bytes (> {max_bytes})"
+    # Pin the exact construction: RDV_(4) + AP-________(11) + _(1) + uuid(36)
+    # + _0(2) = 54 bytes, independent of the slot name.
+    assert n == 54
+    assert entry.startswith("RDV_AP-98765432_")
+    assert entry.endswith("_0")
+
+
+def test_save_entry_guard_rejects_old_slot_bearing_identifier():
+    """Regression pin: the PRE-FIX identifier form AP-{seed}-{slot} pushed the
+    entry name to ~71 bytes for a 16-char slot. If anyone reintroduces the
+    slot component (or any over-long identifier), merge_overrides must fail
+    fast at patch time instead of letting save creation fail on hardware."""
+    from dread.patcher_pipeline import merge_overrides
+
+    template = {
+        "configuration_identifier": "VANILLA",
+        "layout_uuid": "00000000-0000-0000-0000-000000000000",
+        "starting_location": {"scenario": "s010_cave", "actor": "OldStart"},
+        "starting_items": {},
+        "pickups": [],
+    }
+    overrides = {
+        # The exact pre-65d28f2 shape with AP's 16-char max slot name.
+        "configuration_identifier": "AP-98765432-WWWWWWWWWWWWWWWW",
+        "layout_uuid": "12345678-1234-4234-8234-123456789012",
+    }
+    with pytest.raises(ValueError, match="64"):
+        merge_overrides(template, overrides)
+
+
+def test_save_entry_guard_accepts_template_passthrough():
+    """A template-only merge (no identifier overrides) must still pass the
+    guard — the starter preset's 8-char identifier is well under budget."""
+    from dread.patcher_pipeline import merge_overrides, save_entry_name
+
+    template = {
+        "configuration_identifier": "EPDRRG6F",
+        "layout_uuid": "00000000-0000-0000-0000-000000000000",
+        "starting_location": {"scenario": "s010_cave", "actor": "OldStart"},
+        "starting_items": {},
+        "pickups": [],
+    }
+    merged = merge_overrides(template, {})
+    entry = save_entry_name(merged["configuration_identifier"],
+                            merged["layout_uuid"])
+    assert len(entry.encode("utf-8")) == 51  # RDV_ + 8 + _ + 36 + _0
+
+
 def test_starting_location_for_artaria():
     placements = {
         "slot_name": "Samus",

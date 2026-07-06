@@ -223,6 +223,52 @@ def _set_in(root: dict, path: tuple[str, ...], value: Any) -> None:
 # ---------------------------------------------------------------------
 
 
+# ---- Switch save-profile name budget --------------------------------
+#
+# open-dread-rando (patch_saveslot) writes ``rom:/RDVHASH`` =
+# ``RDV_{configuration_identifier}_{layout_uuid}`` and the exlaunch
+# sysmodule (romfs.cpp setSeedSaveProfile) renames the game's three save
+# profiles to ``{RDVHASH}_0`` / ``_1`` / ``_2``. That string becomes a
+# Nintendo save-data filesystem ENTRY NAME, which is capped at 64 bytes on
+# real hardware. Ryujinx maps saves onto the host filesystem, so an
+# over-long name only fails on a real Switch — save creation errors at
+# new-game. (This bit once: the identifier used to embed the AP slot name,
+# pushing the entry to ~71 bytes for a 16-char slot; the slot component was
+# removed because layout_uuid — sha256(seed_id:slot_name) — already makes
+# the name unique per (seed, slot).) The same two config fields also feed
+# ``Init.sThisRandoIdentifier`` in custom_init.lua, so the save key and the
+# in-game "different Randomizer mod" cross-check can never drift from each
+# other — but changing either field for an EXISTING seed orphans in-progress
+# saves, so the guard below must stay a fail-fast on NEW generations, never
+# a silent rewrite of the identifier.
+SWITCH_SAVE_ENTRY_MAX_BYTES = 64
+
+
+def save_entry_name(configuration_identifier: str, layout_uuid: str) -> str:
+    """The Switch save-data entry name the patched game will create.
+
+    Mirrors open-dread-rando's RDVHASH construction plus the exlaunch
+    ``_<profile#>`` suffix (0-2; all three are the same length)."""
+    return f"RDV_{configuration_identifier}_{layout_uuid}_0"
+
+
+def _assert_save_entry_fits(configuration_identifier: str, layout_uuid: str) -> None:
+    """Fail fast if the derived save entry name would exceed the Switch's
+    64-byte save-data entry-name cap (hardware-only failure; Ryujinx's
+    host-fs saves never catch it)."""
+    name = save_entry_name(configuration_identifier, layout_uuid)
+    n = len(name.encode("utf-8"))
+    if n > SWITCH_SAVE_ENTRY_MAX_BYTES:
+        raise ValueError(
+            f"save profile name {name!r} is {n} bytes; the Switch save-data "
+            f"filesystem caps entry names at {SWITCH_SAVE_ENTRY_MAX_BYTES} "
+            f"bytes, so save creation would fail on real hardware (Ryujinx "
+            f"would not catch this). Shorten configuration_identifier "
+            f"({configuration_identifier!r}) — layout_uuid already makes the "
+            f"name unique per (seed, slot)."
+        )
+
+
 def layout_uuid_from_seed(seed_id: str, slot_name: str) -> str:
     """Derive a UUID in the schema-required format from seed + slot.
 
@@ -381,7 +427,15 @@ def placements_to_overrides(
     if layout_uuid is None:
         layout_uuid = layout_uuid_from_seed(str(seed_id), slot_name)
 
+    # Seed fingerprint ONLY — never the slot name. The full save entry name
+    # (RDV_{cfg_id}_{layout_uuid}_0) must stay under the Switch's 64-byte
+    # save-fs entry cap, and layout_uuid already encodes (seed, slot).
+    # See SWITCH_SAVE_ENTRY_MAX_BYTES above. NOTE: changing this string for
+    # an existing seed orphans its in-progress saves (the game sees a
+    # "different Randomizer mod" save) — only alter it alongside a version
+    # bump, applying to new generations.
     cfg_id = f"AP-{str(seed_id)[:8]}"
+    _assert_save_entry_fits(cfg_id, layout_uuid)
 
     return {
         "layout_uuid": layout_uuid,
@@ -505,6 +559,15 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
     for key in ("layout_uuid", "configuration_identifier", "starting_location"):
         if key in overrides:
             out[key] = overrides[key]
+
+    # Guard the final (post-merge) identifier + uuid pair, whatever their
+    # source — placements pipeline, hand-written overrides JSON, or the
+    # template itself. See SWITCH_SAVE_ENTRY_MAX_BYTES: an over-long pair
+    # only fails at save creation on real hardware, so fail here instead.
+    _assert_save_entry_fits(
+        str(out.get("configuration_identifier", "")),
+        str(out.get("layout_uuid", "")),
+    )
 
     if "starting_items" in overrides:
         out["starting_items"] = overrides["starting_items"]
