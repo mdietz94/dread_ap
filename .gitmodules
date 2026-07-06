@@ -1,4 +1,4 @@
 [submodule "vendor/open-dread-rando"]
 	path = vendor/open-dread-rando
-	url = https://github.com/randovania/open-dread-rando.git
+	url = https://github.com/mdietz94/open-dread-rando.git
 	branch = main

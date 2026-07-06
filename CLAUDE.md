@@ -759,6 +759,21 @@ Tests: `test_door_start` (`test_itorash_capsule_rides_shufflable`,
 `test_shuffled_capsule_matching_keeps_itorash_reachable`,
 `test_flipper_shuttle_patches_both_actors`).
 
+RESOLVED — Hanubia load crash root cause found (it was NOT the capsule/transport
+shuffle): any multi-model (progressive) pickup placed in s080_shipyard/s090_skybase
+crashed scenario load (strlen(NULL), cazadora.nss). open-dread-rando
+`ActorPickup.patch_model()`'s multi-model branch keeps the template's
+`actors/items/itemsphere/charclasses/timeline.bmsas` action-set ref but `patch()`
+never `ensure_present()`d it, and s080/s090 are the only scenario pkgs without the
+itemsphere assets. Proven via full Ryujinx repro + A/B + fix verification on 2.1.0
+(see memory note [[dread-hanubia-arrival-crash]]). Fixed on our fork
+`mdietz94/open-dread-rando` branch `fix/multi-model-timeline-bmsas` (commit
+`7c91af8`, now the `vendor/open-dread-rando` submodule pin — upstream deliberately
+NOT PR'd, owner decision; see vendor/CHANGES.md). Tripwire:
+`apworld/dread/tests/test_odr_multimodel_fix.py` fails on any re-pin without the
+fix. Re-evaluate the capsule blocks above in light of this — the crash evidence
+they interpret may be fully explained by pickup placement, not the shuffle.
+
 UPDATE (mutually-exclusive thermal-toggle fidelity gap — bounded + proven sound,
 NOT modelled): Cataris "Thermal Device Room North" holds the game's ONLY pair of
 physically-exclusive heat-redirect devices (`deviceheat_002` ↔
