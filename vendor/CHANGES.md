@@ -15,7 +15,35 @@ The previously-separate Ryujinx-fix patch is folded into the fork's
 initial commit. `apworld/dread/_setup/build.py` no longer runs a
 separate `git apply` step.
 
-`open-dread-rando/` is still clean and reference-only.
+`open-dread-rando/` is now a **soft fork** pinned to
+`github.com/mdietz94/open-dread-rando`, branch
+`fix/multi-model-timeline-bmsas` (commit `7c91af8`) — one commit on top
+of upstream `main` (`dd42b13`). See the dated section below.
+
+### 2026-07-06 — open-dread-rando soft fork (multi-model action-set-ref fix)
+
+- `src/open_dread_rando/pickups/pickup.py` — `ActorPickup.patch()` now
+  `ensure_present()`s **every entry of the final
+  `new_template.action_set_refs`** in each level pkg, next to the
+  existing `system/animtrees/base.bmsat` ensure.
+- **Why**: the multi-model branch of `patch_model()` PREPENDS the models'
+  bmsas and KEEPS the template's own
+  `actors/items/itemsphere/charclasses/timeline.bmsas` ref, but `patch()`
+  never ensured that kept asset. It exists only inside the s010–s070
+  scenario pkgs (scenarios with vanilla itemsphere actors), so placing any
+  multi-model (progressive) pickup in `s080_shipyard` / `s090_skybase`
+  makes actor init dereference an unresolvable action set → the game
+  crashes on scenario load (strlen(NULL), cazadora.nss). Single-model
+  pickups REPLACE `action_set_refs[0]` and are unaffected. Proven via
+  full Ryujinx repro + A/B + fix verification on Dread 2.1.0 (seed
+  AP-31983554, Progressive Spin at s080 `item_missiletank_000`).
+- **Upstream was deliberately NOT PR'd** — owner decision; the fix lives
+  on our fork only. (Upstream's shipped presets default progressives off,
+  which is why they never hit it.) If that decision changes, the commit
+  message on `7c91af8` is written PR-ready.
+- Regression guard: `apworld/dread/tests/test_odr_multimodel_fix.py`
+  fails if the submodule is ever re-pinned to an open-dread-rando
+  without the fix.
 
 ### 2026-05-31 — Switch sysmodule hard fork (bridge networking)
 
@@ -118,9 +146,14 @@ this section.
 
 ```pwsh
 cd vendor\open-dread-rando
-git fetch --depth 1 origin
-git checkout origin/main
+git fetch origin
+git checkout origin/fix/multi-model-timeline-bmsas
 ```
+
+To take a new upstream open-dread-rando, rebase the fork's
+`fix/multi-model-timeline-bmsas` onto upstream `main` first, push, then
+re-pin — `test_odr_multimodel_fix.py` trips if the fix is lost in the
+bump.
 
 After updating, re-run `scripts/phase1_validate.py` against a Switch with
 the matching exlaunch release installed to confirm nothing in the Lua
