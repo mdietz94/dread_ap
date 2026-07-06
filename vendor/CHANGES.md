@@ -16,9 +16,9 @@ initial commit. `apworld/dread/_setup/build.py` no longer runs a
 separate `git apply` step.
 
 `open-dread-rando/` is now a **soft fork** pinned to
-`github.com/mdietz94/open-dread-rando`, branch
-`fix/multi-model-timeline-bmsas` (commit `7c91af8`) — one commit on top
-of upstream `main` (`dd42b13`). See the dated section below.
+`github.com/mdietz94/open-dread-rando` **`main`** (commit `daa23f9`,
+the merge of `fix/multi-model-timeline-bmsas` = `7c91af8`, one commit on
+top of upstream `main` `dd42b13`). See the dated section below.
 
 ### 2026-07-06 — open-dread-rando soft fork (multi-model action-set-ref fix)
 
@@ -147,13 +147,12 @@ this section.
 ```pwsh
 cd vendor\open-dread-rando
 git fetch origin
-git checkout origin/fix/multi-model-timeline-bmsas
+git checkout origin/main
 ```
 
-To take a new upstream open-dread-rando, rebase the fork's
-`fix/multi-model-timeline-bmsas` onto upstream `main` first, push, then
-re-pin — `test_odr_multimodel_fix.py` trips if the fix is lost in the
-bump.
+To take a new upstream open-dread-rando, merge (or rebase) upstream
+`main` into the fork's `main` first, push, then re-pin —
+`test_odr_multimodel_fix.py` trips if the fix is lost in the bump.
 
 After updating, re-run `scripts/phase1_validate.py` against a Switch with
 the matching exlaunch release installed to confirm nothing in the Lua
