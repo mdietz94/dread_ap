@@ -1188,7 +1188,15 @@ GlobalKey = tuple                  # (region, sub_area, node)
 # ---------------------------------------------------------------------------
 
 # v2: transports pulled into a shuffle pool (transport rando).
-GRAPH_SCHEMA_VERSION = 7   # v7: `comp_regions` gives every component its RDV
+GRAPH_SCHEMA_VERSION = 8   # v8: asymmetric rando-eligible doors (one eligible
+                           # side, far side Open Passage / Access Locked /
+                           # Access Closed) emit a COMPANION dock atom for the
+                           # far side (`companion: true` + `vanilla_ast`), so a
+                           # rolled weakness gates BOTH directions — mirrors
+                           # Randovania's force_change_two_way pair sync and
+                           # the physical patch (open-dread-rando replaces the
+                           # whole two-sided actor, shields on both sides).
+                           # v7: `comp_regions` gives every component its RDV
                            # region name, so Universal Tracker's /explain can
                            # label a hop by region instead of the bare "R{comp}"
                            # machine name (see apworld/dread/ut_explain.py).
@@ -1311,6 +1319,37 @@ def emit_graph(
     dock_edges: list = []           # (u, v, ast)
     dock_sides: dict = {}
     transport_raw: dict = {}        # side_id -> endpoint meta (comp filled below)
+
+    def _rando_eligible(n: dict) -> bool:
+        """Eligible per Randovania's door dock_rando: the door's CURRENT
+        weakness must be in change_from (only those get reassigned), not
+        per-node excluded, and not carrying a bespoke open override."""
+        return (
+            n.get("dock_type") in RANDOMIZABLE_DOCK_TYPES
+            and n.get("default_dock_weakness") in door_change_from
+            and not n.get("exclude_from_dock_rando")
+            and n.get("override_default_open_requirement") is None
+            and bool(n.get("extra", {}).get("actor_name"))
+        )
+
+    # First pass: which sides are independently rando-eligible. Needed so the
+    # second pass can spot ASYMMETRIC doors — an eligible side whose far side
+    # is not itself eligible (Open Passage / Access Locked / Access Closed).
+    # The physical door is ONE two-sided actor: patching it changes BOTH
+    # directions (open-dread-rando swaps the actordef and shields both sides),
+    # and Randovania's force_change_two_way assigns the rolled weakness to the
+    # paired node even when that node isn't eligible. So the far side must
+    # carry a COMPANION dock atom (same physical door, same assignment) rather
+    # than a baked vanilla requirement — otherwise logic keeps e.g. the free
+    # "Open Passage" back door of a sensor lock after the roll shields it.
+    eligible_sides: set[str] = set()
+    for key, n in nodes.items():
+        if (n.get("node_type") == "dock"
+                and n.get("default_connection")
+                and n.get("dock_type") not in TRANSPORT_DOCK_TYPES
+                and _rando_eligible(n)):
+            eligible_sides.add("::".join(key))
+
     for key, n in nodes.items():
         if n.get("node_type") != "dock":
             continue
@@ -1356,30 +1395,41 @@ def emit_graph(
                 "component": ex.get("elevator_component"),
             }
             continue
-        # Eligible per Randovania's door dock_rando: the door's CURRENT weakness
-        # must be in change_from (only those get reassigned), not per-node
-        # excluded, and not carrying a bespoke open override.
-        rando_eligible = (
-            dock_type in RANDOMIZABLE_DOCK_TYPES
-            and weakness in door_change_from
-            and not n.get("exclude_from_dock_rando")
-            and override is None
-            and bool(n.get("extra", {}).get("actor_name"))
-        )
-        if rando_eligible:
+        far_id = "::".join(far)
+        if side_id in eligible_sides:
             ast = {"type": "dock", "side_id": side_id}
             dock_sides[side_id] = {
                 "dock_type": dock_type,
                 "default_weakness": weakness,
-                "paired_side_id": "::".join(far),
+                "paired_side_id": far_id,
                 "incompatible_weaknesses": n.get("incompatible_dock_weaknesses", []),
                 "patcher": {"scenario": scenario_of.get(region),
                             "actor": n.get("extra", {}).get("actor_name")},
             }
-        elif override is not None:
-            ast = translate_requirement(override, header)
         else:
-            ast = dock_open_requirement(header, dock_type, weakness)
+            if override is not None:
+                vanilla = translate_requirement(override, header)
+            else:
+                vanilla = dock_open_requirement(header, dock_type, weakness)
+            if far_id in eligible_sides:
+                # Companion side of an asymmetric rando-eligible door (see the
+                # first-pass comment): symbolic, resolved per-seed to the SAME
+                # assignment as the eligible side (the roll writes every side
+                # of a physical door), falling back to the vanilla requirement
+                # when the door stays unrandomized.
+                ast = {"type": "dock", "side_id": side_id}
+                dock_sides[side_id] = {
+                    "dock_type": dock_type,
+                    "default_weakness": weakness,
+                    "paired_side_id": far_id,
+                    "incompatible_weaknesses": n.get("incompatible_dock_weaknesses", []),
+                    "companion": True,
+                    "vanilla_ast": vanilla,
+                    "patcher": {"scenario": scenario_of.get(region),
+                                "actor": n.get("extra", {}).get("actor_name")},
+                }
+            else:
+                ast = vanilla
         dock_edges.append((key, far, ast))
 
     comp = _trivial_scc(nodes, conn_edges)

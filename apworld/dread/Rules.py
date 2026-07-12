@@ -125,7 +125,7 @@ def compile_to_lambda(
         # CONNECTION shortcuts — NOT on the randomizable doors themselves, which
         # are modelled as ``dock`` atoms (resolved per-roll in graph_logic).
         #
-        # Crucially, our DoorRando only ever patches the 453 ``dock_sides`` (the
+        # Crucially, our DoorRando only ever patches the ``dock_sides`` (the
         # doors with engine actors). The connections carrying a ``DoorLocks``
         # atom are NOT among them (verified: zero of the 81 run parallel to a
         # ``dock`` edge), so those physical doors stay VANILLA-OPEN even when

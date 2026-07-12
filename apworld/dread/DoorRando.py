@@ -3,8 +3,15 @@
 Randovania-style: each rando-eligible door (its vanilla weakness is in the logic
 DB's ``door_rando.change_from``) is reassigned a weakness from ``change_to``.
 Doors are TWO-SIDED — one engine actor with a shield on each side — so the paired
-sides always receive the SAME weakness (a "two-way" door). The assignment feeds
-two consumers:
+sides always receive the SAME weakness (a "two-way" door, mirroring Randovania's
+``force_change_two_way``). That INCLUDES asymmetric doors whose far side is not
+itself eligible (the free "Open Passage" back of a one-way sensor door, or the
+"Access Locked"/"Access Closed" back of a one-way grey door): the extractor
+emits a COMPANION dock side for them (``companion: true`` + ``vanilla_ast``),
+grouped with the eligible side, because the physical patch replaces the whole
+two-sided actor — a rolled weakness gates BOTH directions in-game, and RDV's
+post-fill sync assigns the paired node the same weakness even when ineligible.
+The assignment feeds two consumers:
 
   * logic — ``graph_logic.build_regions`` resolves each dock atom against the
     assignment, so AP's live region sweep re-derives reachability for THIS seed
@@ -44,6 +51,14 @@ doors reachable from the start with the starting items (vanilla) are PROTECTED
 (kept vanilla); only doors past that early frontier are randomized. Verified:
 with the guard, 0/15 seeds fail; without it, ~all fail. The guard touches ~38 of
 457 doors. See [[dread-native-graph-spike]].
+
+Refinement: a door the starting kit CANNOT open from either side (vanilla) is
+exempt from protection even when it touches the early frontier — it is not an
+early-sphere edge, so keeping it vanilla can't help fill, and randomizing it
+can only ever ADD early reachability. Without the exemption, a double-sided
+Sensor Lock door adjacent to the spawn area stayed a sensor door for the whole
+seed even when the player listed "Sensor Lock Door" in ``doors_to_change``
+(reported on the door outside Corpius).
 """
 from __future__ import annotations
 
@@ -311,6 +326,7 @@ def roll_assignments(
 
     dr = graph["door_rando"]
     dock_sides = graph["dock_sides"]
+    wreq = graph["weakness_requirements"]
     locked = dr.get("locked_weakness")
     # Assignable pool: change_to minus the locking weakness (v1 keeps every door
     # passable), restricted to BASIC_DOOR_TYPES (the exotic shields are dropped —
@@ -346,6 +362,28 @@ def roll_assignments(
     def _shielded(weakness: str) -> bool:
         return door_type.get(weakness) in SHIELDED_DOOR_TYPES
 
+    def _vanilla_open_ast(side: dict) -> dict:
+        """The side's UNRANDOMIZED open requirement — a companion side's baked
+        ``vanilla_ast`` (Open Passage / Access Locked / ...), else the weakness
+        table entry."""
+        va = side.get("vanilla_ast")
+        if va is not None:
+            return va
+        return wreq.get(f"{side['dock_type']}::{side['default_weakness']}",
+                        {"type": "impossible"})
+
+    def _vanilla_passable(group: list[str]) -> bool:
+        """Can the starting kit open this door from ANY side, vanilla? Doors
+        that can't (e.g. a double-sided Sensor Lock door) contribute nothing to
+        the early sphere, so the start-door guard gains nothing by protecting
+        them — randomizing such a door can only ever ADD early reachability.
+        Protecting them was also user-visible: a sensor door listed in
+        ``doors_to_change`` stayed a sensor door for the whole seed."""
+        return any(
+            _eval(_vanilla_open_ast(dock_sides[sid]), starting_items or {},
+                  set(), trick_levels or {}, energy_per_tank, ammo_amounts)
+            for sid in group)
+
     # "Door Types" mode: one global source-type -> target mapping, rolled once
     # up front from the shared BASIC pool. Every door of a given vanilla weakness
     # then receives the same target (subject to the per-door incompat / budget
@@ -359,10 +397,21 @@ def roll_assignments(
 
     assign: dict[str, str] = {}
     for group in _physical_doors(dock_sides):
-        if any(sid in protected for sid in group):
+        # Start-door guard: keep the door vanilla only if it touches the early
+        # frontier AND the starting kit can actually open it — an early door
+        # the kit can't pass (double-sided sensor lock) is not an early-sphere
+        # edge, so protecting it can't help fill and only defies the user's
+        # ``doors_to_change`` selection.
+        if (any(sid in protected for sid in group)
+                and _vanilla_passable(group)):
             continue
-        scenario = dock_sides[group[0]]["patcher"]["scenario"]
-        src_weakness = dock_sides[group[0]]["default_weakness"]
+        # Eligibility and shield accounting key off the DOOR side, not a
+        # companion (whose ``default_weakness`` is a non-door name like
+        # "Open Passage" that never appears in ``doors_to_change``).
+        door_sid = next((sid for sid in group
+                         if not dock_sides[sid].get("companion")), group[0])
+        scenario = dock_sides[door_sid]["patcher"]["scenario"]
+        src_weakness = dock_sides[door_sid]["default_weakness"]
         # Honor "Doors to Change": a door of a deselected vanilla type stays
         # vanilla (in both modes).
         if not _changeable(src_weakness):
