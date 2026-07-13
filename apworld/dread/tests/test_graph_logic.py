@@ -44,7 +44,7 @@ def graph():
 
 @graph_required
 def test_graph_schema_and_shape(graph):
-    assert graph["graph_schema_version"] == 7
+    assert graph["graph_schema_version"] == 8
     assert graph["n_regions"] > 0
     assert len(graph["comp_regions"]) == graph["n_regions"]
     assert all(r for r in graph["comp_regions"])   # every component has a region
@@ -204,8 +204,9 @@ def test_dock_atoms_resolve(graph):
             sid = ast["side_id"]
             assert sid in sides, f"dock atom side {sid!r} missing from dock_sides"
             s = sides[sid]
-            key = f"{s['dock_type']}::{s['default_weakness']}"
-            assert key in wreq, f"weakness {key!r} missing from table"
+            if s.get("vanilla_ast") is None:
+                key = f"{s['dock_type']}::{s['default_weakness']}"
+                assert key in wreq, f"weakness {key!r} missing from table"
         elif t in ("and", "or"):
             for c in ast["items"]:
                 walk(c)
@@ -220,12 +221,25 @@ def test_dock_atoms_resolve(graph):
 @graph_required
 def test_dock_sides_are_two_sided(graph):
     """Each rando-eligible dock's paired side is itself a known node id (so door
-    rando can keep both sides' weakness in sync)."""
+    rando can keep both sides' weakness in sync). v8: EVERY eligible side's pair
+    is in dock_sides — asymmetric doors carry a companion entry for their
+    ineligible far side (Open Passage / Access Locked / Access Closed), because
+    the physical patch replaces the whole two-sided actor."""
     sides = graph["dock_sides"]
     for sid, meta in sides.items():
-        assert meta["paired_side_id"], f"{sid} missing paired side"
+        pair = meta["paired_side_id"]
+        assert pair, f"{sid} missing paired side"
+        assert pair in sides, f"{sid} pair {pair!r} not in dock_sides"
+        assert sides[pair]["paired_side_id"] == sid, f"{sid} pairing not mutual"
         assert meta["patcher"]["scenario"], f"{sid} missing patcher scenario"
         assert meta["patcher"]["actor"], f"{sid} missing patcher actor"
+        if meta.get("companion"):
+            assert meta.get("vanilla_ast") is not None, (
+                f"companion {sid} missing vanilla_ast")
+            assert not sides[pair].get("companion"), (
+                f"companion {sid} paired to another companion")
+            # Same physical actor: one door_patch covers both sides.
+            assert meta["patcher"] == sides[pair]["patcher"], sid
 
 
 def test_resolve_docks_substitutes_assignment():
@@ -246,6 +260,54 @@ def test_resolve_docks_substitutes_assignment():
     nested = {"type": "and", "items": [ast, {"type": "trivial"}]}
     res = _resolve_docks(nested, {"S": "Wave Beam Door"}, dock_sides, wreq)
     assert res["items"][0] == {"type": "item", "name": "Wave Beam", "amount": 1}
+
+
+@graph_required
+def test_companion_census(graph):
+    """Pin the asymmetric-door census at the cached DB commit: 47 companion
+    sides — 7 free "Open Passage" backs (one-way sensor doors, trivial
+    vanilla_ast) + 40 "Access Locked"/"Access Closed" backs (one-way grey
+    doors, impossible vanilla_ast). A change here means upstream restructured
+    its one-way doors — re-audit the two-way sync assumptions."""
+    comps = {sid: m for sid, m in graph["dock_sides"].items()
+             if m.get("companion")}
+    assert len(comps) == 47
+    kinds = {"trivial": 0, "impossible": 0}
+    for m in comps.values():
+        t = m["vanilla_ast"]["type"]
+        assert t in kinds, f"unexpected companion vanilla_ast type {t!r}"
+        kinds[t] += 1
+    assert kinds == {"trivial": 7, "impossible": 40}
+
+
+def test_resolve_docks_companion_side():
+    """A companion side (the ineligible back of an asymmetric door, e.g. the
+    Open Passage behind a one-way sensor lock) keeps its baked vanilla_ast when
+    the door is unrandomized, and resolves the ASSIGNED weakness under the
+    ``door::`` key (its own dock_type may be ``other``, which has no entry for
+    door weaknesses)."""
+    from dread.graph_logic import _resolve_docks
+    dock_sides = {
+        "C": {"dock_type": "other", "default_weakness": "Open Passage",
+              "companion": True, "vanilla_ast": {"type": "trivial"}},
+        "L": {"dock_type": "door", "default_weakness": "Access Locked",
+              "companion": True, "vanilla_ast": {"type": "impossible"}},
+    }
+    wreq = {
+        "door::Wave Beam Door": {"type": "item", "name": "Wave Beam", "amount": 1},
+    }
+    # Unassigned: vanilla_ast wins (free Open Passage / impossible locked back).
+    assert _resolve_docks({"type": "dock", "side_id": "C"}, {}, dock_sides,
+                          wreq) == {"type": "trivial"}
+    assert _resolve_docks({"type": "dock", "side_id": "L"}, {}, dock_sides,
+                          wreq) == {"type": "impossible"}
+    # Assigned: the rolled DOOR weakness gates this direction too — the free
+    # back door closes, the locked back door opens.
+    want = {"type": "item", "name": "Wave Beam", "amount": 1}
+    assert _resolve_docks({"type": "dock", "side_id": "C"},
+                          {"C": "Wave Beam Door"}, dock_sides, wreq) == want
+    assert _resolve_docks({"type": "dock", "side_id": "L"},
+                          {"L": "Wave Beam Door"}, dock_sides, wreq) == want
 
 
 # ---- real-generation (gated on AP runtime) -------------------------------

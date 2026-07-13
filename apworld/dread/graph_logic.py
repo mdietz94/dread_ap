@@ -26,7 +26,7 @@ from ._data_loader import load_json
 from .Rules import compile_to_lambda
 from .Tricks import TRICK_LEVEL_NAMES, effective_trick_levels
 
-EXPECTED_GRAPH_SCHEMA = 7
+EXPECTED_GRAPH_SCHEMA = 8
 
 
 def load_graph() -> dict:
@@ -70,13 +70,26 @@ def ammo_amounts_from_options(options) -> dict[str, int]:
 
 def _resolve_docks(ast: dict, assign: dict, dock_sides: dict, wreq: dict) -> dict:
     """Substitute every ``dock`` atom with the open requirement of its assigned
-    weakness (default weakness when unassigned). Returns a dock-free AST."""
+    weakness (default weakness when unassigned). Returns a dock-free AST.
+
+    An ASSIGNED weakness is always a door weakness (the roll pool), so it
+    resolves under the ``door::`` key even on a companion side whose own
+    ``dock_type`` is ``other`` (the Open Passage back of a one-way sensor
+    door). An UNASSIGNED companion side keeps its extraction-baked
+    ``vanilla_ast`` (Open Passage / Access Locked / Access Closed), which may
+    not exist as a ``weakness_requirements`` entry."""
     t = ast.get("type")
     if t == "dock":
         sid = ast["side_id"]
         side = dock_sides[sid]
-        weakness = assign.get(sid, side["default_weakness"])
-        key = f"{side['dock_type']}::{weakness}"
+        weakness = assign.get(sid)
+        if weakness is None:
+            vanilla = side.get("vanilla_ast")
+            if vanilla is not None:
+                return vanilla
+            key = f"{side['dock_type']}::{side['default_weakness']}"
+        else:
+            key = f"door::{weakness}"
         return wreq.get(key, {"type": "impossible"})
     if t in ("and", "or"):
         return {"type": t,

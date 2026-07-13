@@ -434,7 +434,7 @@ def test_damage_threshold_in_graph():
 
 
 # DoorLocks semantics: the 81 ``NOT DoorLocks`` connection shortcuts ride
-# physical doors our DoorRando never patches (it only touches the 453
+# physical doors our DoorRando never patches (it only touches the
 # ``dock_sides``), so those doors stay vanilla-open and ``NOT DoorLocks`` is
 # always passable — INDEPENDENT of door_lock_rando. (An earlier model severed
 # them when rando was on, which made every door-rando seed unsolvable by walling

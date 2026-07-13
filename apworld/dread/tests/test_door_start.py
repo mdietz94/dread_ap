@@ -84,6 +84,7 @@ def test_roll_assignments_drops_exotic_door_types():
             "locked_weakness": "Access Permanently Closed",
             "vanilla_shield_ids": {},
         },
+        "weakness_requirements": {},
     }
     for seed in range(20):
         assign = roll_assignments(graph, random.Random(seed), mode="randomized")
@@ -151,6 +152,7 @@ def test_roll_assignments_respects_shield_budget():
             "locked_weakness": "Access Permanently Closed",
             "vanilla_shield_ids": {"s010_cave": cap_doors},
         },
+        "weakness_requirements": {},
     }
     assign = roll_assignments(graph, _FirstRNG(), mode="randomized")
     assert assign["A"] == "Power Beam Door", "budget should refuse a new shield"
@@ -185,6 +187,7 @@ def test_roll_assignments_door_types_global_consistency():
             "locked_weakness": "Access Permanently Closed",
             "vanilla_shield_ids": {},
         },
+        "weakness_requirements": {},
     }
     for seed in range(10):
         assign = roll_assignments(graph, random.Random(seed), mode="types")
@@ -214,15 +217,88 @@ def test_roll_assignments_two_sided(graph):
 
 @graph_required
 def test_start_guard_protects_early_doors(graph):
-    """Doors reachable from spawn with the starting kit stay vanilla."""
-    from dread.DoorRando import roll_assignments, early_reachable
+    """Doors reachable from spawn with the starting kit stay vanilla — but ONLY
+    those the kit can actually open from some side. A door touching the early
+    frontier that the kit cannot pass at all (e.g. the double-sided Sensor Lock
+    door outside Corpius) is not an early-sphere edge, so it IS randomized (the
+    user-reported "sensor door still there despite doors_to_change" bug)."""
+    from dread.DoorRando import roll_assignments, early_reachable, _eval
     start = {"Slide": 1, "Pulse Radar": 1, "Missile Tank": 1}
     reach, side_comp = early_reachable(graph, start, {})
     protected = {s for s, (c0, c1) in side_comp.items()
                  if c0 in reach or c1 in reach}
     assert protected, "guard should protect some early doors"
+
+    ds = graph["dock_sides"]
+    wreq = graph["weakness_requirements"]
+
+    def vanilla_open(sid):
+        side = ds[sid]
+        va = side.get("vanilla_ast")
+        if va is None:
+            va = wreq.get(f"{side['dock_type']}::{side['default_weakness']}",
+                          {"type": "impossible"})
+        return _eval(va, start, set(), {})
+
+    def door_passable(sid):
+        group = {sid, ds[sid].get("paired_side_id")} & set(ds)
+        return any(vanilla_open(s) for s in group)
+
+    passable = {s for s in protected if door_passable(s)}
+    impassable = protected - passable
+    assert passable, "some protected doors should be kit-passable"
+    assert impassable, "the early frontier should include kit-impassable doors"
+
     assign = roll_assignments(graph, _RNG(), starting_items=start, trick_levels={})
-    assert not (protected & set(assign)), "guarded early doors must stay vanilla"
+    assert not (passable & set(assign)), (
+        "kit-passable guarded early doors must stay vanilla")
+    # The refinement: at least the known sensor door adjacent to the early
+    # frontier is randomized despite touching it (regression pin for the
+    # Corpius report — see DoorRando module docstring).
+    corpius_sensor = "Artaria::Invisible Corpius Room::Door to Phantom Cloak Tutorial"
+    assert corpius_sensor in impassable
+    assert corpius_sensor in assign, (
+        "vanilla-impassable early door should be randomized")
+
+
+@graph_required
+def test_companion_sides_ride_the_assignment(graph):
+    """Asymmetric doors (one eligible side + a companion back side — the free
+    "Open Passage" behind a one-way sensor door, or the impossible "Access
+    Locked"/"Access Closed" behind a one-way grey door) are rolled as ONE
+    physical door: the companion always carries the same weakness as its
+    eligible side, never rolls alone, and the resolved logic gates BOTH
+    directions (the physical patch replaces the whole two-sided actor)."""
+    from dread.DoorRando import roll_assignments
+    from dread.graph_logic import _resolve_docks
+
+    ds = graph["dock_sides"]
+    wreq = graph["weakness_requirements"]
+    companions = {sid for sid, m in ds.items() if m.get("companion")}
+    assert companions, "expected companion sides in the graph (schema v8)"
+
+    assign = roll_assignments(graph, _RNG(),
+                              starting_items={"Slide": 1, "Pulse Radar": 1,
+                                              "Missile Tank": 1},
+                              trick_levels={})
+    rolled = [sid for sid in companions if sid in assign]
+    assert rolled, "some asymmetric doors should be randomized"
+    for sid in companions:
+        pair = ds[sid]["paired_side_id"]
+        assert (sid in assign) == (pair in assign), (
+            f"companion {sid} rolled independently of its door side")
+        if sid in assign:
+            assert assign[sid] == assign[pair]
+            # The back door is no longer free/locked: it resolves to the
+            # rolled weakness's real requirement, both directions in sync.
+            resolved = _resolve_docks({"type": "dock", "side_id": sid},
+                                      assign, ds, wreq)
+            assert resolved == wreq[f"door::{assign[sid]}"]
+        else:
+            # Unrandomized: the companion keeps its baked vanilla behavior.
+            resolved = _resolve_docks({"type": "dock", "side_id": sid},
+                                      assign, ds, wreq)
+            assert resolved == ds[sid]["vanilla_ast"]
 
 
 @graph_required
