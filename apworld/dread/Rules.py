@@ -120,29 +120,31 @@ def compile_to_lambda(
         return _const_true if level <= eff else _const_false
 
     if t == "misc":
-        # DoorLocks: a Randovania misc resource that is True when door-lock rando
-        # is active. It appears (always as ``NOT DoorLocks``) on 81 vanilla-only
-        # CONNECTION shortcuts — NOT on the randomizable doors themselves, which
-        # are modelled as ``dock`` atoms (resolved per-roll in graph_logic).
+        # DoorLocks is Randovania's "Door Lock Randomizer" misc resource: True
+        # when door-lock rando is active for the seed. ``NOT DoorLocks`` guards
+        # 83 door-interacting maneuvers (shinesparks carried through a door,
+        # opening a specific vanilla door type through terrain with Wave, ...)
+        # that are only valid while every door has its VANILLA lock. Randovania
+        # itself kills ALL of these branches in a door-rando seed; we mirror
+        # that via the ``door_lock_rando`` argument.
         #
-        # Crucially, our DoorRando only ever patches the ``dock_sides`` (the
-        # doors with engine actors). The connections carrying a ``DoorLocks``
-        # atom are NOT among them (verified: zero of the 81 run parallel to a
-        # ``dock`` edge), so those physical doors stay VANILLA-OPEN even when
-        # door rando is on. Therefore ``NOT DoorLocks`` is always passable for
-        # us and ``DoorLocks`` is effectively always False — independent of the
-        # door_lock_rando option.
-        #
-        # An earlier fix resolved this against door_lock_rando (treating the
-        # shortcuts as severed when rando is on). That made every door-rando seed
-        # unsolvable: it walled off the Cataris Underlava cluster (and other
-        # pockets) whose ONLY graph entry is a ``NOT DoorLocks`` edge, with no
-        # randomized-door alternative to replace it. The over-reach it meant to
-        # cure (Morph Ball placed at Artaria Thermal Device) was a non-issue —
-        # that door is likewise non-randomized, so the vanilla path is real.
+        # History: this used to hardcode ``door_locks_active = False`` (always
+        # credit the maneuvers) on the WRONG belief that the doors involved are
+        # never randomized. The doors are modelled as ``dock`` atoms elsewhere,
+        # but the maneuver PHYSICALLY crosses them mid-move (e.g. the Artaria
+        # Map Station shinespark runs through the Map Station↔Waterfall door):
+        # a seed that rolls that door to Grapple makes the sprint impossible
+        # while the old resolution still credited it — a live false positive
+        # (seed AP-00908778: both Waterfall pickups "in logic" for a player who
+        # could not reach them). An even earlier fix (#124) resolved this
+        # faithfully but caused FillErrors: severing the branches walls off the
+        # Cataris Underlava pocket whose only full-loadout entry is such an
+        # edge. That is now absorbed by World._compute_dropped_locations (the
+        # walled-off pickup is dropped under ``full``/``items`` and stays as
+        # Randovania-faithful maybe-unreachable filler under ``minimal``), so
+        # the faithful resolution is safe.
         negate = bool(ast.get("negate", False))
-        door_locks_active = False  # these connections' doors are never randomized
-        holds = (not door_locks_active) if negate else door_locks_active
+        holds = (not door_lock_rando) if negate else door_lock_rando
         return _const_true if holds else _const_false
 
     if t == "sum":

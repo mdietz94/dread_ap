@@ -239,6 +239,7 @@ def unreachable_pickup_locations(
     graph: dict, trick_levels: dict, *, start_comp: int | None = None,
     transport_matching: dict | None = None, dock_assignments: dict | None = None,
     energy_per_tank: int = 100, ammo_amounts: dict | None = None,
+    door_lock_rando: bool = False,
 ) -> tuple[list[str], set[str]]:
     """Pickup AP-names that are unreachable even with a FULL loadout under this
     config, plus the trick short_names gating the stranded frontier.
@@ -250,7 +251,12 @@ def unreachable_pickup_locations(
     Randovania-faithful behavior (Randovania's starter preset disables every
     trick and only guarantees beatability, not full reachability). Used by the
     World's accessibility guard to turn a cryptic late FillError into an
-    actionable up-front OptionError."""
+    actionable up-front OptionError.
+
+    ``door_lock_rando=True`` resolves ``NOT DoorLocks`` maneuvers as dead
+    (Randovania-faithful for a door-rando seed); the pocket that strands as a
+    result (Cataris: Underlava Puzzle Room 2) is exactly what the caller's
+    drop mechanism exists to absorb."""
     from .DoorRando import early_reachable, _resolve_docks
     from .TransportRando import _ALL_ITEMS
 
@@ -260,7 +266,8 @@ def unreachable_pickup_locations(
         reach, _ = early_reachable(
             graph, full, tl, start_comp, use_events=True,
             transport_matching=transport_matching, energy_per_tank=energy_per_tank,
-            ammo_amounts=ammo_amounts, dock_assignments=dock_assignments)
+            ammo_amounts=ammo_amounts, dock_assignments=dock_assignments,
+            is_door_rando=door_lock_rando)
         return reach, [name for comp, name in graph["pickups"] if comp not in reach]
 
     reach, unreachable = _missing(trick_levels)
@@ -300,13 +307,15 @@ def set_graph_rules(world) -> None:
     tl = effective_trick_levels(world.options)
     ept = int(world.options.energy_per_tank.value)
     amm = ammo_amounts_from_options(world.options)
+    dlr = int(world.options.door_lock_rando.value) != 0
 
     if getattr(mw.worlds[player], "explicit_indirect_conditions", True):
         for ev_region, ent in getattr(world, "_graph_indirect", []):
             mw.register_indirect_condition(ev_region, ent)
 
     victory = compile_to_lambda(world._graph_victory, player, tl, graph_mode=True,
-                                energy_per_tank=ept, ammo_amounts=amm)
+                                energy_per_tank=ept, ammo_amounts=amm,
+                                door_lock_rando=dlr)
     n_dna = int(world.options.required_artifacts.value)
     if n_dna > 0:
         dna = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))

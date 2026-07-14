@@ -682,6 +682,42 @@ energy-drain damage (at RDV parity — see above). Door-lock and transport
 (elevator/shuttle) randomization are SHIPPED (`DoorRando.py` / `TransportRando.py`,
 exposed as the `door_lock_rando` / `transport_rando` options).
 
+UPDATE (misc:DoorLocks now resolved FAITHFULLY under door rando — fixes the
+AP-00908778 Waterfall false positive): `misc:DoorLocks` is RDV's "Door Lock
+Randomizer" resource (True when door rando is active); its 83 `NOT DoorLocks`
+connections are door-INTERACTING maneuvers (door-crossing shinesparks, opening a
+vanilla door type through terrain with Wave) valid only with vanilla locks. RDV
+kills them all in a door-rando seed; we previously resolved them ALWAYS-passable
+(the post-#124 model, justified by "none run parallel to a dock edge" — which
+checked the wrong property: the maneuver crosses the dock PHYSICALLY mid-move,
+not graph-parallel). Live consequence: in seed AP-00908778 (door_types roll →
+122/223 doors Grapple) the Artaria Map Station shinespark (`ArtariaMapSpeed`,
+`NOT DoorLocks`-gated, sprint crosses the Map Station↔Waterfall door = rolled
+Grapple) was the ONLY no-Gravity/no-Bomb exit from the Waterfall's flooded
+bottom, so both Waterfall pickups (one holding the player's own Progressive
+Bomb #1) sat falsely "in logic" for a grapple-less player. NOW: the existing
+`door_lock_rando` / `is_door_rando` kwargs are honored in
+`Rules.compile_to_lambda` + `DoorRando._eval` and threaded through
+`graph_logic` (victory + drop oracle), `StartArea` (foothold), `TransportRando`
+(matching acceptance), and `roll_assignments`' start-door guard. What makes the
+#124-era FillError NOT come back: `_compute_dropped_locations` (built later)
+absorbs the walled-off pocket — at beginner+ tricks exactly ONE pickup strands
+under door rando (`Cataris: Underlava Puzzle Room 2`, only entry is a
+`NOT DoorLocks` edge) and is auto-dropped under full/items; under `minimal` it
+stays as RDV-faithful maybe-unreachable filler (at all-tricks-off the drop set
+is the 8 Speedbooster pickups + Underlava P2 + Ferenia: Fan Room = 10). Vanilla
+door locks are byte-identical to before (flag off ⇒ NOT DoorLocks trivial).
+During this investigation the Waterfall rotatable (`trap_rot_cv_003`, held by
+one-shot diffusion block `db_dif_cv_002`) and the EMMI Zone Spinner
+(`platformtrapgrapple5right`) were AUDITED AND CLEARED — both are modeled
+soundly for our config (positive-event-gated / Grapple-gated); the walk-over
+flip of the Waterfall rotatable remains unmodeled by RDV but no compiled edge
+relies on it. Tests: `test_graph_logic.py` (`test_doorlocks_faithful_resolution_
+under_door_rando`, a seed-shaped repro asserting lenient=reachable /
+faithful=not, + `test_doorlocks_drop_oracle_under_door_rando` pinning the exact
+1-pickup drop), `test_rule_compiler.py` DoorLocks block (rewritten to faithful
+semantics).
+
 UPDATE (transport room-name display): transport rando now rewrites the in-game
 room-name-display label of each shuffled ride's SOURCE room so it names the NEW
 destination instead of the vanilla one (previously it leaked the vanilla

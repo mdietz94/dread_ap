@@ -70,7 +70,7 @@ def roll_matching(graph: dict, rng, mode: str = "randomized") -> dict[str, str]:
 
 
 def _no_reachability_regression(graph: dict, matching: dict[str, str],
-                                tl: dict) -> bool:
+                                tl: dict, is_door_rando: bool = False) -> bool:
     """The matching doesn't strand any pickup that was reachable under VANILLA
     transports (full loadout, given trick levels).
 
@@ -92,12 +92,13 @@ def _no_reachability_regression(graph: dict, matching: dict[str, str],
     from .DoorRando import early_reachable
     full = {nm: 99 for nm in _ALL_ITEMS}
     base, _ = early_reachable(graph, full, tl, use_events=True,
-                              transport_matching={})
+                              transport_matching={}, is_door_rando=is_door_rando)
     baseline_pickups = {comp for comp, _name in graph["pickups"] if comp in base}
     baseline_endpoints = {m["comp"] for m in graph["transports"].values()
                           if m["comp"] in base}
     reach, _ = early_reachable(graph, full, tl, use_events=True,
-                               transport_matching=matching)
+                               transport_matching=matching,
+                               is_door_rando=is_door_rando)
     return baseline_pickups <= reach and baseline_endpoints <= reach
 
 
@@ -113,15 +114,19 @@ _ALL_ITEMS = (
 
 
 def roll_connected_matching(graph: dict, rng, tl: dict,
-                            mode: str = "randomized", attempts: int = 50):
+                            mode: str = "randomized", attempts: int = 50,
+                            door_lock_rando: bool = False):
     """Roll a matching that strands no pickup reachable under vanilla transports
     (full loadout, given trick levels), retrying up to ``attempts`` times; falls
-    back to vanilla if none found."""
+    back to vanilla if none found. ``door_lock_rando`` selects the faithful
+    ``NOT DoorLocks`` resolution for the seed being rolled (applied to both the
+    baseline and the candidate sweep, so the no-regression invariant compares
+    like with like)."""
     if mode in ("off", "vanilla", None):
         return {}
     for _ in range(attempts):
         m = roll_matching(graph, rng, mode)
-        if _no_reachability_regression(graph, m, tl):
+        if _no_reachability_regression(graph, m, tl, is_door_rando=door_lock_rando):
             return m
     return {}  # give up -> vanilla (always reachable)
 

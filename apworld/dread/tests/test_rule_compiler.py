@@ -433,33 +433,34 @@ def test_damage_threshold_in_graph():
     assert '"sum"' in text, "no sum nodes in graph"
 
 
-# DoorLocks semantics: the 81 ``NOT DoorLocks`` connection shortcuts ride
-# physical doors our DoorRando never patches (it only touches the
-# ``dock_sides``), so those doors stay vanilla-open and ``NOT DoorLocks`` is
-# always passable — INDEPENDENT of door_lock_rando. (An earlier model severed
-# them when rando was on, which made every door-rando seed unsolvable by walling
-# off pockets whose only graph entry is such a shortcut. See the long note in
-# Rules.compile_to_lambda.)
+# DoorLocks semantics: ``misc:DoorLocks`` is Randovania's "Door Lock
+# Randomizer" resource — True when door rando is active. ``NOT DoorLocks``
+# guards maneuvers valid only with VANILLA locks (door-crossing shinesparks,
+# opening a specific vanilla door type through terrain), so they resolve dead
+# under door rando, exactly as Randovania resolves them. The walled-off pocket
+# this creates (Cataris: Underlava Puzzle Room 2) is absorbed by the
+# full/items auto-drop. See the long note in Rules.compile_to_lambda —
+# including why the previous "always passable" model was a live false positive
+# (seed AP-00908778: the Artaria Map Station shinespark through a Grapple-
+# rolled door put both Waterfall pickups falsely in logic).
 
-def test_misc_not_door_lock_passable_regardless_of_rando():
-    """'NOT DoorLocks' is passable whether or not door rando is active — the
-    connection's door is never randomized by DoorRando."""
+def test_misc_not_door_lock_faithful():
+    """'NOT DoorLocks' is passable with vanilla locks, dead under door rando."""
     ast = {"type": "misc", "name": "DoorLocks", "negate": True}
     assert compile_to_lambda(ast, player=1, door_lock_rando=False)(StubState({})) is True
-    assert compile_to_lambda(ast, player=1, door_lock_rando=True)(StubState({})) is True
-
-
-def test_misc_door_lock_atom_false_regardless_of_rando():
-    """Bare 'DoorLocks' (non-negated) is always False — these doors aren't
-    randomized in our model, so the resource never holds."""
-    ast = {"type": "misc", "name": "DoorLocks", "negate": False}
-    assert compile_to_lambda(ast, player=1, door_lock_rando=False)(StubState({})) is False
     assert compile_to_lambda(ast, player=1, door_lock_rando=True)(StubState({})) is False
 
 
+def test_misc_door_lock_atom_faithful():
+    """Bare 'DoorLocks' (non-negated) holds exactly when door rando is active."""
+    ast = {"type": "misc", "name": "DoorLocks", "negate": False}
+    assert compile_to_lambda(ast, player=1, door_lock_rando=False)(StubState({})) is False
+    assert compile_to_lambda(ast, player=1, door_lock_rando=True)(StubState({})) is True
+
+
 def test_misc_propagates_through_and():
-    """'NOT DoorLocks' inside an AND leaves the other terms binding and stays
-    passable in both door-rando states."""
+    """'NOT DoorLocks' inside an AND: other terms bind with vanilla locks; the
+    whole conjunct dies under door rando."""
     ast = {"type": "and", "items": [
         {"type": "item", "name": "Slide", "amount": 1},
         {"type": "misc", "name": "DoorLocks", "negate": True},
@@ -467,34 +468,27 @@ def test_misc_propagates_through_and():
     with_rando = compile_to_lambda(ast, player=1, door_lock_rando=True)
     without_rando = compile_to_lambda(ast, player=1, door_lock_rando=False)
     assert without_rando(StubState({"Slide": 1})) is True
-    assert with_rando(StubState({"Slide": 1})) is True   # Slide gates; door stays open
-    assert with_rando(StubState({})) is False            # missing Slide still fails
+    assert without_rando(StubState({})) is False         # missing Slide still fails
+    assert with_rando(StubState({"Slide": 1})) is False  # maneuver dead under rando
 
 
-def test_thermal_device_rule_reachable_via_vanilla_door_under_rando():
-    """Artaria Thermal Device: its upper-door shortcut is a ``NOT DoorLocks``
-    connection whose door our DoorRando never locks, so the missiles-only vanilla
-    path stays open even with door rando active — Morph Ball is NOT forced.
-
-    Modelled from the raw RDV node: Missiles AND (Morph OR (NOT DoorLocks AND ...)).
-    The ``NOT DoorLocks`` disjunct holds in both states, so missiles alone reach
-    it either way (the placement that a prior model flagged as 'circular' is in
-    fact valid — the door is open in-game)."""
+def test_map_station_shinespark_rule_dies_under_door_rando():
+    """The AP-00908778 regression shape: a route whose only non-Gravity branch
+    is a door-crossing shinespark (Speed & prepare-speedboost event, the event
+    being ``NOT DoorLocks``). With vanilla locks the sprint is credited; under
+    door rando it must die, forcing the Gravity alternative."""
     rule = {
-        "type": "and", "items": [
-            {"type": "item", "name": "Missile Tank", "amount": 1},
-            {"type": "or", "items": [
-                {"type": "item", "name": "Morph Ball", "amount": 1},
-                {"type": "and", "items": [
-                    {"type": "misc", "name": "DoorLocks", "negate": True},
-                    {"type": "item", "name": "Missile Tank", "amount": 2},
-                ]},
+        "type": "or", "items": [
+            {"type": "item", "name": "Gravity Suit", "amount": 1},
+            {"type": "and", "items": [
+                {"type": "item", "name": "Speed Booster", "amount": 1},
+                {"type": "misc", "name": "DoorLocks", "negate": True},
             ]},
         ],
     }
     with_rando = compile_to_lambda(rule, player=1, door_lock_rando=True)
     without_rando = compile_to_lambda(rule, player=1, door_lock_rando=False)
-    missiles = StubState({"Missile Tank": 15})
-    # Missiles alone suffice with OR without door rando (vanilla door is open).
-    assert without_rando(missiles) is True
-    assert with_rando(missiles) is True
+    speed_only = StubState({"Speed Booster": 1})
+    assert without_rando(speed_only) is True    # vanilla: sprint through the door
+    assert with_rando(speed_only) is False      # rando: door may be unopenable mid-run
+    assert with_rando(StubState({"Gravity Suit": 1})) is True
