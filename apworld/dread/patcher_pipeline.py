@@ -445,6 +445,11 @@ def placements_to_overrides(
         "cosmetic_combat": placements.get("cosmetic_combat", {}),
         "required_artifacts": placements.get("required_artifacts"),
         "nav_hints": placements.get("nav_hints", []),
+        # End-credits "Major Item Locations". Default {} (NOT passthrough):
+        # this function only runs on AP seeds, where the template's baked
+        # example log is always false — a payload predating the key blanks
+        # the credits section instead of leaving the lie in place.
+        "spoiler_log": placements.get("spoiler_log", {}),
         "pickup_resources": pickup_resources,
         "pickup_captions": pickup_captions,
         "pickup_models": pickup_models,
@@ -625,6 +630,18 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
     # still unlocks the doors.
     if out.get("hints"):
         out["hints"] = _apply_nav_hints(out["hints"], overrides.get("nav_hints") or [])
+
+    # End-credits "Major Item Locations": the template bakes the starter
+    # preset's own example placements (e.g. "Grapple Beam: Burenia - Teleport
+    # to Ferenia"), false for any AP seed — and misleading when read out of
+    # ap_patcher_input.json during debugging. Replace it with the real AP
+    # placements (DreadWorld._generate_spoiler_log); an empty dict makes
+    # patch_credits skip the section entirely. Key absent (None) ⇒ template
+    # untouched, so hand-written override files / template passthrough stay
+    # byte-identical.
+    spoiler_log = overrides.get("spoiler_log")
+    if spoiler_log is not None:
+        out["spoiler_log"] = spoiler_log
 
     pickup_resources = overrides.get("pickup_resources", {})
     pickup_captions = overrides.get("pickup_captions", {})

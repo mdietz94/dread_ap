@@ -1067,6 +1067,46 @@ the `"Client"`→Archipelago tab (the default-visible log), so a failed auto-pat
 is noticed without opening the Dread tab. Tests: `test_patcher_pipeline_output_path`
 (version pre-flight + error-hint), `test_display` (pill colors/labels/detail).
 
+UPDATE (door rando two-way sync for one-way doors — FIXED, graph schema 7→8):
+a user report (sensor door outside Corpius "still there" despite Sensor Lock
+Door in `doors_to_change`, while UT claimed Corpius reachable) uncovered a real
+logic-vs-game mismatch on ASYMMETRIC doors — one rando-eligible side whose far
+side is NOT eligible: 7 free "Open Passage" backs (one-way sensor doors) + 40
+"Access Locked"/"Access Closed" backs (one-way grey doors), 47 total. The
+extractor used to BAKE the far side's vanilla requirement, but the physical
+patch replaces the whole two-sided actor (open-dread-rando shields BOTH sides),
+and RDV's `force_change_two_way` post-fill sync assigns the paired node the
+same weakness even when ineligible (verified in
+`randovania/generator/dock_weakness_distributor.py`). So a randomized sensor
+door's free back stayed trivially passable in OUR logic (unsound — UT/fill
+could route through a now-shielded door; the reported UT overshoot), and a
+randomized grey door's locked back stayed impossible (sound but unfaithful).
+Fix: the extractor emits a COMPANION dock side for the ineligible far side
+(`companion: true` + `vanilla_ast` = the previously-baked requirement);
+`_resolve_docks` resolves an ASSIGNED side under `door::<weakness>` (its own
+dock_type may be `other`) and an unassigned companion to its `vanilla_ast`;
+`roll_assignments` groups companions with their door side (`_physical_doors`
+via the mutual `paired_side_id`), keys eligibility/shield accounting off the
+NON-companion side, and writes the same weakness to every side of the group —
+so both directions gate identically, matching the game. SECOND fix (the literal
+complaint): the start-door guard protected every door TOUCHING the early
+frontier, including doors the starting kit cannot open from either side (the
+double-sided sensor door outside Corpius) — protecting those contributes
+nothing to the early sphere (they're not crossable edges), so they're now
+exempt (`_vanilla_passable` in DoorRando) and get randomized like the user
+asked; kit-passable frontier doors stay protected (fill bootstrap unchanged —
+the vanilla early sphere is preserved exactly). Verified: 48/48 real
+generations OK (door individual/types × transport × starting areas ×
+full/items/minimal), full suite 685 green. Tests:
+`test_graph_logic` (companion census 7+40 pin, mutual pairing + same-actor
+invariants, companion resolution), `test_door_start`
+(`test_companion_sides_ride_the_assignment`, guard split
+passable-protected/impassable-randomized with the Corpius door as regression
+pin). NOTE: needs `python scripts/extract_dread_rules.py --all` to regen the
+gitignored graph at schema 8. Seeds generated BEFORE this fix keep their old
+(over-permissive) UT view — the roll data baked into their slot_data predates
+the companions.
+
 UPDATE (Universal Tracker support): SHIPPED. UT recomputes a slot's reachable
 set by re-running generation from slot_data in a single-player "fake" regen with
 a DIFFERENT RNG stream. Our world rolls a CUSTOM per-seed region graph in
@@ -1135,6 +1175,31 @@ requirement text and region hops are fully readable. NOTE: needs
 Tests: `tests/test_ut_explain.py` (AP-free renderer matrix + `build_comp_labels`
 layering + gated real-world `explain_path`/`explain_rule` through
 `setup_multiworld`); `test_graph_logic` schema pin 6→7 + `comp_regions` shape.
+
+UPDATE (end-credits `spoiler_log` regenerated from real AP placements): the
+patcher input's `spoiler_log` used to pass through VERBATIM from the starter
+preset template — open-dread-rando's `patch_credits` renders it as a "Major
+Item Locations" section in the END CREDITS (post-beat, so real spoilers are
+appropriate; RDV does the same), and the baked example placements (e.g.
+"Grapple Beam: Burenia - Teleport to Ferenia") are false for any AP seed. It
+also misled a debugging session that read `ap_patcher_input.json`'s
+`spoiler_log` as the seed's real placements — treat any pre-fix seed's
+`spoiler_log` as noise. Now: `World._generate_spoiler_log` (called from
+`pre_output`, stashed like `_nav_hints`) builds the real log from the fill —
+majors mirror the template's curation via items.json (progressive-group items,
+`pool_count == 1` uniques, placed Metroid DNA; tanks/ammo/chain upgrades
+excluded), multi-copy entries newline-join sorted locations (template format),
+cross-world placements render as "<player>'s <location>", entries follow
+items.json order (deterministic, no RNG). Rides the placements payload
+(`spoiler_log` key) → `placements_to_overrides` (defaults `{}` — NOT
+passthrough — so a pre-fix payload BLANKS the credits section, which
+`patch_credits` skips, instead of keeping the lie) → `merge_overrides`
+(replaces the template key; key absent ⇒ untouched so hand-written override
+files / template passthrough stay byte-identical, same contract as
+`objective.hints`). Tests: `tests/test_spoiler_log.py` (world-side generation,
+AP-gated), `scripts/tests/test_seed_to_patcher.py` (payload passthrough +
+blank default), `scripts/tests/test_build_patcher_json.py` (merge replace /
+blank-on-empty / absent-untouched).
 
 ## Known unknowns / risks for new work
 

@@ -518,6 +518,38 @@ def test_starting_items_round_trip():
     assert out["starting_items"] == {"ITEM_WEAPON_MISSILE_MAX": 15, "ITEM_MAX_LIFE": 99}
 
 
+def test_spoiler_log_passes_through():
+    """The payload's real end-credits spoiler log rides the overrides
+    verbatim (merge_overrides writes it over the template's baked example)."""
+    log = {"Grapple Beam": "Cataris: Kraid Arena",
+           "Progressive Beam": "Artaria: Spot A\nSamusB's Cool Zone"}
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "x",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [],
+        "spoiler_log": log,
+    }
+    out = placements_to_overrides(placements)
+    assert out["spoiler_log"] == log
+
+
+def test_spoiler_log_defaults_to_blank_not_passthrough():
+    """A payload predating the spoiler_log key must yield {} — every AP seed's
+    template log is false, so old payloads blank the credits section rather
+    than keep the starter preset's example placements."""
+    placements = {
+        "slot_name": "Samus",
+        "seed_id": "x",
+        "starting_area": 0,
+        "starting_items": {},
+        "placements": [],
+    }
+    out = placements_to_overrides(placements)
+    assert out["spoiler_log"] == {}
+
+
 def test_layout_uuid_override_honored():
     placements = {
         "slot_name": "Samus",
