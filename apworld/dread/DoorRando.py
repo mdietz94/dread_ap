@@ -147,14 +147,12 @@ def _eval(ast: dict, items: dict, events: set, tl: dict,
     if t == "trick":
         return ast["level"] <= tl.get(ast["name"], 0)
     if t == "misc":
-        # DoorLocks: see the long note in Rules.compile_to_lambda. These atoms
-        # ride vanilla-only connection shortcuts whose physical doors our
-        # DoorRando never patches, so the doors stay open and ``NOT DoorLocks``
-        # is always passable (DoorLocks effectively always False) — independent
-        # of whether door rando is active for this seed.
+        # DoorLocks: see the long note in Rules.compile_to_lambda. Randovania's
+        # "Door Lock Randomizer" misc resource — ``NOT DoorLocks`` maneuvers
+        # (door-crossing shinesparks etc.) are only valid with vanilla locks,
+        # so they resolve dead whenever door rando is active for this seed.
         negate = bool(ast.get("negate", False))
-        door_locks_active = False
-        return (not door_locks_active) if negate else door_locks_active
+        return (not is_door_rando) if negate else is_door_rando
     if t == "sum":
         base = ast["base"]
         total = 0
@@ -190,7 +188,8 @@ def early_reachable(graph: dict, items: dict, tl: dict,
                     transport_matching: dict | None = None,
                     energy_per_tank: int = 100,
                     ammo_amounts: dict | None = None,
-                    dock_assignments: dict | None = None) -> tuple[set, dict]:
+                    dock_assignments: dict | None = None,
+                    is_door_rando: bool = False) -> tuple[set, dict]:
     """Regions reachable from the start with the given doors + items + trick
     levels. Returns (reachable_comps, side_id->(src,dst)).
 
@@ -203,7 +202,12 @@ def early_reachable(graph: dict, items: dict, tl: dict,
     door guard). ``use_events=False`` evaluates event atoms as False — an
     ITEM-ONLY lower bound on reach, used by the starting-area foothold check so
     that hitting the target provably gives AP's fill a real (item-only) early
-    sphere rather than one that depends on the live event cascade."""
+    sphere rather than one that depends on the live event cascade.
+
+    ``is_door_rando=True`` resolves ``misc:DoorLocks`` faithfully for a
+    door-rando seed: ``NOT DoorLocks`` maneuvers (vanilla-locks-only tricks)
+    evaluate dead, matching Randovania. Pass it whenever the seed being
+    modelled has door-lock rando active."""
     ds = graph["dock_sides"]
     wreq = graph["weakness_requirements"]
     da = dock_assignments or {}
@@ -237,7 +241,8 @@ def early_reachable(graph: dict, items: dict, tl: dict,
             u = frontier.pop()
             for v, ast in adj.get(u, []):
                 if v not in reach and _eval(ast, items, triggered, tl,
-                                            energy_per_tank, ammo_amounts):
+                                            energy_per_tank, ammo_amounts,
+                                            is_door_rando):
                     reach.add(v)
                     frontier.append(v)
         if not use_events:
@@ -326,12 +331,16 @@ def roll_assignments(
         return doors_to_change is None or weakness in doors_to_change
 
     # Start-door guard: protect doors on the early (start-reachable) frontier.
+    # ``is_door_rando=True``: this roll IS the door rando, so the frontier must
+    # not be inflated by vanilla-locks-only maneuvers (NOT-DoorLocks branches)
+    # that will be dead in the final seed.
     protected: set[str] = set()
     if starting_items is not None:
         reach, side_comp = early_reachable(
             graph, starting_items, trick_levels or {}, start_comp,
             transport_matching=transport_matching,
-            energy_per_tank=energy_per_tank, ammo_amounts=ammo_amounts)
+            energy_per_tank=energy_per_tank, ammo_amounts=ammo_amounts,
+            is_door_rando=True)
         protected = {sid for sid, (c0, c1) in side_comp.items()
                      if c0 in reach or c1 in reach}
 

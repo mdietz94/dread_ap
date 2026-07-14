@@ -283,16 +283,19 @@ class DreadWorld(World):
         if transport_on:
             from .TransportRando import roll_connected_matching
             self._transport_matching = roll_connected_matching(
-                graph, self.random, tl, mode="randomized")
+                graph, self.random, tl, mode="randomized",
+                door_lock_rando=door_on)
         tm = self._transport_matching
 
         # Spawn point + the minimal extra starting kit that bootstraps it.
         if area != 0:
-            chosen = start_node_for(graph, area, tl, base_items, tm)
+            chosen = start_node_for(graph, area, tl, base_items, tm,
+                                    door_lock_rando=door_on)
             if chosen is not None:
                 _key, self._start_comp, self._start_patcher = chosen
                 self._start_extra_items = minimal_start_items(
-                    graph, self._start_comp, base_items, tl, transport_matching=tm)
+                    graph, self._start_comp, base_items, tl, transport_matching=tm,
+                    door_lock_rando=door_on)
                 for n in self._start_extra_items:
                     base_items[n] = 1
 
@@ -354,7 +357,8 @@ class DreadWorld(World):
             transport_matching=getattr(self, "_transport_matching", None),
             dock_assignments=getattr(self, "_dock_assignments", None),
             energy_per_tank=int(self.options.energy_per_tank.value),
-            ammo_amounts=ammo_amounts_from_options(self.options))
+            ammo_amounts=ammo_amounts_from_options(self.options),
+            door_lock_rando=int(self.options.door_lock_rando.value) != 0)
         if not unreachable:
             return set()
 

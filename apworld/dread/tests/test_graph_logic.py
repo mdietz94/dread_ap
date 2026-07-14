@@ -123,6 +123,84 @@ def test_unreachable_pickup_locations_all_tricks_disabled(graph):
 
 
 @graph_required
+def test_doorlocks_faithful_resolution_under_door_rando(graph):
+    """Regression for the AP-00908778 false positive: ``misc:DoorLocks`` is
+    Randovania's "Door Lock Randomizer" resource, so ``NOT DoorLocks``
+    maneuvers (door-crossing shinesparks etc.) must be DEAD in a door-rando
+    seed. The report's shape: a player with everything except Grapple, Bombs
+    and Gravity Suit; the only exit from the flooded Waterfall bottom is the
+    Map Station shinespark (event ``ArtariaMapSpeed``, gated on NOT DoorLocks),
+    whose sprint physically crosses the Map Station<->Waterfall door — rolled
+    to Grapple in that seed. The old always-passable resolution kept both
+    Waterfall pickups "in logic" while the player could not reach them."""
+    from dread.DoorRando import early_reachable
+    from dread.TransportRando import _ALL_ITEMS
+    from dread.Tricks import DREAD_TRICKS
+
+    # (a) The sprint-prep event edge is exactly a bare NOT-DoorLocks guard in
+    # the graph — the shape the faithful resolution exists for.
+    ev_comps = {c for c, n in graph["events"] if n == "ArtariaMapSpeed"}
+    assert ev_comps, "ArtariaMapSpeed event vanished from the graph"
+    sprint_edges = [ast for src, dst, ast in graph["entrances"]
+                    if dst in ev_comps]
+    assert any(a.get("type") == "misc" and a.get("name") == "DoorLocks"
+               and a.get("negate") for a in sprint_edges), sprint_edges
+
+    # (b) Seed shape: full kit minus Grapple/Bombs/Gravity at the report's
+    # intermediate tricks; the door pairs that guarded every non-sprint entry
+    # to the Waterfall top rolled Grapple. Lenient evaluation credits the
+    # pickups (the historical false positive); faithful evaluation does not.
+    items = {nm: 99 for nm in _ALL_ITEMS}
+    for gone in ("Grapple Beam", "Bomb", "Cross Bomb", "Power Bomb",
+                 "Gravity Suit"):
+        items[gone] = 0
+    tl = {t.short_name: 2 for t in DREAD_TRICKS}
+    grapple_pairs = [
+        "Artaria::Save Station West::Door to Waterfall",
+        "Artaria::Waterfall::Door to Save Station West",
+        "Artaria::Teleport to Cataris::Door to Save Station West",
+        "Artaria::Save Station West::Door to Teleport to Cataris",
+        "Artaria::Map Station::Door to Waterfall",
+        "Artaria::Waterfall::Door to Map Station",
+        "Artaria::Behind Waterfall::Door to Water Reservoir",
+        "Artaria::Water Reservoir::Door to Behind Waterfall",
+        "Artaria::Waterfall::Door to Shortcut to Screw Attack",
+        "Artaria::Shortcut to Screw Attack::Door to Waterfall",
+    ]
+    for sid in grapple_pairs:
+        assert sid in graph["dock_sides"], f"stale dock side id: {sid}"
+    assign = {sid: "Grapple Beam Door" for sid in grapple_pairs}
+    comp_by_name = {name: comp for comp, name in graph["pickups"]}
+    targets = ("Artaria: Waterfall - Energy Part",
+               "Artaria: Waterfall - Missile Tank")
+
+    lenient, _ = early_reachable(graph, items, tl, use_events=True,
+                                 dock_assignments=assign, is_door_rando=False)
+    assert all(comp_by_name[t] in lenient for t in targets)
+    faithful, _ = early_reachable(graph, items, tl, use_events=True,
+                                  dock_assignments=assign, is_door_rando=True)
+    assert all(comp_by_name[t] not in faithful for t in targets)
+
+
+@graph_required
+def test_doorlocks_drop_oracle_under_door_rando(graph):
+    """With door rando active, the faithful resolution strands exactly one
+    full-loadout pocket at normal trick levels — Cataris: Underlava Puzzle
+    Room 2, whose only entry is a vanilla-locks-only maneuver. That single
+    location is what World's full/items auto-drop absorbs (the #124 FillError
+    is gone). Vanilla door locks keep the historical zero-drop behavior."""
+    from dread.graph_logic import unreachable_pickup_locations
+    from dread.Tricks import DREAD_TRICKS
+
+    beginner = {t.short_name: 1 for t in DREAD_TRICKS}
+    unreachable, _ = unreachable_pickup_locations(
+        graph, beginner, door_lock_rando=True)
+    assert unreachable == ["Cataris: Underlava Puzzle Room 2"]
+    assert unreachable_pickup_locations(
+        graph, beginner, door_lock_rando=False) == ([], set())
+
+
+@graph_required
 def test_max_no_suit_threshold_matches_world_constant(graph):
     """The faithful HP model in World.py sizes the energy progression pool from
     MAX_NO_SUIT_HP (the largest no-suit damage_threshold in logic). If upstream
