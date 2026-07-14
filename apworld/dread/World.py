@@ -1279,6 +1279,14 @@ class DreadWorld(World):
             # generate_output / fill_slot_data. Empty in offline / direct-call
             # flows that skip pre_output ⇒ patcher falls back to neutral filler.
             "nav_hints": getattr(self, "_nav_hints", []),
+            # End-credits "Major Item Locations" (open-dread-rando's
+            # patch_credits renders this after the randomizer credits). Real
+            # post-fill placements of this slot's major items, replacing the
+            # starter preset's baked example log — which is false for any AP
+            # seed. Computed in pre_output like nav_hints; empty in offline /
+            # direct-call flows ⇒ the credits section is blanked (patch_credits
+            # skips an empty dict) rather than left lying.
+            "spoiler_log": getattr(self, "_spoiler_log", {}),
             "placements": placements,
             # Door-lock rando: open-dread-rando door_patches (one per physical
             # door). Empty when door rando is off.
@@ -1330,6 +1338,7 @@ class DreadWorld(World):
         (``DreadContext._register_nav_hints``) — so nothing is broadcast at
         session start."""
         self._nav_hints = self._generate_nav_hints()
+        self._spoiler_log = self._generate_spoiler_log()
 
     def _generate_nav_hints(self) -> list[dict[str, Any]]:
         """Pick real cross-world placement facts and render them as Nav Station
@@ -1456,6 +1465,52 @@ class DreadWorld(World):
         tail = hints[len(forced):]
         rng.shuffle(tail)
         return forced + tail
+
+    def _generate_spoiler_log(self) -> dict[str, str]:
+        """Real "Major Item Locations" for the end credits.
+
+        open-dread-rando's ``patch_credits`` renders the patcher input's
+        ``spoiler_log`` (item name → location description) as a "Major Item
+        Locations" section after the randomizer credits — shown only once the
+        run is beaten, so real spoilers are appropriate (Randovania does the
+        same). The starter preset template bakes Randovania's own example
+        placements there, false for any AP seed; this replaces them with where
+        this slot's majors actually landed.
+
+        Majors mirror the template's curation: the unique single-copy
+        abilities, the Progressive group items, and the placed Metroid DNA —
+        tanks/ammo/chain upgrades are excluded. Multi-copy items (progressives)
+        newline-join their locations, matching the template's format. A major
+        in another slot's world renders as "<player>'s <location>". Precollected
+        starters aren't placed anywhere, so they simply don't appear.
+        Deterministic (no RNG): entries follow items.json definition order,
+        locations sort alphabetically within an entry."""
+        mw = self.multiworld
+        me = self.player
+
+        def place(loc: Any) -> str:
+            if loc.player == me:
+                return loc.name
+            return f"{mw.get_player_name(loc.player)}'s {loc.name}"
+
+        def is_major(name: str) -> bool:
+            data = item_name_to_item.get(name)
+            if data is None:
+                return False
+            return (bool(data.progression_tiers)
+                    or name.startswith("Metroid DNA")
+                    or data.pool_count == 1)
+
+        by_name: dict[str, list[str]] = {}
+        for loc in mw.get_filled_locations():
+            item = loc.item
+            if item is None or item.player != me or loc.address is None:
+                continue
+            if is_major(item.name):
+                by_name.setdefault(item.name, []).append(place(loc))
+
+        return {it.name: "\n".join(sorted(by_name[it.name]))
+                for it in item_table if it.name in by_name}
 
     def fill_slot_data(self) -> dict[str, Any]:
         # Bundle the full placements payload so the in-client /patch command

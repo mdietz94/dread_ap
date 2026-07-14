@@ -1140,6 +1140,31 @@ Tests: `tests/test_ut_explain.py` (AP-free renderer matrix + `build_comp_labels`
 layering + gated real-world `explain_path`/`explain_rule` through
 `setup_multiworld`); `test_graph_logic` schema pin 6→7 + `comp_regions` shape.
 
+UPDATE (end-credits `spoiler_log` regenerated from real AP placements): the
+patcher input's `spoiler_log` used to pass through VERBATIM from the starter
+preset template — open-dread-rando's `patch_credits` renders it as a "Major
+Item Locations" section in the END CREDITS (post-beat, so real spoilers are
+appropriate; RDV does the same), and the baked example placements (e.g.
+"Grapple Beam: Burenia - Teleport to Ferenia") are false for any AP seed. It
+also misled a debugging session that read `ap_patcher_input.json`'s
+`spoiler_log` as the seed's real placements — treat any pre-fix seed's
+`spoiler_log` as noise. Now: `World._generate_spoiler_log` (called from
+`pre_output`, stashed like `_nav_hints`) builds the real log from the fill —
+majors mirror the template's curation via items.json (progressive-group items,
+`pool_count == 1` uniques, placed Metroid DNA; tanks/ammo/chain upgrades
+excluded), multi-copy entries newline-join sorted locations (template format),
+cross-world placements render as "<player>'s <location>", entries follow
+items.json order (deterministic, no RNG). Rides the placements payload
+(`spoiler_log` key) → `placements_to_overrides` (defaults `{}` — NOT
+passthrough — so a pre-fix payload BLANKS the credits section, which
+`patch_credits` skips, instead of keeping the lie) → `merge_overrides`
+(replaces the template key; key absent ⇒ untouched so hand-written override
+files / template passthrough stay byte-identical, same contract as
+`objective.hints`). Tests: `tests/test_spoiler_log.py` (world-side generation,
+AP-gated), `scripts/tests/test_seed_to_patcher.py` (payload passthrough +
+blank default), `scripts/tests/test_build_patcher_json.py` (merge replace /
+blank-on-empty / absent-untouched).
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**
