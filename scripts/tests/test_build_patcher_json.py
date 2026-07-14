@@ -60,6 +60,10 @@ def _template() -> dict:
         "game_patches": {"raven_beak_damage_table_handling": "consistent_low",
                          "nerf_power_bombs": True, "default_x_released": False},
         "objective": {"required_artifacts": 3, "hints": ["hint text"]},
+        # The real starter preset bakes Randovania's own example placements
+        # here (rendered into the end credits by patch_credits) — false for
+        # any AP seed.
+        "spoiler_log": {"Grapple Beam": "Burenia - Teleport to Ferenia"},
     }
 
 
@@ -360,6 +364,34 @@ def test_nav_station_hints_absent_round_trips():
     assert "hints" not in t
     out = merge_overrides(t, {})
     assert "hints" not in out
+
+
+def test_spoiler_log_replaced_with_real_placements():
+    """The template's baked example spoiler_log (rendered into the end
+    credits' "Major Item Locations" by patch_credits) is replaced with the
+    real AP placements when the overrides supply one."""
+    t = _template()
+    real = {"Grapple Beam": "Cataris: Kraid Arena",
+            "Progressive Beam": "Artaria: Spot A\nSamusB's Cool Zone"}
+    out = merge_overrides(t, {"spoiler_log": real})
+    assert out["spoiler_log"] == real
+
+
+def test_spoiler_log_empty_blanks_the_credits_section():
+    """An explicitly empty spoiler_log (old payloads without the key) blanks
+    the template's example log — patch_credits skips an empty dict, so no
+    false placement ever reaches the credits."""
+    t = _template()
+    out = merge_overrides(t, {"spoiler_log": {}})
+    assert out["spoiler_log"] == {}
+
+
+def test_spoiler_log_absent_leaves_template_untouched():
+    """No spoiler_log key at all (hand-written override files / template
+    passthrough) keeps the template's log byte-identical."""
+    t = _template()
+    out = merge_overrides(t, {})
+    assert out["spoiler_log"] == {"Grapple Beam": "Burenia - Teleport to Ferenia"}
 
 
 def test_non_actor_pickup_resource_override():
