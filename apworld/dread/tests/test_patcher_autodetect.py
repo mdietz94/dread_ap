@@ -114,6 +114,26 @@ def test_candidate_pythons_skips_sys_executable_when_frozen(tmp_path, monkeypatc
     assert str(real.absolute()) in cands
 
 
+def test_candidate_pythons_finds_versioned_python312(tmp_path, monkeypatch):
+    """Regression: on a system whose default ``python``/``python3`` is a
+    version with no mercury-engine-data-structures wheel (e.g. Arch's 3.13),
+    the only usable interpreter is a separately-installed ``python3.12``. The
+    wizard (``prereqs.candidate_pythons``) probes that name and installs the
+    deps there; the client's autodetect MUST probe it too, or auto-patch loops
+    forever reporting the deps 'not installed in any detected Python'."""
+    py312 = tmp_path / "python3.12"
+    py312.write_text("")
+    monkeypatch.setattr(pp.sys, "executable", str(tmp_path / "ArchipelagoLauncher"))
+    monkeypatch.setattr(pp.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(pp.shutil, "which",
+                        lambda name: str(py312) if name == "python3.12" else None)
+    monkeypatch.setattr(pp.sys, "platform", "linux")
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+    cands = pp._candidate_pythons()
+    assert str(py312.absolute()) in cands
+
+
 def test_candidate_pythons_keeps_venv_distinct_from_resolved_base(tmp_path, monkeypatch):
     """A venv's bin/python is typically a symlink to the base interpreter.
     Dedup must NOT collapse them: invoking the resolved base path skips

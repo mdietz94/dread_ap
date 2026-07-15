@@ -1139,7 +1139,14 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             wizard_state["bridge_host"] = bridge_host
             wizard_log(f"do_deploy_and_continue: bridge_host={bridge_host or '(auto)'}")
             if ryu_cb.active:
-                target = Path(ryu_input.text.strip())
+                raw_target = ryu_input.text.strip()
+                if not raw_target or raw_target == "(not detected)":
+                    status.text = (
+                        "Ryujinx folder not set — Browse to your Ryujinx data "
+                        "folder (e.g. ~/.config/Ryujinx) or pick another target."
+                    )
+                    return
+                target = Path(raw_target)
                 if not target.is_dir():
                     status.text = f"Ryujinx folder does not exist: {target}"
                     return

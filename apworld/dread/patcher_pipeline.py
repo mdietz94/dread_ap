@@ -909,8 +909,15 @@ def _candidate_pythons() -> list[str]:
         venv_root = Path(venv)
         for rel in ("bin/python", "bin/python3", "Scripts/python.exe"):
             _add(str(venv_root / rel))
-    # PATH lookups.
-    for name in ("py", "python", "python3"):
+    # PATH lookups. Include the version-suffixed names (``python3.12`` /
+    # ``python3.13``) so this matches ``prereqs.candidate_pythons()`` — on a
+    # system whose default ``python``/``python3`` is a version without a
+    # mercury-engine-data-structures wheel (e.g. Arch's 3.13), the ONLY usable
+    # interpreter is a separately-installed ``python3.12``. The wizard probes
+    # that name and installs the deps there; if the client's autodetect omits
+    # it, the deps become invisible and auto-patch loops forever on a hint
+    # targeting the unusable default interpreter.
+    for name in ("py", "python3.12", "python3.13", "python", "python3"):
         _add(shutil.which(name))
     # The Windows `py -3` launcher resolves to the default Python 3.
     if sys.platform == "win32":
