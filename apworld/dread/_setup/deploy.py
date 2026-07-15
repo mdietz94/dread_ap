@@ -76,22 +76,48 @@ def detect_sd_candidates() -> list[Path]:
     return candidates
 
 
-def detect_ryujinx_path() -> Path | None:
-    """Return `%APPDATA%/Ryujinx/` if it exists, else None.
+def _ryujinx_candidate_roots() -> list[Path]:
+    """Platform-ordered list of directories where Ryujinx stores its data.
 
-    Matches the location Ryujinx itself defaults to on Windows — the same
-    one our existing `-DRYU_PATH=...` cmake post-build hook targets. The
-    wizard's Deploy page also lets the user browse to a non-default
-    install via "Browse for Ryujinx folder"; this function is just the
+    The wizard only uses the FIRST that exists as an auto-detect hint; the
+    user can always override via "Browse for Ryujinx folder". Covering all
+    platforms (not just Windows) matters because a blank hint made the wizard
+    fall back to ``Path(".")`` — a relative, non-writable cwd — and every
+    Ryujinx deploy failed with ``PermissionError: 'mods'`` until the user
+    hand-typed the folder.
+    """
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        return [Path(appdata) / "Ryujinx"] if appdata else []
+
+    home = Path.home()
+    if sys.platform == "darwin":
+        return [home / "Library" / "Application Support" / "Ryujinx"]
+
+    # Linux (and other POSIX): the portable/native install honors
+    # $XDG_CONFIG_HOME (default ~/.config); the Flatpak sandboxes its own
+    # config under ~/.var/app. Newer forks (Ryubing) keep the "Ryujinx" leaf.
+    roots: list[Path] = []
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    roots.append(Path(xdg) / "Ryujinx" if xdg else home / ".config" / "Ryujinx")
+    roots.append(home / ".var" / "app" / "org.ryujinx.Ryujinx" / "config" / "Ryujinx")
+    return roots
+
+
+def detect_ryujinx_path() -> Path | None:
+    """Return the first existing Ryujinx data dir for this platform, else None.
+
+    Matches the location Ryujinx itself defaults to: ``%APPDATA%/Ryujinx`` on
+    Windows, ``~/Library/Application Support/Ryujinx`` on macOS, and
+    ``$XDG_CONFIG_HOME/Ryujinx`` (≈ ``~/.config/Ryujinx``) or the Flatpak
+    config dir on Linux. The wizard's Deploy page also lets the user browse to
+    a non-default install via "Browse for Ryujinx folder"; this is just the
     auto-detect hint.
     """
-    if sys.platform != "win32":
-        return None
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        return None
-    p = Path(appdata) / "Ryujinx"
-    return p if p.is_dir() else None
+    for p in _ryujinx_candidate_roots():
+        if p.is_dir():
+            return p
+    return None
 
 
 def _sd_layout(sd_root: Path) -> dict[str, Path]:

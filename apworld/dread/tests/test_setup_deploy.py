@@ -4,11 +4,13 @@ Strategy: fake an SD / Ryujinx layout under ``tmp_path``, then assert
 ``deploy_to_*`` lands the build outputs at the right paths and the
 ``DeployResult`` summary is shaped correctly.
 
-``detect_sd_candidates`` and ``detect_ryujinx_path`` are tested through
-their non-Windows short-circuit (returns ``[]`` / ``None``) so the suite
-stays platform-independent. The Windows-only drive-letter probe is a
-single ``for letter in A-Z`` loop with an ``atmosphere/`` exists() check
-— covered well enough by the manual SD test in PR-A5.
+``detect_ryujinx_path`` is exercised per-platform (Windows ``%APPDATA%``,
+macOS ``~/Library/Application Support``, Linux ``$XDG_CONFIG_HOME`` /
+``~/.config`` / Flatpak) with a faked ``Path.home`` so the suite stays
+platform-independent. ``detect_sd_candidates`` is still tested through its
+non-Windows short-circuit (returns ``[]``); the Windows-only drive-letter
+probe is a single ``for letter in A-Z`` loop with an ``atmosphere/``
+exists() check — covered well enough by the manual SD test in PR-A5.
 """
 from __future__ import annotations
 
@@ -53,10 +55,55 @@ def test_detect_sd_candidates_returns_empty_on_non_windows(monkeypatch):
     assert deploy.detect_sd_candidates() == []
 
 
-def test_detect_ryujinx_path_returns_none_on_non_windows(monkeypatch):
-    """Same as above — non-Windows returns None; the user browses."""
+def test_detect_ryujinx_path_resolves_xdg_config_on_linux(tmp_path, monkeypatch):
+    """On Linux the canonical default is ``$XDG_CONFIG_HOME/Ryujinx`` (≈
+    ``~/.config/Ryujinx``). Regression for the wizard falling back to
+    ``Path(".")`` — a non-writable cwd — when detection returned None."""
     monkeypatch.setattr(deploy.sys, "platform", "linux")
+    cfg = tmp_path / ".config"
+    ryu = cfg / "Ryujinx"
+    ryu.mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg))
+    assert deploy.detect_ryujinx_path() == ryu
+
+
+def test_detect_ryujinx_path_resolves_dot_config_when_no_xdg(tmp_path, monkeypatch):
+    """No $XDG_CONFIG_HOME set: fall back to ``~/.config/Ryujinx``."""
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: tmp_path))
+    ryu = tmp_path / ".config" / "Ryujinx"
+    ryu.mkdir(parents=True)
+    assert deploy.detect_ryujinx_path() == ryu
+
+
+def test_detect_ryujinx_path_resolves_flatpak_on_linux(tmp_path, monkeypatch):
+    """The Flatpak sandboxes its config under ~/.var/app — detected when the
+    native ~/.config dir is absent."""
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: tmp_path))
+    flatpak = tmp_path / ".var" / "app" / "org.ryujinx.Ryujinx" / "config" / "Ryujinx"
+    flatpak.mkdir(parents=True)
+    assert deploy.detect_ryujinx_path() == flatpak
+
+
+def test_detect_ryujinx_path_none_on_linux_when_absent(tmp_path, monkeypatch):
+    """No Ryujinx data dir anywhere: return None so the wizard prompts the
+    user to Browse instead of guessing a bad path."""
+    monkeypatch.setattr(deploy.sys, "platform", "linux")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: tmp_path))
     assert deploy.detect_ryujinx_path() is None
+
+
+def test_detect_ryujinx_path_resolves_macos(tmp_path, monkeypatch):
+    """macOS default is ~/Library/Application Support/Ryujinx."""
+    monkeypatch.setattr(deploy.sys, "platform", "darwin")
+    monkeypatch.setattr(deploy.Path, "home", classmethod(lambda cls: tmp_path))
+    ryu = tmp_path / "Library" / "Application Support" / "Ryujinx"
+    ryu.mkdir(parents=True)
+    assert deploy.detect_ryujinx_path() == ryu
 
 
 def test_detect_ryujinx_path_resolves_appdata_when_present(tmp_path, monkeypatch):
