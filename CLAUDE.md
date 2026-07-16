@@ -560,8 +560,8 @@ GHOST_AURA bundling; SPEED_BOOSTER passthrough).
 Faithful HP damage model (v0.3 — DAMAGE half SHIPPED): the native graph emits
 no-suit `damage_threshold` atoms with REAL `hp_needed` values (Randovania's
 pre-resolved route damage, up to 1150). These are now HONORED, not stripped:
-`Rules.compile_to_lambda` resolves them as `any suit OR 99 + energy_per_tank*
-EnergyTank + (energy_per_tank/4)*EnergyPart >= hp_needed`. For that to be SOUND
+`Rules.compile_to_lambda` resolves them as `any suit OR (energy_per_tank - 1) +
+energy_per_tank*EnergyTank + (energy_per_tank/4)*EnergyPart >= hp_needed`. For that to be SOUND
 under AP's advancement-only beatability sweep, `World.create_items` makes enough
 Energy Tank / Energy Part copies `progression` to cover the worst gate at the
 slot's `energy_per_tank` (`_energy_progression_counts`: credit tanks first, then
@@ -569,7 +569,13 @@ parts; default 100/tank → 8 tanks + 11 parts advancement, the rest `useful`;
 items.json Energy Part flipped filler→progression). `energy_per_tank` now FEEDS
 LOGIC (the old "pure difficulty, logic-inert" note is stale): lowering it shrinks
 the budget so the player needs more energy for the same route (threaded through
-`graph_logic`, `Rules`, and `DoorRando._eval`; a part = 1/4 tank, base 99 fixed).
+`graph_logic`, `Rules`, and `DoorRando._eval`; a part = 1/4 tank; the pre-tank
+base is NOT fixed — it scales as `energy_per_tank - 1`, matching the game
+(open-dread-rando `max_life = energy_per_tank - 1`) and Randovania
+(`DreadBootstrap.create_damage_state`), = 99 at the vanilla 100/tank. The old
+"base 99 fixed" model was an unsoundness bug for `energy_per_tank < 100`: it
+over-credited the player's starting HP and could mark a damage gate reachable
+that the player could not actually survive).
 `MAX_NO_SUIT_HP=1150` in World.py is pinned to the graph by
 `test_graph_logic::test_max_no_suit_threshold_matches_world_constant`. KEY
 soundness fact: every high no-suit gate is ALWAYS OR'd with a non-damage
@@ -586,8 +592,9 @@ parts behind the very damage route that needs them; neither full nor minimal
 reliably generates — use low `energy_per_tank` instead). Residual gap: the baked
 `hp_needed` values assume vanilla 100/tank, and we scale the BUDGET by
 `energy_per_tank` but do NOT rescale the thresholds themselves (they're route
-damage, independent of tank size — correct), so no rescaling is needed; the only
-assumption is the fixed 99 base HP. Tests: `test_rule_compiler` (energy_per_tank
+damage, independent of tank size — correct), so no rescaling is needed; the
+pre-tank base HP scales with `energy_per_tank` (= `energy_per_tank - 1`), so
+there is no fixed-base assumption left. Tests: `test_rule_compiler` (energy_per_tank
 scaling + part-fraction), `test_item_pool` (energy progression visibility +
 scaling + pool caps + low-energy still-generates), `test_graph_logic` (expanded
 solvability matrix + threshold pin).

@@ -393,31 +393,33 @@ def test_damage_threshold_zero_hp_always_true():
 def test_damage_threshold_honors_energy_per_tank():
     """Faithful v0.3: the HP budget scales with energy_per_tank. At a lower
     per-tank value the same gate needs more tanks; at a higher value, fewer.
-    Base 99 is fixed. A part is worth 1/4 of a tank."""
+    The pre-tank base scales too (``energy_per_tank - 1``). A part is worth 1/4
+    of a tank."""
     ast = {"type": "damage_threshold", "suit_options": [], "hp_needed": 400}
-    # Default 100/tank: 99 + 300 = 399 < 400 fails; +1 part (25) = 424 passes.
+    # Default 100/tank: base 99. 99 + 300 = 399 < 400 fails; +1 part (25) = 424
+    # passes.
     p100 = compile_to_lambda(ast, player=1)
     assert p100(StubState({"Energy Tank": 3})) is False
     assert p100(StubState({"Energy Tank": 3, "Energy Part": 1})) is True
-    # 50/tank: each tank worth 50, each part 12.5. 99 + 50*6 = 399 < 400;
-    # 7 tanks = 99 + 350 = 449 passes.
+    # 50/tank: base 49, each tank worth 50, each part 12.5. 49 + 50*7 = 399 < 400;
+    # 8 tanks = 49 + 400 = 449 passes.
     p50 = compile_to_lambda(ast, player=1, energy_per_tank=50)
-    assert p50(StubState({"Energy Tank": 6})) is False
-    assert p50(StubState({"Energy Tank": 7})) is True
-    # 200/tank: 99 + 200*2 = 499 >= 400 with just 2 tanks.
+    assert p50(StubState({"Energy Tank": 7})) is False
+    assert p50(StubState({"Energy Tank": 8})) is True
+    # 200/tank: base 199. 199 + 200*1 = 399 < 400 fails; 2 tanks = 599 passes.
     p200 = compile_to_lambda(ast, player=1, energy_per_tank=200)
     assert p200(StubState({"Energy Tank": 2})) is True
-    assert p200(StubState({"Energy Tank": 1})) is False  # 299 < 400
+    assert p200(StubState({"Energy Tank": 1})) is False  # 399 < 400
 
 
 def test_damage_threshold_part_fraction_with_low_per_tank():
     """A part is exactly energy_per_tank/4 — verify fractional accumulation
     (12.5 at 50/tank) sums correctly rather than truncating per-part."""
-    ast = {"type": "damage_threshold", "suit_options": [], "hp_needed": 124}
+    ast = {"type": "damage_threshold", "suit_options": [], "hp_needed": 74}
     pred = compile_to_lambda(ast, player=1, energy_per_tank=50)
-    # 99 + 12.5*2 = 124.0 >= 124 (would fail if parts truncated to 12 each: 123)
+    # base 49 + 12.5*2 = 74.0 >= 74 (would fail if parts truncated to 12 each: 73)
     assert pred(StubState({"Energy Part": 2})) is True
-    assert pred(StubState({"Energy Part": 1})) is False  # 111.5 < 124
+    assert pred(StubState({"Energy Part": 1})) is False  # 61.5 < 74
 
 
 def test_damage_threshold_in_graph():

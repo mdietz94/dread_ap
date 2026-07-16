@@ -28,8 +28,13 @@ def _const_false(_: Any) -> bool:
     return False
 
 
-# Vanilla Dread base max HP (before any Energy Tank), and the vanilla
-# per-tank grant the baked ``hp_needed`` thresholds were derived against.
+# Base (pre-tank) max HP is NOT a fixed constant: both the game and Randovania
+# start Samus at ``energy_per_tank - 1`` HP (open-dread-rando
+# ``dread_patcher.py``: ``max_life = energy_per_tank - 1``; Randovania
+# ``DreadBootstrap.create_damage_state``: ``DreadDamageState(energy_per_tank - 1,
+# ...)``). BASE_HP below is only the VANILLA value (100/tank -> 99), used for the
+# default-config energy-progression sizing in World.py and vanilla-budget tests;
+# the damage predicate itself derives the base from the slot's energy_per_tank.
 # An Energy Part is worth 1/4 of a tank (4 parts == 1 tank), matching
 # Randovania's pickup config and the in-game grant.
 BASE_HP = 99
@@ -80,10 +85,12 @@ def compile_to_lambda(
     pre-substituted by the caller.
 
     ``energy_per_tank`` scales the HP budget a ``damage_threshold`` atom is
-    checked against (faithful v0.3 damage model). Each Energy Tank grants this
-    much HP and each Energy Part 1/4 of it; the baked ``hp_needed`` values are
-    raw damage amounts (independent of this knob), so a player who lowers
-    ``energy_per_tank`` correctly needs more tanks/parts to clear the same gate.
+    checked against (faithful v0.3 damage model). The pre-tank base is
+    ``energy_per_tank - 1`` (the game / Randovania start Samus one below a full
+    tank), each Energy Tank grants ``energy_per_tank`` and each Energy Part 1/4
+    of it; the baked ``hp_needed`` values are raw damage amounts (independent of
+    this knob), so a player who lowers ``energy_per_tank`` correctly needs more
+    tanks/parts to clear the same gate.
 
     ``ammo_amounts`` similarly rescales ``sum`` (missile / power-bomb capacity)
     atoms to the slot's ammo settings — see ``AMMO_BASE_KEYS`` /
@@ -177,12 +184,16 @@ def compile_to_lambda(
         hp = int(ast["hp_needed"])
         per_tank = int(energy_per_tank)
         per_part = per_tank / PARTS_PER_TANK
+        # Base (pre-tank) max HP scales with energy_per_tank: the game and
+        # Randovania both start Samus at ``energy_per_tank - 1`` (see BASE_HP
+        # note above). At the vanilla 100/tank this is 99.
+        base_hp = per_tank - 1
         def _dthr_pred(state, _p=player, _suits=suits, _hp=hp,
-                       _pt=per_tank, _pp=per_part):
+                       _base=base_hp, _pt=per_tank, _pp=per_part):
             for s in _suits:
                 if state.has(s, _p):
                     return True
-            budget = BASE_HP + _pt * state.count("Energy Tank", _p) \
+            budget = _base + _pt * state.count("Energy Tank", _p) \
                         + _pp * state.count("Energy Part", _p)
             return budget >= _hp
         return _dthr_pred
