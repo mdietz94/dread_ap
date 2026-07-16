@@ -583,7 +583,9 @@ def translate_damage(kind: str, amount: int) -> dict:
     1000-Lava Kraid tunnel), so we don't model per-tick coefficients here. A
     suit that fully NEGATES the damage type is a binary shortcut; otherwise the
     only pass is the HP budget, which the lambda compiler resolves as
-    ``99 + energy_per_tank·count(Energy Tank) + (energy_per_tank/4)·count(Energy Part)``.
+    ``(energy_per_tank - 1) + energy_per_tank·count(Energy Tank) +
+    (energy_per_tank/4)·count(Energy Part)`` (the pre-tank base scales with
+    energy_per_tank — 99 at the vanilla 100/tank).
 
     Which suits negate (multiplier 0.0 in RDV's ``damage_reductions``) and so
     appear in ``suit_options``:
@@ -890,7 +892,9 @@ def ast_to_dnf(ast: dict, max_disjuncts: int = 32) -> DNF:
         return frozenset({frozenset({atom})})
     if t == "damage_threshold":
         # Opaque HP-budget atom — the lambda compiler resolves
-        # ``any suit OR 99 + 100·ETank + 25·EPart ≥ hp_needed``. We keep it as
+        # ``any suit OR (energy_per_tank-1) + energy_per_tank·ETank +
+        # (energy_per_tank/4)·EPart ≥ hp_needed`` (99 base at vanilla 100/tank).
+        # We keep it as
         # a single atom (not expanded into suit-disjuncts) so the DNF stays
         # bounded; the lambda evaluates the suit shortcut at solve time.
         suits = tuple(ast.get("suit_options", []))

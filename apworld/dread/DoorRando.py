@@ -182,8 +182,11 @@ def _eval(ast: dict, items: dict, events: set, tl: dict,
             total += items.get(nm, 0) * per
         return base + total >= ast["threshold"]
     if t == "damage_threshold":
+        # Base (pre-tank) max HP scales with energy_per_tank (== energy_per_tank
+        # - 1), matching the game / Randovania and Rules.compile_to_lambda.
         return (any(items.get(s, 0) > 0 for s in ast["suit_options"])
-                or 99 + energy_per_tank * items.get("Energy Tank", 0)
+                or (energy_per_tank - 1)
+                + energy_per_tank * items.get("Energy Tank", 0)
                 + (energy_per_tank / 4) * items.get("Energy Part", 0)
                 >= ast["hp_needed"])
     if t == "and":

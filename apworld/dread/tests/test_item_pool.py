@@ -683,10 +683,11 @@ def test_energy_progression_scales_with_energy_per_tank():
     """Lowering energy_per_tank makes each tank/part worth less HP, so MORE
     copies must be progression to cover the same worst-case gate; raising it
     means fewer. At 50/tank the full default pool (8 tanks + 16 parts) is all
-    advancement; at 200/tank only 6 tanks (no parts) are needed."""
+    advancement; at 200/tank only 5 tanks (no parts) are needed (the pre-tank
+    base scales too — 199 at 200/tank — shrinking the deficit)."""
     from dread.World import _energy_progression_counts
     assert _energy_progression_counts(50, 8, 16) == (8, 16)
-    assert _energy_progression_counts(200, 8, 16) == (6, 0)
+    assert _energy_progression_counts(200, 8, 16) == (5, 0)
 
     world, mw = _build_world(energy_per_tank=200)
     world.create_items()
@@ -694,7 +695,7 @@ def test_energy_progression_scales_with_energy_per_tank():
                  if it.name == "Energy Tank" and it.advancement)
     ep_adv = sum(1 for it in mw.itempool
                  if it.name == "Energy Part" and it.advancement)
-    assert (et_adv, ep_adv) == (6, 0)
+    assert (et_adv, ep_adv) == (5, 0)
 
 
 @pytestmark_runtime

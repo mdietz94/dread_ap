@@ -57,11 +57,14 @@ MAX_CHAIN_REQ = 3
 # Faithful v0.3 HP damage model. The native logic graph emits no-suit
 # ``damage_threshold`` atoms with real ``hp_needed`` values (Randovania's
 # pre-resolved damage amounts on a route). ``Rules.compile_to_lambda`` checks
-# them against an energy budget of ``99 + energy_per_tank·EnergyTank +
-# (energy_per_tank/4)·EnergyPart``. For AP's advancement-only beatability sweep
-# to ever satisfy those gates, the Energy Tanks and Energy Parts it counts must
-# be ``progression`` — otherwise ``state.count`` sees 0 and every threshold
-# above 99 is permanently unreachable (the v0.2 bug this replaces). We classify
+# them against an energy budget of ``(energy_per_tank - 1) + energy_per_tank·
+# EnergyTank + (energy_per_tank/4)·EnergyPart`` (the pre-tank base scales with
+# energy_per_tank — the game and Randovania both start Samus at one less than a
+# full tank; at the vanilla 100/tank this base is 99). For AP's advancement-only
+# beatability sweep to ever satisfy those gates, the Energy Tanks and Energy
+# Parts it counts must be ``progression`` — otherwise ``state.count`` sees 0 and
+# every threshold above the base is permanently unreachable (the v0.2 bug this
+# replaces). We classify
 # exactly enough copies progression to cover the worst binding threshold at the
 # slot's ``energy_per_tank``; the rest are ``useful`` (pure HP capacity).
 #
@@ -89,7 +92,10 @@ def _energy_progression_counts(
     sound — see the soundness note in create_items)."""
     per_tank = max(1, int(energy_per_tank))
     per_part = per_tank / PARTS_PER_TANK
-    deficit = MAX_NO_SUIT_HP - BASE_HP
+    # Base (pre-tank) HP scales with energy_per_tank (== energy_per_tank - 1),
+    # matching the game / Randovania and the damage predicate in Rules.py. At
+    # the vanilla 100/tank this is BASE_HP (99).
+    deficit = MAX_NO_SUIT_HP - (per_tank - 1)
     if deficit <= 0:
         return 0, 0
     tanks = min(tank_count, -(-deficit // per_tank))  # ceil div

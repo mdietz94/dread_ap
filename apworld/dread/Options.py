@@ -439,9 +439,11 @@ class EnergyPerTank(Range):
     this). Vanilla Dread: 100. Lower values = harder; higher = easier.
 
     This DOES feed AP logic (faithful v0.3 HP model): damage gates are checked
-    against ``99 + energy_per_tank*EnergyTank + (energy_per_tank/4)*EnergyPart``,
-    so lowering it makes the player need more energy to clear the same route.
-    Samus's base max HP (99, pre-tank) is fixed regardless of this value."""
+    against ``(energy_per_tank - 1) + energy_per_tank*EnergyTank +
+    (energy_per_tank/4)*EnergyPart``, so lowering it makes the player need more
+    energy to clear the same route. Samus's base (pre-tank) max HP is NOT fixed —
+    it scales as ``energy_per_tank - 1`` (the game and Randovania both start her
+    one point below a full tank), which is 99 at the vanilla 100/tank."""
     display_name = "Energy Per Tank"
     range_start = 1
     range_end = 1499
