@@ -123,8 +123,12 @@ class FakeDreadGame:
         # Game.LoadScenario.
         self.in_nav_room: bool = False
         # Models RL.IsInSaveRoom() — true while Samus stands at a save station.
-        # When set, the /warp guard returns "in_save" before Game.LoadScenario.
+        # When set, the /warp guard returns "in_save" before Game.LoadScenario,
+        # and RL.KillPlayer() drops an incoming DeathLink ("in_safe_room").
         self.in_save_room: bool = False
+        # Models RL.IsInMapRoom() — true while Samus stands at a map station.
+        # Like a save/nav room, RL.KillPlayer() drops a DeathLink here.
+        self.in_map_room: bool = False
         # Last committed save. Game.LoadScenario (the /warp primitive) reloads
         # Samus from this, reverting anything collected/delivered since save().
         self.saved_inventory: dict[str, int] = {}
@@ -464,9 +468,18 @@ class FakeDreadGame:
             return
 
         if "RL.KillPlayer(" in src:
-            # Models the death pipeline: ForceDead → OnPlayerDead → stat bump.
-            self.die()
-            await self._send(W.LuaExecReply(seq=seq, ok=True, result=""))
+            # Models RL.KillPlayer's guards + death pipeline. A Save/Nav/Map
+            # station DROPS the kill ("in_safe_room"); a menu no-ops
+            # ("not_ingame"); otherwise the death pipeline runs (ForceDead →
+            # OnPlayerDead → stat bump) and returns "killed".
+            if self.game_mode != "INGAME":
+                result = "not_ingame"
+            elif self.in_save_room or self.in_nav_room or self.in_map_room:
+                result = "in_safe_room"
+            else:
+                self.die()
+                result = "killed"
+            await self._send(W.LuaExecReply(seq=seq, ok=True, result=result))
             return
 
         if "ProgressStat_PlayerDeaths" in src:

@@ -25,7 +25,9 @@ from dread.client.protocol import (  # noqa: E402
 def test_build_kill_player_lua_calls_rl_killplayer():
     lua = build_kill_player_lua()
     assert "RL.KillPlayer()" in lua
-    assert lua.strip().endswith("return ''")
+    # Returns RL.KillPlayer's status string (killed / deferred / drop reason)
+    # so the client can log it and clear its self-death suppression on a drop.
+    assert lua.strip() == "return RL.KillPlayer() or ''"
 
 
 def test_build_read_death_count_lua_reads_progress_stat():
