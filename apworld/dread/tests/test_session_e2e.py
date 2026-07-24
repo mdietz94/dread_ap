@@ -765,6 +765,34 @@ async def test_deathlink_suppress_window_expires():
 
 
 @pytest.mark.asyncio
+async def test_deathlink_inbound_dropped_in_safe_room():
+    """An incoming DeathLink while Samus is at a save/nav/map station is DROPPED,
+    not fired — no in-game death — and the self-death suppression window is
+    cleared so a later genuine death still broadcasts."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        await ctx._poll_once()  # baseline
+        fake.in_save_room = True
+
+        ctx.on_deathlink({"time": 123.0, "source": "Player2", "cause": "boom"})
+        # The drop path runs the kill Lua, sees "in_safe_room", and clears the
+        # window — await that so the assertion is deterministic, not timing-based.
+        assert await _await_until(lambda: ctx._suppress_death_until == 0.0), (
+            "suppression window not cleared after a dropped kill")
+        assert fake.death_count == 0, (
+            "DeathLink killed the player inside a save station")
+
+        # A genuine death after stepping out still broadcasts (window was cleared).
+        fake.in_save_room = False
+        fake.die()
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1, "real death muted after a safe-room drop"
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_deathlink_off_does_not_poll_or_broadcast():
     """With the tag off, a death is neither detected nor broadcast."""
     ctx, dp, fake = await _setup()

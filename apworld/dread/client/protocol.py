@@ -831,8 +831,11 @@ def build_read_death_count_lua() -> str:
 def build_kill_player_lua() -> str:
     """Lua that force-kills Samus via the bootstrap's ``RL.KillPlayer`` (defined
     in our non-vendored ``lua/deathlink.lua``). The function self-defers through
-    cutscenes and is a no-op outside INGAME, so this is safe to fire any time."""
-    return "RL.KillPlayer(); return ''"
+    cutscenes, DROPS the kill while Samus is in a Save/Nav/Map station, and is a
+    no-op outside INGAME, so this is safe to fire any time. Returns the status
+    string ``RL.KillPlayer`` yields (``killed`` / ``deferred`` / a drop reason)
+    so the caller can log it and clear its self-death suppression on a drop."""
+    return "return RL.KillPlayer() or ''"
 
 
 def build_lights_out_lua() -> str:

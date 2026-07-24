@@ -52,6 +52,11 @@ def test_killplayer_defined_before_bootstrap_flag(real_rows):
     blocks = bs.build_bootstrap_code(items, locations)
     joined = "\n".join(blocks)
     assert "function RL.KillPlayer" in joined
+    # DeathLink is dropped at a Save/Nav/Map station (see lua/deathlink.lua).
+    assert "RL.IsInSaveRoom" in joined
+    assert "RL.IsInNavRoom" in joined
+    assert "RL.IsInMapRoom" in joined
+    assert '"in_safe_room"' in joined
     kill_idx = next(i for i, b in enumerate(blocks) if "function RL.KillPlayer" in b)
     assert kill_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
 

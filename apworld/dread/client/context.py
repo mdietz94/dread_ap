@@ -744,16 +744,29 @@ class DreadContext(CommonContext):
 
     async def _kill_switch_player(self) -> None:
         """Send the kill Lua to the active Switch. Safe to call any time —
-        ``RL.KillPlayer`` no-ops outside INGAME and defers through cutscenes."""
+        ``RL.KillPlayer`` no-ops outside INGAME, defers through cutscenes, and
+        DROPS the kill while Samus is in a Save/Nav/Map station (see
+        ``lua/deathlink.lua``). It returns a status string; on any outcome that
+        won't produce the self-death we armed ``_suppress_death_until`` for, we
+        clear the window so a later genuine death still broadcasts (only
+        ``killed`` / ``deferred`` will actually yield a death to swallow)."""
         if self._bridge is None or not self._bridge.is_connected() or not self._bootstrapped:
             log.info("DeathLink received but no Switch ready; ignoring kill")
             self._suppress_death_until = 0.0
             return
         try:
-            await self._bridge.run_lua(build_kill_player_lua())
+            resp = await self._bridge.run_lua(build_kill_player_lua())
         except (ConnectionError, asyncio.TimeoutError, RuntimeError) as exc:
             log.warning("DeathLink kill send failed: %s", exc)
             # Couldn't kill ⇒ no self-death will follow, so clear the guard.
+            self._suppress_death_until = 0.0
+            return
+        status = resp.payload.decode("utf-8", "replace").strip()
+        if status == "in_safe_room":
+            log.info("DeathLink kill dropped: player is at a save/nav/map station")
+        if status not in ("killed", "deferred"):
+            # No self-death will follow (dropped, at a menu, or no player), so
+            # don't leave a window armed that could mute a real death.
             self._suppress_death_until = 0.0
 
     # ---- Lights Out ---------------------------------------------------
