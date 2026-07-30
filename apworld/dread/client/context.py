@@ -21,7 +21,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from CommonClient import CommonContext, ClientCommandProcessor
 from NetUtils import ClientStatus
@@ -318,6 +318,20 @@ class DreadContext(CommonContext):
         self._nav_hint_by_camera: dict[tuple[str, str], list[tuple[int, int]]] = {}
         self._registered_nav_hints: set[tuple[int, int]] = set()
 
+        # The location_ids THIS slot actually holds, from the Connected packet
+        # (``missing_locations | checked_locations`` — the same union AP's
+        # CommonContext keeps as ``server_locations``). It is a SUBSET of the
+        # static data-package table: World._compute_dropped_locations drops
+        # pickups that a full loadout still can't reach under the slot's options
+        # (e.g. the 8 Speedbooster-gated spots when that trick is disabled), and
+        # those AP locations are never created. Sending a dropped id in
+        # ``LocationScouts`` / ``CreateHints`` raises KeyError inside AP's
+        # MultiServer, which kills the connection — so every location id we put
+        # on the wire is filtered through this set. Empty until Connected (and
+        # for pre-slot_data seeds where the server sent no lists), which
+        # ``_slot_locations`` treats as "no filter available".
+        self._server_locations: set[int] = set()
+
         # Per-active-Switch session state. Reset on each promote/demote.
         self._poll_task: Optional[asyncio.Task[None]] = None
         # A push handler runs on the bridge read loop and so must never await a
@@ -528,9 +542,46 @@ class DreadContext(CommonContext):
 
     # ---- AP-driven flows ---------------------------------------------
 
+    def _absorb_server_locations(self, args: dict) -> None:
+        """Populate ``_server_locations`` from a ``Connected`` packet.
+
+        Read straight out of ``args`` rather than off ``CommonContext``'s
+        ``server_locations`` attribute so we don't depend on AP's package-handling
+        order (our handler is scheduled from ``on_package``)."""
+        found: set[int] = set()
+        for key in ("missing_locations", "checked_locations"):
+            for loc in args.get(key) or ():
+                try:
+                    found.add(int(loc))
+                except (TypeError, ValueError):
+                    continue
+        self._server_locations = found
+        known = len(self.datapackage.all_location_ids())
+        if found and len(found) < known:
+            log.info("slot holds %d of the %d data-package locations; %d were "
+                     "dropped at generation (unreachable under this slot's "
+                     "options) and will not be scouted or hinted",
+                     len(found), known, known - len(found))
+
+    def _slot_locations(self, location_ids: Iterable[int]) -> list[int]:
+        """Filter ``location_ids`` down to the ones this slot actually holds.
+
+        AP's MultiServer indexes ``ctx.locations[slot]`` directly for
+        ``LocationScouts`` / own-slot ``CreateHints``; an id the slot doesn't have
+        raises ``KeyError`` there, which aborts the command handler and drops the
+        client (see issue #172 — the client then reconnect-loops forever). Passing
+        no filter (pre-Connected, or a server that sent empty lists) returns the
+        input unchanged."""
+        ids = [int(i) for i in location_ids]
+        if not self._server_locations:
+            return ids
+        return [i for i in ids if i in self._server_locations]
+
     async def _on_connected(self, args: dict) -> None:
         self.state.set_ap_conn("connected")
         self.state.slot = self.username or ""
+        # Record the slot's real location set before anything sends location ids.
+        self._absorb_server_locations(args)
         # seed_name rides on RoomInfo (already absorbed into state.seed by
         # on_package) and not on Connected, so fall back to the stored value.
         self.state.seed = args.get("seed_name", self.state.seed)
@@ -596,7 +647,9 @@ class DreadContext(CommonContext):
         # way to toggle the tag post-connect.
         await self.update_death_link(bool(self.slot_data.get("death_link")))
         asyncio.ensure_future(self._maybe_auto_patch())
-        loc_ids = self.datapackage.all_location_ids()
+        # Scout only what the slot actually holds — a dropped location id here is
+        # a hard server-side KeyError + disconnect. See _slot_locations.
+        loc_ids = self._slot_locations(self.datapackage.all_location_ids())
         if loc_ids:
             await request_scout(self, loc_ids, cache=self.scout_cache)
         # Bridge stays up across AP reconnects — no per-connection action.
@@ -1197,6 +1250,14 @@ class DreadContext(CommonContext):
                 continue
             self._registered_nav_hints.add((owner, loc_id))
             if my_slot is not None and owner == my_slot:
+                if not self._slot_locations([loc_id]):
+                    # Not one of our slot's locations — hinting it would KeyError
+                    # server-side and drop us. Shouldn't happen (plaques are built
+                    # post-fill, and a dropped location is never filled), but the
+                    # failure mode is a connection loop, so never risk it.
+                    log.warning("skipping Nav Station hint for location %d: not "
+                                "in this slot", loc_id)
+                    continue
                 packet = {"cmd": "LocationScouts", "locations": [loc_id],
                           "create_as_hint": 2}
             else:
