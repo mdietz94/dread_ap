@@ -1233,18 +1233,34 @@ them through `patcher_pipeline.light_patches_for_regions` /
 `light_patches` → `placements_to_overrides` → `merge_overrides`, which EXTENDS
 (never replaces) `mass_delete_actors.to_remove` so a hand-written override file's
 own deletions survive. The starter template has NO `mass_delete_actors` key
-(schema defaults it to `{}`), so an empty list leaves it ABSENT — verified: the
-full real-template merge with all 9 regions dark validates against upstream's
-real `schema.json` with zero errors and the rest of the document is
-byte-identical to a lights-on merge. Purely visual — light actors only, no
-geometry/pickups/triggers — so logic, the pool, and solvability are untouched at
-any accessibility. NOTE for old YAMLs: `lights_out: true` is now an unknown
-option (AP warns and ignores it); it was a no-op anyway. Tests:
+(schema defaults it to `{}`), so an empty list leaves it ABSENT. Purely visual —
+light actors only, no geometry/pickups/triggers — so logic, the pool, and
+solvability are untouched at any accessibility. NOTE for old YAMLs:
+`lights_out: true` is now an unknown option (AP warns and ignores it); it was a
+no-op anyway. VERIFIED end-to-end against a real AP checkout: a full
+`Generate.py` run from a YAML with `disabled_lights: [dairon, cataris, itorash]`
+produced a seed whose placements JSON carries exactly those three scenarios'
+`light_patches`, and `build_patcher_input_from_placements` on that real payload
+validates against upstream's real `schema.json` with ZERO errors (the all-9-dark
+merge does too, with every other key byte-identical to a lights-on merge). Tests:
+`test_door_start.py::test_disabled_lights_reach_the_patcher_input` (real
+generation → payload → patcher input + byte-identical-except-the-block),
 `test_item_pool.py` (payload shape + pool unchanged with every region dark +
 option-keys↔scenario-table drift pin), `scripts/tests/test_seed_to_patcher.py`
 (payload passthrough + absent default), `scripts/tests/test_build_patcher_json.py`
 (RDV-identical entry shape, merge-into-existing, absent-when-empty,
 upstream-schema validation, unknown-region raises).
+
+Note on running the AP-gated tests (they skip by default — no importable AP on
+this machine, `C:\ProgramData\Archipelago` is a frozen build): a shallow
+`git clone --depth 1 https://github.com/ArchipelagoMW/Archipelago.git` needs NO
+extra pip installs to satisfy the `BaseClasses`/`Options`/`worlds.AutoWorld`
+gate — just run pytest with `PYTHONPATH=<ap-clone>`. That turns 99 skips into
+2 (Kivy's `platformdirs`, and a symlink-permission test). The unrelated
+`zilliandomizer`/`orjson`/`pyevermizer` import tracebacks AP logs at world-load
+are harmless. For a real `Generate.py` run, short-circuit AP's interactive pip
+step with `ModuleUpdate.update_ran = True` and call
+`Main.main(*Generate.main())` (Generate.main only builds args).
 
 ## Known unknowns / risks for new work
 
