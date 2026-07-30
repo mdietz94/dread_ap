@@ -1208,6 +1208,38 @@ AP-gated), `scripts/tests/test_seed_to_patcher.py` (payload passthrough +
 blank default), `scripts/tests/test_build_patcher_json.py` (merge replace /
 blank-on-empty / absent-untouched).
 
+UPDATE (client only scouts/hints locations the SLOT holds — fixes issue #172,
+"can't connect when Speed Booster Conservation is disabled"): the client's
+connect-time scout used the STATIC data-package table
+(`datapackage.all_location_ids()`, 149 entries) while the slot holds only the
+locations `World._compute_dropped_locations` actually created — so any seed with
+drops (all-tricks-off / `Speedbooster` disabled + `accessibility: full|items`
+drops the 8 Speedboost pickups) sent an untracked id. AP's MultiServer indexes
+`ctx.locations[client.slot][location]` DIRECTLY in its `LocationScouts` branch
+(MultiServer.py ~2028) with no membership check, so the id raised
+`KeyError: 'No location 31208 for player 1'`, aborted the command handler, and
+dropped the client — an endless connect→scout→kick→reconnect loop (the user's
+server log shows it every 10 s). `LocationChecks` was never affected
+(`register_location_checks` does `new_locations.intersection_update(slot_locations)`
+— so the documented "collect a dropped spot ⇒ the server ignores the check"
+behavior is genuinely graceful), and neither was off-world `CreateHints`
+(returns `InvalidPacket`); it is specifically the two paths that index the OWN
+slot's location map. Fix (client-only — no slot_data / wire / world_version
+impact): `DreadContext._server_locations` is populated by
+`_absorb_server_locations` from the `Connected` packet's
+`missing_locations | checked_locations` (read out of `args`, not off
+`CommonContext.server_locations`, so it doesn't depend on AP's package-handling
+order), and every location id we put on the wire passes through
+`_slot_locations()` — the connect scout and the own-slot Nav-Station hint
+(defensive there: a dropped location is never filled, so a plaque can't point at
+one, but the failure mode is a connection loop). No lists in the packet ⇒ no
+filter ⇒ full table, so an older/odd server can't make us scout nothing. A
+`logging.info` reports how many locations were dropped. Tests:
+`test_context_e2e.py` (dropped id absent from the scout with location 31208 =
+"Cataris: Dairon Transport Access" pinned to real data, full table when nothing
+is dropped, unfiltered fallback with no lists, nav-hint skip + held-location
+still hinted).
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**

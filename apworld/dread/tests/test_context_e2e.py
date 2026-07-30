@@ -250,3 +250,93 @@ async def test_seed_change_clears_visited_and_rekeys(ctx, monkeypatch):
     await ctx._on_connected({"seed_name": "AP-bbbb", "slot_data": {}})
     assert ctx._visited_saves == set()
     assert ctx._warp_visited_key == f"dread_warp_visited_AP-bbbb_{ctx.team}_{ctx.slot}"
+
+
+# ---- only the slot's OWN locations go on the wire (issue #172) --------------
+#
+# World._compute_dropped_locations omits pickups a full loadout can't reach under
+# the slot's options (e.g. the 8 Speedbooster-gated spots with that trick
+# disabled), so the slot holds a SUBSET of the static data-package table.
+# LocationScouts on an id the slot lacks raises KeyError inside AP's MultiServer,
+# which drops the client -> endless reconnect loop.
+
+_DROPPED = 31208          # "Cataris: Dairon Transport Access", Speedbooster-gated
+
+
+def _connected_args(ctx, *, dropped: set[int] = frozenset(), **extra) -> dict:
+    """A Connected packet whose location lists cover the data package minus
+    ``dropped`` — the shape the server sends for a slot with dropped locations."""
+    held = [i for i in ctx.datapackage.all_location_ids() if i not in dropped]
+    return {"seed_name": "AP-aaaa", "slot_data": {},
+            "missing_locations": held[1:], "checked_locations": held[:1], **extra}
+
+
+@pytest.mark.asyncio
+async def test_scout_skips_locations_the_slot_does_not_have(ctx, monkeypatch):
+    """Regression for #172: a dropped location must never reach LocationScouts."""
+    import dread.client.context as ctxmod
+    scout = unittest.mock.AsyncMock()
+    monkeypatch.setattr(ctxmod, "request_scout", scout)
+    ctx.update_death_link = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+    ctx._maybe_auto_patch = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+
+    all_ids = ctx.datapackage.all_location_ids()
+    assert _DROPPED in all_ids                      # pin the fixture to real data
+    await ctx._on_connected(_connected_args(ctx, dropped={_DROPPED}))
+
+    scout.assert_awaited_once()
+    requested = scout.await_args.args[1]
+    assert _DROPPED not in requested
+    assert sorted(requested) == sorted(i for i in all_ids if i != _DROPPED)
+
+
+@pytest.mark.asyncio
+async def test_scout_requests_full_table_when_nothing_is_dropped(ctx, monkeypatch):
+    """The common case (no drops) is unchanged — every location is scouted."""
+    import dread.client.context as ctxmod
+    scout = unittest.mock.AsyncMock()
+    monkeypatch.setattr(ctxmod, "request_scout", scout)
+    ctx.update_death_link = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+    ctx._maybe_auto_patch = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+
+    await ctx._on_connected(_connected_args(ctx))
+    assert (sorted(scout.await_args.args[1])
+            == sorted(ctx.datapackage.all_location_ids()))
+
+
+@pytest.mark.asyncio
+async def test_scout_unfiltered_without_server_location_lists(ctx, monkeypatch):
+    """A Connected packet with no location lists leaves us no filter to apply, so
+    fall back to the full table rather than scouting nothing."""
+    import dread.client.context as ctxmod
+    scout = unittest.mock.AsyncMock()
+    monkeypatch.setattr(ctxmod, "request_scout", scout)
+    ctx.update_death_link = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+    ctx._maybe_auto_patch = unittest.mock.AsyncMock()  # type: ignore[method-assign]
+
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    assert (sorted(scout.await_args.args[1])
+            == sorted(ctx.datapackage.all_location_ids()))
+
+
+@pytest.mark.asyncio
+async def test_nav_hint_skips_own_location_not_in_slot(ctx, monkeypatch):
+    """A plaque pointing at a location this slot doesn't hold must not be hinted
+    — an own-slot LocationScouts there is the same fatal server-side KeyError."""
+    from dread.client.protocol import NAV_HINT_STATIONS
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected(_connected_args(ctx, dropped={_DROPPED}))
+
+    sent: list = []
+    ctx.send_msgs = unittest.mock.AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda m: sent.extend(m))
+    ctx._nav_hint_by_camera = {NAV_HINT_STATIONS[0]: [(ctx.slot, _DROPPED)]}
+    await ctx._register_nav_hints(NAV_HINT_STATIONS[0])
+    assert sent == []
+
+    # A held location at the same station still registers.
+    held = next(i for i in ctx.datapackage.all_location_ids() if i != _DROPPED)
+    ctx._nav_hint_by_camera = {NAV_HINT_STATIONS[0]: [(ctx.slot, held)]}
+    await ctx._register_nav_hints(NAV_HINT_STATIONS[0])
+    assert sent == [{"cmd": "LocationScouts", "locations": [held],
+                     "create_as_hint": 2}]
