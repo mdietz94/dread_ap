@@ -1263,11 +1263,6 @@ class DreadWorld(World):
             # Client-only: drives whether DreadContext enables the DeathLink tag
             # and the death-detection poll. Not consumed by the patcher.
             "death_link": bool(o.death_link.value),
-            # Client-only "Lights Out" race mode: the client reads this from
-            # slot_data at connect and, when true, sets RL.LightsOut on the
-            # Switch so lua/lights_out.lua hides the in-game map. Not consumed by
-            # the patcher (open-dread-rando has no map-hide leaf).
-            "lights_out": bool(o.lights_out.value),
             "starting_items": starting_items,
             "cosmetic_combat": cosmetic_combat,
             "required_artifacts": n_dna,
@@ -1307,10 +1302,25 @@ class DreadWorld(World):
             # name of each shuffled ride's source room reflects its NEW
             # destination instead of the vanilla one. Empty when off.
             "transport_room_names": self._transport_room_names(),
+            # Disabled Lights: one mass_delete_actors entry per region whose
+            # light actors are stripped from the RomFS (Randovania's per-region
+            # "Lights Out"). Empty when no region is darkened. Purely visual —
+            # no logic impact.
+            "light_patches": self._light_patches(),
             # More-starting-areas: resolved spawn {scenario, actor} for a
             # non-Artaria start, else None (patcher uses the Artaria default).
             "start_location_override": getattr(self, "_start_patcher", None),
         }
+
+    def _light_patches(self) -> list:
+        """mass_delete_actors entries for the Disabled Lights option (mirrors
+        Randovania's DreadPatchDataFactory._light_patches). Empty ⇒ the patcher
+        input carries no mass_delete_actors block at all."""
+        regions = sorted(self.options.disabled_lights.value)
+        if not regions:
+            return []
+        from .patcher_pipeline import light_patches_for_regions
+        return light_patches_for_regions(regions)
 
     def _door_patches(self) -> list:
         assign = getattr(self, "_dock_assignments", None)

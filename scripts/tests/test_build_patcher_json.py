@@ -267,6 +267,91 @@ def test_cosmetic_combat_missing_parent_raises():
         merge_overrides(t, {"cosmetic_combat": {"nerf_power_bombs": False}})
 
 
+def test_light_patches_added_to_mass_delete_actors():
+    """Disabled Lights lands as open-dread-rando mass_delete_actors entries —
+    Randovania's exact _light_patches shape."""
+    t = _template()
+    out = merge_overrides(t, {
+        "light_patches": [
+            {"scenario": "s030_baselab", "actor_layer": "rLightsLayer",
+             "method": "all"},
+        ],
+    })
+    assert out["mass_delete_actors"] == {
+        "to_remove": [{"scenario": "s030_baselab",
+                       "actor_layer": "rLightsLayer", "method": "all"}],
+        "to_keep": [],
+    }
+
+
+def test_light_patches_merge_into_existing_deletions():
+    """A hand-written override file's own actor deletions must survive: light
+    patches append to to_remove rather than replacing it."""
+    t = _template()
+    t["mass_delete_actors"] = {
+        "to_remove": [{"scenario": "s010_cave", "method": "all"}],
+        "to_keep": [],
+    }
+    out = merge_overrides(t, {
+        "light_patches": [
+            {"scenario": "s020_magma", "actor_layer": "rLightsLayer",
+             "method": "all"},
+        ],
+    })
+    assert out["mass_delete_actors"]["to_remove"] == [
+        {"scenario": "s010_cave", "method": "all"},
+        {"scenario": "s020_magma", "actor_layer": "rLightsLayer",
+         "method": "all"},
+    ]
+
+
+def test_no_light_patches_leaves_mass_delete_actors_absent():
+    """The template has no mass_delete_actors key (the patcher schema defaults it
+    to {}), so a lights-on seed must not gain an empty block."""
+    t = _template()
+    assert "mass_delete_actors" not in t
+    assert "mass_delete_actors" not in merge_overrides(t, {})
+    assert "mass_delete_actors" not in merge_overrides(t, {"light_patches": []})
+
+
+_VENDOR_SCHEMA = (ROOT.parent / "vendor" / "open-dread-rando" / "src"
+                  / "open_dread_rando" / "files" / "schema.json")
+
+
+def test_light_patches_validate_against_upstream_schema():
+    """Our emitted mass_delete_actors block must satisfy open-dread-rando's real
+    schema (the patcher validates its input before touching the romfs)."""
+    import json
+
+    jsonschema = pytest.importorskip("jsonschema")
+    if not _VENDOR_SCHEMA.is_file():
+        pytest.skip("vendor/open-dread-rando submodule not checked out")
+
+    schema = json.loads(_VENDOR_SCHEMA.read_text(encoding="utf-8"))
+    sys.path.insert(0, str(ROOT.parent / "apworld"))
+    from dread.patcher_pipeline import (  # noqa: E402
+        LIGHT_REGION_TO_SCENARIO, light_patches_for_regions,
+    )
+
+    out = merge_overrides(_template(), {
+        "light_patches": light_patches_for_regions(
+            list(LIGHT_REGION_TO_SCENARIO)),   # every region dark
+    })
+    sub = dict(schema["properties"]["mass_delete_actors"])
+    sub["$defs"] = schema["$defs"]
+    jsonschema.validate(out["mass_delete_actors"], sub)
+
+
+def test_light_patches_unknown_region_raises():
+    """A region name the scenario table doesn't know must fail loudly rather than
+    silently emitting no patch."""
+    sys.path.insert(0, str(ROOT.parent / "apworld"))
+    from dread.patcher_pipeline import light_patches_for_regions  # noqa: E402
+
+    with pytest.raises(KeyError, match="norfair"):
+        light_patches_for_regions(["norfair"])
+
+
 def test_objective_required_artifacts_applied():
     t = _template()
     out = merge_overrides(t, {"required_artifacts": 7})
