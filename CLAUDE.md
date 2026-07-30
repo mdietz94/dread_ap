@@ -1208,6 +1208,60 @@ AP-gated), `scripts/tests/test_seed_to_patcher.py` (payload passthrough +
 blank default), `scripts/tests/test_build_patcher_json.py` (merge replace /
 blank-on-empty / absent-untouched).
 
+UPDATE ("Lights Out" replaced by RDV's REAL per-region disabled lights): the
+short-lived `lights_out` Toggle (commit `a45bce6`) was NOT a port of anything in
+Randovania — it was a map-HIDE race mode (hide the HUD minimap + pause map at
+runtime via `GUI.SetProperties(obj,{Visible=false})` from a non-vendored
+`client/lua/lights_out.lua` + `RL.LightsOut`). It shipped with the GUI
+display-object paths as unconfirmed CANDIDATES, each hidden nil-safely, so on
+real hardware it was a SILENT no-op (the reported "I turned it on and nothing
+changed"). RDV's actual feature is `DreadConfiguration.disabled_lights`
+(`DreadLightConfiguration`, nine per-region booleans, all False by default):
+`DreadPatchDataFactory._light_patches` emits one
+`{scenario, actor_layer: "rLightsLayer", method: "all"}` into open-dread-rando's
+`mass_delete_actors.to_remove` per enabled region, DELETING every light actor
+from that scenario's RomFS — the Dairon-powered-down look, region-wide. So the
+whole map-hide implementation was REMOVED (option, lua extra + its
+`bootstrap._EXTRAS` entry, `protocol.build_lights_out_lua`,
+`DreadContext._apply_lights_out` + its two call sites, the fakeswitch model, the
+`lights_out` slot_data key, and the four tests) and replaced by
+`Options.DisabledLights(OptionSet)` — `valid_keys` = the nine lowercase region
+names (`Options.LIGHT_REGIONS`), default empty. `World._light_patches()` resolves
+them through `patcher_pipeline.light_patches_for_regions` /
+`LIGHT_REGION_TO_SCENARIO` (region → scenario, baked; RDV resolves it live via
+`region_with_name(...).extra["scenario_id"]`), rides the placements payload as
+`light_patches` → `placements_to_overrides` → `merge_overrides`, which EXTENDS
+(never replaces) `mass_delete_actors.to_remove` so a hand-written override file's
+own deletions survive. The starter template has NO `mass_delete_actors` key
+(schema defaults it to `{}`), so an empty list leaves it ABSENT. Purely visual —
+light actors only, no geometry/pickups/triggers — so logic, the pool, and
+solvability are untouched at any accessibility. NOTE for old YAMLs:
+`lights_out: true` is now an unknown option (AP warns and ignores it); it was a
+no-op anyway. VERIFIED end-to-end against a real AP checkout: a full
+`Generate.py` run from a YAML with `disabled_lights: [dairon, cataris, itorash]`
+produced a seed whose placements JSON carries exactly those three scenarios'
+`light_patches`, and `build_patcher_input_from_placements` on that real payload
+validates against upstream's real `schema.json` with ZERO errors (the all-9-dark
+merge does too, with every other key byte-identical to a lights-on merge). Tests:
+`test_door_start.py::test_disabled_lights_reach_the_patcher_input` (real
+generation → payload → patcher input + byte-identical-except-the-block),
+`test_item_pool.py` (payload shape + pool unchanged with every region dark +
+option-keys↔scenario-table drift pin), `scripts/tests/test_seed_to_patcher.py`
+(payload passthrough + absent default), `scripts/tests/test_build_patcher_json.py`
+(RDV-identical entry shape, merge-into-existing, absent-when-empty,
+upstream-schema validation, unknown-region raises).
+
+Note on running the AP-gated tests (they skip by default — no importable AP on
+this machine, `C:\ProgramData\Archipelago` is a frozen build): a shallow
+`git clone --depth 1 https://github.com/ArchipelagoMW/Archipelago.git` needs NO
+extra pip installs to satisfy the `BaseClasses`/`Options`/`worlds.AutoWorld`
+gate — just run pytest with `PYTHONPATH=<ap-clone>`. That turns ~100 skips into
+2 (Kivy's `platformdirs`, and a symlink-permission test). The unrelated
+`zilliandomizer`/`orjson`/`pyevermizer` import tracebacks AP logs at world-load
+are harmless. For a real `Generate.py` run, short-circuit AP's interactive pip
+step with `ModuleUpdate.update_ran = True` and call
+`Main.main(*Generate.main())` (Generate.main only builds args).
+
 UPDATE (client only scouts/hints locations the SLOT holds — fixes issue #172,
 "can't connect when Speed Booster Conservation is disabled"): the client's
 connect-time scout used the STATIC data-package table

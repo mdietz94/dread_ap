@@ -669,6 +669,35 @@ def test_overrides_round_trip_through_build_patcher_json(tmp_path):
     assert missile["model"] == ["itemsphere"]
 
 
+def test_light_patches_ride_the_payload():
+    """Disabled Lights: the world's light_patches carry through the payload into
+    the patcher's mass_delete_actors. Absent ⇒ no block at all."""
+    from build_patcher_json import merge_overrides  # noqa: E402
+
+    template = {
+        "configuration_identifier": "VANILLA",
+        "layout_uuid": "00000000-0000-0000-0000-000000000000",
+        "pickups": [],
+    }
+    base = {"slot_name": "Samus", "seed_id": "deadbeef",
+            "starting_area": 0, "placements": []}
+
+    overrides = placements_to_overrides(dict(base, light_patches=[
+        {"scenario": "s050_forest", "actor_layer": "rLightsLayer",
+         "method": "all"},
+    ]))
+    merged = merge_overrides(template, overrides)
+    assert merged["mass_delete_actors"]["to_remove"] == [
+        {"scenario": "s050_forest", "actor_layer": "rLightsLayer",
+         "method": "all"},
+    ]
+
+    # A payload predating the option (or a lights-on seed) leaves it absent.
+    assert placements_to_overrides(base)["light_patches"] == []
+    assert "mass_delete_actors" not in merge_overrides(
+        template, placements_to_overrides(base))
+
+
 def test_transport_room_names_merge_into_camera_dict():
     """Transport rando: room-name overrides rewrite ONLY the named transport
     collision cameras, leaving other room names intact."""

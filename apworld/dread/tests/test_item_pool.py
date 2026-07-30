@@ -391,14 +391,47 @@ def test_item_amounts_default_to_randovania_values():
 
 
 @pytestmark_runtime
-def test_lights_out_flows_into_slot_data():
-    """The "Lights Out" option must ride slot_data (client-only; the client
-    reads it to enable the runtime map-hide). Off by default, true when set."""
+def test_disabled_lights_flows_into_patcher_payload():
+    """Disabled Lights must reach the patcher as mass_delete_actors entries — one
+    per darkened region, stripping that scenario's rLightsLayer (Randovania's
+    _light_patches shape). Absent by default so non-dark seeds are unchanged."""
     world, _ = _build_world()
-    assert world.fill_slot_data()["lights_out"] is False
+    assert world.fill_slot_data()["light_patches"] == []
 
-    world_on, _ = _build_world(lights_out=True)
-    assert world_on.fill_slot_data()["lights_out"] is True
+    world_on, _ = _build_world(disabled_lights={"dairon", "artaria"})
+    assert world_on.fill_slot_data()["light_patches"] == [
+        # sorted by region name: artaria, dairon
+        {"scenario": "s010_cave", "actor_layer": "rLightsLayer", "method": "all"},
+        {"scenario": "s030_baselab", "actor_layer": "rLightsLayer", "method": "all"},
+    ]
+
+
+@pytestmark_runtime
+def test_disabled_lights_does_not_change_the_item_pool():
+    """Deleting light actors is purely visual — darkening every region must leave
+    the item pool byte-identical to the same seed with the lights on."""
+    from dread.patcher_pipeline import LIGHT_REGION_TO_SCENARIO
+
+    plain, plain_mw = _build_world()
+    plain.create_items()
+    dark, dark_mw = _build_world(disabled_lights=set(LIGHT_REGION_TO_SCENARIO))
+    dark.create_items()
+    assert (sorted(i.name for i in dark_mw.itempool)
+            == sorted(i.name for i in plain_mw.itempool))
+
+
+@pytestmark_runtime
+def test_disabled_lights_option_keys_match_the_scenario_table():
+    """The option's valid regions and the patcher-side region→scenario table are
+    two hand-maintained lists; pin them equal so adding one without the other
+    fails here instead of at patch time."""
+    from dread.Options import LIGHT_REGIONS, DisabledLights
+    from dread.patcher_pipeline import LIGHT_REGION_TO_SCENARIO
+
+    assert set(LIGHT_REGIONS) == set(LIGHT_REGION_TO_SCENARIO)
+    assert set(DisabledLights.valid_keys) == set(LIGHT_REGION_TO_SCENARIO)
+    # Every scenario is distinct — one region per Dread scenario.
+    assert len(set(LIGHT_REGION_TO_SCENARIO.values())) == len(LIGHT_REGION_TO_SCENARIO)
 
 
 @pytestmark_runtime

@@ -17,6 +17,15 @@ from .DoorRando import (
 )
 from .Tricks import FOLLOW_GLOBAL, VISIBLE_TRICKS
 
+# Every Dread region, as the lowercase keys Randovania's DreadLightConfiguration
+# uses. Kept here (rather than imported) so Options stays free of the patcher
+# import chain; patcher_pipeline.LIGHT_REGION_TO_SCENARIO maps each to its
+# scenario id and a test pins the two sets equal.
+LIGHT_REGIONS = (
+    "artaria", "burenia", "cataris", "dairon", "elun",
+    "ferenia", "ghavoran", "hanubia", "itorash",
+)
+
 
 class StartingArea(Choice):
     """Which Dread region Samus spawns in. 'artaria' is the vanilla start;
@@ -239,16 +248,24 @@ class NerfPowerBombs(DefaultOnToggle):
     display_name = "Nerf Power Bombs"
 
 
-class LightsOut(Toggle):
-    """"Lights Out" race mode: hide the in-game map so you navigate from memory.
-    Unlike the HUD toggles above this is NOT a patcher/RomFS setting (open-dread-
-    rando has no map-hide option) — it is a pure runtime cosmetic applied by our
-    bootstrap's ``lua/lights_out.lua`` (hides the HUD minimap and pause-menu map
-    via ``GUI.SetProperties(..., {Visible=false})``), gated by ``RL.LightsOut``
-    which the client sets from this slot_data flag at connect. OFF ⇒ the flag is
-    false and the Lua hook stays inert, so existing seeds are unaffected.
-    Template default: OFF."""
-    display_name = "Lights Out"
+class DisabledLights(OptionSet):
+    """Which regions have their lights turned off, making them pitch dark to
+    explore (Randovania's per-region "Lights Out" checkboxes,
+    ``DreadConfiguration.disabled_lights``).
+
+    Every light source in a listed region is DELETED from the RomFS at patch
+    time — open-dread-rando's ``mass_delete_actors`` with
+    ``actor_layer: rLightsLayer`` / ``method: all``, exactly what Randovania's
+    exporter emits. The effect is the Dairon-powered-down look applied to a
+    whole region; the only illumination left is Samus's own.
+
+    Purely visual: it deletes light actors, never geometry, pickups or triggers,
+    so access logic and solvability are untouched at any accessibility level.
+    Empty (the default) ⇒ no ``mass_delete_actors`` entry is emitted and the
+    patcher output is byte-identical to a non-dark seed."""
+    display_name = "Disabled Lights"
+    valid_keys = sorted(LIGHT_REGIONS)
+    default = frozenset()
 
 
 class XStartsReleased(Toggle):
@@ -599,7 +616,7 @@ class _DreadOptionsBase(PerGameCommonOptions):
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
-    lights_out: LightsOut
+    disabled_lights: DisabledLights
     x_starts_released: XStartsReleased
     progressive_suit: ProgressiveSuit
     progressive_spin: ProgressiveSpin

@@ -51,10 +51,7 @@ _LOCATIONS_TEMPLATE = "bootstrap_locations"
 #                 OnSubAreaChange wrap that feeds them, so /warp can refuse to fire
 #                 from inside a boss arena, a Navigation (Adam) room, or a Ghavoran
 #                 flipper-trap room (where only a checkpoint reload recovers).
-#   lights_out  — RL.ApplyLightsOut + the Scenario.InitGui wrap that re-hides the
-#                 in-game map each scenario when RL.LightsOut is set (the seed's
-#                 "Lights Out" race mode). Inert unless the client enables it.
-_EXTRAS = ("deathlink", "warp_guard", "lights_out")
+_EXTRAS = ("deathlink", "warp_guard")
 _BOOTSTRAP_DONE = "RL.Bootstrap=true"
 
 _TEMPLATE_LEFTOVER = re.compile(r'TEMPLATE\("([^"]+)"\)|T__(\w+)__T')

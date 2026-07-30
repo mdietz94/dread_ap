@@ -203,6 +203,51 @@ COSMETIC_COMBAT_PATHS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Region key (Randovania's DreadLightConfiguration field names, = the
+# DisabledLights option keys) → the scenario whose light actors get deleted when
+# that region is listed. Randovania resolves this at export time through
+# ``region_with_name(name.capitalize()).extra["scenario_id"]``; the pairing is
+# fixed per game version, so we bake it. A test pins the key set against
+# Options.LIGHT_REGIONS.
+LIGHT_REGION_TO_SCENARIO: dict[str, str] = {
+    "artaria": "s010_cave",
+    "cataris": "s020_magma",
+    "dairon": "s030_baselab",
+    "burenia": "s040_aqua",
+    "ghavoran": "s050_forest",
+    "elun": "s060_quarantine",
+    "ferenia": "s070_basesanc",
+    "hanubia": "s080_shipyard",
+    "itorash": "s090_skybase",
+}
+
+
+def light_patches_for_regions(regions: list[str]) -> list[dict[str, str]]:
+    """Build open-dread-rando ``mass_delete_actors.to_remove`` entries that strip
+    every light actor from each named region.
+
+    Mirrors Randovania's ``DreadPatchDataFactory._light_patches`` one-for-one:
+    one ``{scenario, actor_layer: rLightsLayer, method: all}`` entry per region
+    with its lights disabled. ``actor_layer``/``method`` are written explicitly
+    rather than relying on the schema defaults, so the emitted JSON is valid
+    input for the patcher on its own. Sorted for deterministic output; an
+    unknown region name raises (option/table drift surfaces loudly)."""
+    patches = []
+    for region in sorted(set(regions)):
+        scenario = LIGHT_REGION_TO_SCENARIO.get(region)
+        if scenario is None:
+            raise KeyError(
+                f"unknown region {region!r} in disabled lights; expected one of "
+                f"{sorted(LIGHT_REGION_TO_SCENARIO)}"
+            )
+        patches.append({
+            "scenario": scenario,
+            "actor_layer": "rLightsLayer",
+            "method": "all",
+        })
+    return patches
+
+
 def _set_in(root: dict, path: tuple[str, ...], value: Any) -> None:
     """Overwrite a leaf in an existing nested dict. Parent keys must already
     exist (the starter preset is complete); a missing parent raises so
@@ -461,6 +506,9 @@ def placements_to_overrides(
         # Transport rando: room-name-display overrides ({scenario: {cc: name}}),
         # merged into the cosmetic camera_names_dict by merge_overrides.
         "transport_room_names": placements.get("transport_room_names", {}),
+        # Disabled lights: mass_delete_actors entries stripping rLightsLayer from
+        # each dark region. Empty when no region has its lights disabled.
+        "light_patches": placements.get("light_patches", []),
     }
 
 
@@ -603,6 +651,19 @@ def merge_overrides(template: dict[str, Any], overrides: dict[str, Any]) -> dict
                  .setdefault("camera_names_dict", {})
         for scenario, cc_map in transport_room_names.items():
             cam.setdefault(scenario, {}).update(cc_map)
+
+    # Disabled lights: delete every light actor in each dark region, so it plays
+    # like Dairon with the power off. The starter-preset template carries no
+    # mass_delete_actors key at all (the patcher schema defaults it to {}), so an
+    # empty list must leave it ABSENT — adding an empty block would be a
+    # gratuitous diff on every non-dark seed. Merged into any existing to_remove
+    # rather than replacing it, so a hand-written override file's own actor
+    # deletions survive.
+    light_patches = overrides.get("light_patches")
+    if light_patches:
+        mass_delete = out.setdefault("mass_delete_actors", {})
+        mass_delete.setdefault("to_remove", []).extend(light_patches)
+        mass_delete.setdefault("to_keep", [])
 
     # Cosmetic / combat leaves. Only fields actually supplied are written;
     # an absent key leaves the template default untouched (so a pre-this-change

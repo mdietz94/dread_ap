@@ -612,6 +612,38 @@ def test_transport_rando_rewrites_room_names():
 
 
 @runtime
+def test_disabled_lights_reach_the_patcher_input():
+    """Disabled Lights end-to-end: a real generation with regions darkened emits
+    mass_delete_actors entries into the final patcher input, and the rest of the
+    document is byte-identical to the same seed with the lights on (the option is
+    purely visual — no logic, pool or placement effect)."""
+    from test.general import setup_multiworld, gen_steps
+    from dread.World import DreadWorld
+    from dread.patcher_pipeline import build_patcher_input_from_placements
+
+    def _input(options):
+        mw = setup_multiworld(DreadWorld, gen_steps, seed=2, options=options)
+        return build_patcher_input_from_placements(
+            mw.worlds[1]._build_placements_payload())
+
+    dark = _input({"disabled_lights": {"dairon", "cataris"}})
+    assert dark["mass_delete_actors"] == {
+        "to_remove": [
+            {"scenario": "s020_magma", "actor_layer": "rLightsLayer",
+             "method": "all"},
+            {"scenario": "s030_baselab", "actor_layer": "rLightsLayer",
+             "method": "all"},
+        ],
+        "to_keep": [],
+    }
+
+    # Same seed, lights on: no block at all, and everything else matches.
+    lit = _input({})
+    assert "mass_delete_actors" not in lit
+    assert {k: v for k, v in dark.items() if k != "mass_delete_actors"} == lit
+
+
+@runtime
 def test_all_rando_compose():
     _generate({"door_lock_rando": 1, "transport_rando": 1, "starting_area": 2})
 
