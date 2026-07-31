@@ -138,6 +138,12 @@ class FakeDreadGame:
         # ProgressStat_PlayerDeaths — the Blackboard prop the client polls for
         # DeathLink. Bumped by die() (natural death) or by RL.KillPlayer().
         self.death_count: int = 0
+        # Whether a save file is loaded. The GAME blackboard is populated from
+        # the file, so with no save loaded (title screen / fresh boot) the death
+        # prop reads NIL — the client's read Lua returns "" there, which is not
+        # the same as a real "0 deaths". Default True so ordinary tests run
+        # in-world; reboot_to_title() / load_save() drive the restart case.
+        self.save_loaded: bool = True
         # Game.GetCurrentGameModeID(): 'INGAME' when the player is in the game
         # world. Default INGAME so delivery tests run; set to a menu value
         # (e.g. 'MENU') to exercise the client's pre-game delivery gate.
@@ -250,6 +256,22 @@ class FakeDreadGame:
         """Simulate the player dying in-world (the game bumps the death stat).
         Models both a natural death and the result of RL.KillPlayer()."""
         self.death_count += 1
+
+    def reboot_to_title(self) -> None:
+        """Model an emulator/console restart (or a quit to the main menu): no
+        save is loaded, so the game mode is a menu and the death stat prop
+        reads nil. The file's death count is kept so load_save() can restore
+        it, exactly as the real save file does."""
+        self.game_mode = "MENU"
+        self.save_loaded = False
+
+    def load_save(self, death_count: Optional[int] = None) -> None:
+        """Model loading a save file: the GAME blackboard is populated from the
+        file (restoring its death count) and the game enters the world."""
+        if death_count is not None:
+            self.death_count = death_count
+        self.save_loaded = True
+        self.game_mode = "INGAME"
 
     def inventory_of(self, item_id: str) -> int:
         return self.inventory.get(item_id, 0)
@@ -479,8 +501,10 @@ class FakeDreadGame:
             return
 
         if "ProgressStat_PlayerDeaths" in src:
+            # No save loaded ⇒ the prop is nil ⇒ the read Lua returns "".
             await self._send(W.LuaExecReply(
-                seq=seq, ok=True, result=str(self.death_count)))
+                seq=seq, ok=True,
+                result=str(self.death_count) if self.save_loaded else ""))
             return
 
         # Anything else (Game.AddSF arming, pokes, etc.) → ack.

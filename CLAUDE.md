@@ -1294,6 +1294,39 @@ filter ⇒ full table, so an older/odd server can't make us scout nothing. A
 is dropped, unfiltered fallback with no lists, nav-hint skip + held-location
 still hinted).
 
+UPDATE (DeathLink no longer fires on every game reload): a user with DeathLink on
+got a broadcast every time they restarted the game (Ryujinx stop→start, fired the
+moment the save file loaded). Cause: `ProgressStat_PlayerDeaths` is populated from
+the SAVE FILE, so before a file is loaded the "GAME" blackboard has no such prop —
+and `build_read_death_count_lua` coalesced that nil to `"0"` (`... or 0`), which
+`_maybe_report_death` accepted as a real reading. Whatever the baseline was
+(a prior boot's count, retained because `_last_death_count` resets on AP-connect,
+NOT on a Switch reconnect), the title screen dragged it to 0 via the old
+`count <= prev` silent-rebaseline branch; loading the file then read the save's
+true count as one big positive delta ⇒ `send_death`. Every reload, on hardware as
+well as emulator. FIX (client-only — no slot_data / wire / world_version impact,
+the Lua is a read builder, not bootstrap): (1) the read Lua now returns an EMPTY
+string when the prop is nil, so "no save loaded" is distinguishable from "0
+deaths"; the client parses that to `None` and SKIPS the sample entirely, leaving
+the baseline alone (deliberately not clearing it — the prop can also read absent
+transiently during the post-death reload, and clearing there would swallow that
+death). (2) `_maybe_report_death(count, ingame)` now takes this tick's game mode:
+only an IN-GAME reading may ESTABLISH the baseline or LOWER it (a menu 0 can no
+longer drag it down — the belt-and-braces path for a boot that reports a real 0
+instead of nil, and the branch that actually produced the bug). A RISE is still
+honoured in ANY mode, because the death screen / checkpoint reload is itself
+non-INGAME and the stat bump can land inside that window — that asymmetry is the
+whole design, so don't "simplify" it into an INGAME-only sample. Real deaths,
+inbound-kill echo suppression, and the safe-room drop are unchanged. Residual gap
+(pre-existing, accepted): loading a DIFFERENT file with MORE deaths, in-world,
+without a reboot, still reads as a death; the reverse (fewer) re-baselines
+silently. `fakeswitch` models it (`save_loaded`, `reboot_to_title()`,
+`load_save(count)` — the prop reads nil with no file loaded). Tests:
+`test_session_e2e.py` (reload round-trip silent + real death still detected,
+no baseline off a title screen, menu-reports-zero can't lower the baseline, rise
+outside INGAME still broadcasts, earlier-save re-baseline), `test_protocol.py`
+(nil ⇒ `""`, never `or 0`).
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**
