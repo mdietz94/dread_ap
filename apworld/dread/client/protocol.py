@@ -821,10 +821,19 @@ DEATH_COUNT_PROP = "ProgressStat_PlayerDeaths"
 
 
 def build_read_death_count_lua() -> str:
-    """Lua that returns the current death count as a string (``"0"`` if the
-    prop is absent, e.g. at the main menu). Safe to call any time."""
+    """Lua that returns the current death count as a string, or an EMPTY string
+    when the prop is absent (no save loaded — e.g. the title screen). Safe to
+    call any time.
+
+    The absent case is deliberately NOT collapsed to ``"0"`` any more: a fresh
+    boot reads no prop, and a bare zero there is indistinguishable from a real
+    "player has never died" reading, which made the save's true count look like
+    a burst of deaths the moment the file loaded. See
+    ``DreadContext._maybe_report_death``."""
     return (
-        f'return tostring(Blackboard.GetProp("GAME", "{DEATH_COUNT_PROP}") or 0)'
+        f'local v = Blackboard.GetProp("GAME", "{DEATH_COUNT_PROP}"); '
+        'if v == nil then return "" end; '
+        'return tostring(v)'
     )
 
 

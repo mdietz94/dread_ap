@@ -34,9 +34,14 @@ def test_build_read_death_count_lua_reads_progress_stat():
     lua = build_read_death_count_lua()
     assert DEATH_COUNT_PROP == "ProgressStat_PlayerDeaths"
     assert DEATH_COUNT_PROP in lua
-    assert lua.startswith("return tostring(")
-    # `or 0` makes it safe at the main menu where the prop is absent.
-    assert "or 0" in lua
+    assert lua.startswith('local v = Blackboard.GetProp("GAME"')
+    assert lua.endswith("return tostring(v)")
+    # An absent prop (no save loaded — the title screen) must come back as an
+    # EMPTY string, never coalesced to "0": the client uses the distinction to
+    # avoid baselining death detection off a menu, which made every game reload
+    # look like the save's whole death count arriving at once.
+    assert 'if v == nil then return "" end' in lua
+    assert "or 0" not in lua
 
 
 def test_to_lua_table_scalars():

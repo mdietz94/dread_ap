@@ -719,6 +719,127 @@ async def test_deathlink_outbound_on_player_death():
 
 
 @pytest.mark.asyncio
+async def test_deathlink_not_broadcast_on_game_reload():
+    """Restarting the game (emulator stop/start, or any quit to title + load)
+    must NOT broadcast. The title screen has no save loaded, so the death prop
+    reads nil / 0 there; accepting that as a real baseline made the file's own
+    death count look like a burst of deaths the instant it loaded, spamming a
+    DeathLink on every reload."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        fake.death_count = 7  # the save file already holds 7 deaths
+        await ctx._poll_once()  # baseline in-world at 7
+        assert _bounces(ctx) == []
+
+        # Stop emulation: back at the title screen, no save loaded.
+        fake.reboot_to_title()
+        await ctx._poll_once()
+        assert _bounces(ctx) == [], "title-screen poll broadcast a DeathLink"
+
+        # Load the file back up — the count returns to what it always was.
+        fake.load_save(7)
+        await ctx._poll_once()
+        assert _bounces(ctx) == [], "loading the save broadcast a DeathLink"
+
+        # Detection still works after the reload round-trip.
+        fake.die()
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1, "real death lost after a game reload"
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_baseline_not_taken_at_title_screen():
+    """A client that connects while the game sits at the title screen must not
+    baseline there: the first IN-WORLD reading is the baseline, so loading a
+    file with a nonzero death count is silent."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        fake.reboot_to_title()
+        await ctx._poll_once()
+        assert ctx._last_death_count is None, "baselined off a menu reading"
+
+        fake.load_save(12)
+        await ctx._poll_once()
+        assert _bounces(ctx) == [], "save load broadcast a DeathLink"
+        assert ctx._last_death_count == 12
+
+        fake.die()
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_not_broadcast_when_menu_reports_zero():
+    """Belt-and-braces on the reload case: even if the pre-load game reports a
+    plain numeric 0 (prop present but not yet populated from the file) instead
+    of nil, a menu reading may not drag the baseline down — otherwise the
+    following save load reads as a pile of deaths."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        fake.death_count = 7
+        await ctx._poll_once()  # baseline in-world at 7
+
+        fake.game_mode = "MENU"  # title screen, prop readable but zeroed
+        fake.death_count = 0
+        await ctx._poll_once()
+        assert _bounces(ctx) == []
+        assert ctx._last_death_count == 7, "menu zero lowered the baseline"
+
+        fake.load_save(7)
+        await ctx._poll_once()
+        assert _bounces(ctx) == [], "loading the save broadcast a DeathLink"
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_reported_when_count_rises_outside_ingame():
+    """The post-death reload is itself a non-INGAME state and the stat bump can
+    land inside it, so a RISE is honoured in any game mode — only downward and
+    first readings are gated on being in-world."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        await ctx._poll_once()  # baseline in-world at 0
+
+        fake.die()
+        fake.game_mode = "MENU"  # death screen / checkpoint reload
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1, "death during the reload was missed"
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
+async def test_deathlink_earlier_save_rebaselines_silently():
+    """Loading an earlier file in-world (count goes backwards) re-baselines with
+    no broadcast, and the next death is measured against the new file."""
+    ctx, dp, fake = await _setup()
+    try:
+        await ctx.update_death_link(True)
+        fake.death_count = 9
+        await ctx._poll_once()  # baseline at 9
+
+        fake.load_save(2)  # a different, earlier file
+        await ctx._poll_once()
+        assert _bounces(ctx) == []
+        assert ctx._last_death_count == 2
+
+        fake.die()
+        await ctx._poll_once()
+        assert len(_bounces(ctx)) == 1
+    finally:
+        await _teardown(ctx, fake)
+
+
+@pytest.mark.asyncio
 async def test_deathlink_inbound_kills_player_and_does_not_echo():
     """An incoming DeathLink force-kills Samus; the resulting in-game death is
     swallowed once so the chain terminates instead of echoing. A later natural

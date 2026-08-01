@@ -375,7 +375,10 @@ class DreadContext(CommonContext):
 
         # DeathLink. ``_last_death_count`` is the last value we read from the
         # game's ProgressStat_PlayerDeaths prop; None means "no baseline yet"
-        # (don't report on the first read after connect). ``_suppress_death_until``
+        # (don't report on the first read after connect). Only readings taken
+        # while a save is loaded may set or lower it — see _maybe_report_death,
+        # which explains why a menu reading is not a real zero.
+        # ``_suppress_death_until``
         # is a monotonic deadline: a death detected before it is one WE caused in
         # response to an incoming DeathLink, so it is not re-broadcast — that
         # terminates the chain instead of echoing it around the room. The window
@@ -813,17 +816,51 @@ class DreadContext(CommonContext):
             # don't leave a window armed that could mute a real death.
             self._suppress_death_until = 0.0
 
-    async def _maybe_report_death(self, count: int) -> None:
+    async def _maybe_report_death(
+        self, count: Optional[int], ingame: bool
+    ) -> None:
         """Edge-detect the game's death counter and broadcast to AP.
 
-        ``count`` is the freshly-read ProgressStat_PlayerDeaths value. The first
-        read after connect only sets the baseline. A death that we caused via an
-        incoming DeathLink is swallowed once (``_suppress_next_death``) so the
-        chain terminates instead of echoing."""
+        ``count`` is the freshly-read ProgressStat_PlayerDeaths value, or None
+        when the prop is absent (no save loaded). ``ingame`` is this tick's
+        ``Game.GetCurrentGameModeID() == 'INGAME'``.
+
+        Only an IN-GAME reading may establish or LOWER the baseline. Outside
+        the game world the prop reads absent or 0 — a fresh boot's title screen
+        has no save context — so a menu reading is not a real "0 deaths". The
+        client used to accept it: on an emulator restart (or any quit-to-title)
+        the baseline fell to 0 at the title screen, and loading the save then
+        looked like the whole file's death count arriving at once, broadcasting
+        a spurious DeathLink on every reload. A rise is still honoured in ANY
+        mode, because the post-death reload is itself a non-INGAME state and
+        the increment can land mid-reload; only downward/first moves are
+        gated. A death that we caused via an incoming DeathLink is swallowed
+        once (the suppression window) so the chain terminates instead of
+        echoing."""
+        if count is None:
+            # No reading at all. Leave any existing baseline alone rather than
+            # clearing it — the prop can also read absent transiently during
+            # the post-death reload, and clearing there would swallow that
+            # death on the way back in.
+            return
         prev = self._last_death_count
+        if prev is None:
+            if ingame:
+                self._last_death_count = count
+            return  # baseline (in-world readings only)
+        if count < prev:
+            # Went backwards: an earlier save file was loaded, or the game
+            # rebooted. Re-baseline silently, but only from in-world — a
+            # title-screen 0 must not drag the baseline down, or the next
+            # save load reads as a pile of deaths.
+            if ingame:
+                log.info("death count went backwards (%d -> %d); re-baselining",
+                         prev, count)
+                self._last_death_count = count
+            return
+        if count == prev:
+            return
         self._last_death_count = count
-        if prev is None or count <= prev:
-            return  # baseline, or no new death
         if time.monotonic() < self._suppress_death_until:
             self._suppress_death_until = 0.0  # consume the window
             log.info("suppressing self-induced death (incoming DeathLink)")
@@ -1127,7 +1164,9 @@ class DreadContext(CommonContext):
                 "RL.GetReceivedPickupsAndSend(); return ''", timeout=T)
             await self._record_room_visit(T)
         # Goal + death detection run regardless of INGAME: the win sequence and
-        # the death reload are themselves non-INGAME states.
+        # the death reload are themselves non-INGAME states. (The death READ
+        # runs in every mode; what the reading is allowed to do to the baseline
+        # depends on `ingame` — see _maybe_report_death.)
         state_resp = await self._bridge.run_lua(
             "return tostring(Init.bBeatenSinceLastReboot)", timeout=T
         )
@@ -1138,10 +1177,18 @@ class DreadContext(CommonContext):
             death_resp = await self._bridge.run_lua(
                 build_read_death_count_lua(), timeout=T)
             if death_resp.success:
-                try:
-                    await self._maybe_report_death(int(death_resp.payload))
-                except ValueError:
-                    log.debug("unparseable death count: %r", death_resp.payload[:32])
+                body = (death_resp.payload or b"").decode("utf-8", "replace")
+                body = body.strip()
+                count: Optional[int] = None
+                if body:
+                    try:
+                        count = int(body)
+                    except ValueError:
+                        log.debug("unparseable death count: %r", body[:32])
+                        count = None
+                # An empty body means the prop is absent (no save loaded) —
+                # distinct from a real 0, see _maybe_report_death.
+                await self._maybe_report_death(count, ingame)
         await self._attempt_delivery()
 
     def _build_nav_hint_map(self, slot_data: dict) -> None:
