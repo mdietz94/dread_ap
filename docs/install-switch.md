@@ -28,9 +28,9 @@ install. Everything else still applies.
 ```
                   +-------------------------+
    DreadClient -> | /setup                  |
-                  | * checks devkitPro / Py |
-                  | * builds the sysmodule  |
-                  | * deploys subsdk9       |
+                  | * checks Python 3.12    |
+                  | * deploys the bundled   |
+                  |   subsdk9 + main.npdm   |
                   | * remembers romfs path  |
                   +-------------------------+
                               |
@@ -67,14 +67,12 @@ automatically (PR-A4 of the setup-wizard stack). Walk through the pages:
 
 1. **Welcome** - the requirements list. Read it; this is where you
    confirm Dread 2.1.0 and that you have an extracted romfs.
-2. **Prereqs** - green-checks for **devkitPro / devkitA64**,
-   **Python 3.12**, and **open-dread-rando**.
+2. **Prereqs** - green-checks for **Python 3.12** and
+   **open-dread-rando**. There is no build-toolchain check: the
+   sysmodule (`subsdk9` + `main.npdm`) ships prebuilt inside the
+   apworld, so devkitPro is never needed.
    - Python 3.12 has an "Auto-install" button that runs
      `winget install Python.Python.3.12` for you.
-   - devkitPro's installer is interactive (admin prompts, registry
-     writes). Click "Install..." to open
-     [devkitpro.org/wiki/Getting_Started](https://devkitpro.org/wiki/Getting_Started),
-     install the **Switch-dev** package group, then click **Re-check**.
    - `open-dread-rando` is vendored as a git submodule at
      `vendor/open-dread-rando/` — if you cloned without
      `--recurse-submodules`, run
@@ -86,27 +84,25 @@ automatically (PR-A4 of the setup-wizard stack). Walk through the pages:
 3. **RomFS picker** - Browse to your extracted Dread 2.1.0 romfs folder
    (the one with `system/` and `packs/` subdirs). Persisted to
    `%APPDATA%/dread_ap/setup_state.json` as `romfs_path`.
-4. **Build** - runs three subprocess steps live in the log box:
-   - `git clone` (or fetch + reset) of
-     `randovania/open-dread-rando-exlaunch` at the pinned commit
-   - `git apply --ignore-whitespace` of our Ryujinx-fix patch
-     (see [vendor/CHANGES.md](../vendor/CHANGES.md) for the half-open
-     socket bug it addresses)
-   - `./exlaunch.sh build` under devkitPro's bundled msys2 bash
-   - About 30-60 seconds on a warm cache; a few minutes on first
-     run because of the clone.
-5. **Deploy target** - pick Ryujinx (auto-detected under
+4. **Deploy target** - pick Ryujinx (auto-detected under
    `%APPDATA%/Ryujinx/`), SD card (auto-detected by `atmosphere/` marker),
    or Custom folder (for users who stage to a network share / DBI /
-   Goldleaf).
-6. **Done** - the success banner explains the target-specific "next
+   Goldleaf). The bundled `subsdk9` + `main.npdm` are unpacked from the
+   apworld and copied to the target.
+5. **Done** - the success banner explains the target-specific "next
    step" (the Ryujinx-relaunch reminder, the eject-SD-and-reinsert
    reminder, etc).
 
 The wizard remembers everything in `%APPDATA%/dread_ap/setup_state.json`;
 re-running `/setup` from inside DreadClient is fine (it pre-fills from
-that file, and the Build page skips a no-op rebuild when the outputs
-are already on disk).
+that file).
+
+The sysmodule itself is built once, by the packager, when the apworld
+zip is assembled (`python scripts/install_apworld.py` clones
+`randovania/open-dread-rando-exlaunch` at the pinned commit, applies our
+Ryujinx-fix patch — see [vendor/CHANGES.md](../vendor/CHANGES.md) for the
+half-open socket bug it addresses — and compiles under devkitPro). End
+users only ever consume the result.
 
 ## Step 3 - connect to AP
 
@@ -159,17 +155,20 @@ listener. If DreadClient can't dial in, the sysmodule didn't load. On
 Ryujinx, the close-and-relaunch reminder from the Done page is the
 usual cause.
 
-**Wizard fails partway through Build**: the log box shows the failing
-subprocess. Common causes:
+**`scripts/install_apworld.py` fails building the sysmodule**
+(packagers only — end users never hit this):
 - `git not found on PATH` -> install git from
   [git-scm.com](https://git-scm.com/download/win)
 - `aarch64-none-elf-g++ not found` -> devkitPro's **Switch-dev** package
-  group wasn't installed; re-run the devkitPro installer and re-check
+  group wasn't installed; re-run the
+  [devkitPro installer](https://devkitpro.org/wiki/Getting_Started)
 - `msys2/usr/bin/bash.exe` missing -> same as above, but specifically
   the **msys2** component wasn't selected
 - `git apply` "patch does not apply" -> the pinned upstream sha got
   force-pushed. Bump `PINNED_EXLAUNCH_COMMIT` in
   `apworld/dread/_setup/build.py` and re-validate.
+- No devkitPro at all -> pass `--no-build-sysmodule` to reuse whatever
+  is already staged under `apworld/dread/data/sysmodule/`.
 
 **Switch sysmodule wedges (Ryujinx)**: Ryujinx's bsd:u service can
 get stuck in a bad state if you were running an old/buggy build of the
@@ -180,10 +179,14 @@ from an older build.
 
 ## Linux
 
-The build pipeline has POSIX branches (`bash -lc "cd <path> &&
-./exlaunch.sh build"`) that should work with a system-installed
-`devkitpro` package; `detect_ryujinx_path` and `detect_sd_candidates`
-short-circuit to None/[] so the user uses the Custom folder deploy
-target. End-to-end Linux validation hasn't been done from this repo
-yet - if you run /setup on Linux, please open an issue with the
-wizard.log so we can correct any rough edges.
+The wizard's Linux path is just "pick a romfs, pick a deploy folder,
+copy the bundled sysmodule". `detect_ryujinx_path` and
+`detect_sd_candidates` short-circuit to None/[] so the user uses the
+Custom folder deploy target. End-to-end Linux validation hasn't been
+done from this repo yet - if you run /setup on Linux, please open an
+issue with the wizard.log so we can correct any rough edges.
+
+(For packagers: the sysmodule build pipeline in
+`scripts/install_apworld.py` has POSIX branches — `bash -lc "cd <path>
+&& ./exlaunch.sh build"` — that should work with a system-installed
+`devkitpro` package.)

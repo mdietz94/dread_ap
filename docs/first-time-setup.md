@@ -6,12 +6,12 @@ brand-new machine. For the architectural backgrounder, see
 
 ## Time budget
 
-- **First run total**: 15-25 minutes, of which most is waiting on
-  downloads (devkitPro: ~700 MB, Python 3.12: ~25 MB, exlaunch git
-  clone: ~30 MB).
+- **First run total**: 5-10 minutes, of which most is waiting on the
+  Python 3.12 download (~25 MB) and the patcher's pip deps. The
+  sysmodule (`subsdk9` + `main.npdm`) ships prebuilt inside the
+  apworld, so there is nothing to clone and nothing to compile.
 - **Subsequent runs** (re-deploy to a different target, etc.): 30
-  seconds. The wizard skips a no-op rebuild when the outputs are
-  already on disk.
+  seconds.
 
 ## What you need before starting
 
@@ -31,7 +31,9 @@ brand-new machine. For the architectural backgrounder, see
 5. The dread `.apworld` in `<AP-install>/custom_worlds/`. Either:
    - Download a release `.apworld` from this repo, or
    - From a source checkout: `python scripts/install_apworld.py
-     <AP-install>/custom_worlds/`
+     <AP-install>/custom_worlds/` (this is the one place devkitPro is
+     needed — it compiles the sysmodule the apworld then bundles. Pass
+     `--no-build-sysmodule` to reuse a previously staged binary.)
 
 ## The walkthrough
 
@@ -48,14 +50,7 @@ The Welcome page lists the requirements. Confirm them, then click
 
 ### 2. Prereqs page
 
-The wizard runs three detectors and shows the results:
-
-- **devkitPro / devkitA64** - the cross-compiler that builds the
-  Switch sysmodule. If it's not installed, click the **Install...**
-  link to open
-  [devkitpro.org/wiki/Getting_Started](https://devkitpro.org/wiki/Getting_Started).
-  Install the **Switch-dev** package group (this also installs the
-  bundled msys2 bash the wizard needs). Then click **Re-check**.
+The wizard runs two detectors and shows the results:
 
 - **Python 3.12** - the patcher needs 3.12 specifically because
   `mercury_engine_data_structures` has no 3.13 wheel. If it's
@@ -73,7 +68,10 @@ The wizard runs three detectors and shows the results:
   installs into the detected Python 3.12 for you; or run the exact
   `<python> -m pip install ...` command from the row's `note`.
 
-When all three rows are green, click **Next**.
+There is no build-toolchain row: the Switch sysmodule is prebuilt and
+bundled in the apworld, so devkitPro is never needed.
+
+When both rows are green, click **Next**.
 
 ### 3. RomFS picker page
 
@@ -88,26 +86,7 @@ produce slightly different layouts). The path is persisted to
 
 Click **Next**.
 
-### 4. Build page
-
-The wizard runs three subprocess steps live in the log box:
-
-1. **Cloning open-dread-rando-exlaunch** - the first time, this is
-   a `git clone` (~30 MB download). Re-runs do `git fetch + reset
-   --hard <pinned-sha>` instead.
-2. **Applying the Ryujinx-fix patch** - idempotent (we probe for a
-   sentinel string in `remote_api.cpp` so re-runs skip).
-3. **Compiling the subsdk9 sysmodule** - `./exlaunch.sh build` under
-   devkitPro's msys2 bash. ~30-60 seconds on a warm cache.
-
-When the page status shows "Build complete: subsdk9 (NNNN bytes),
-main.npdm (NNN bytes).", click **Next**.
-
-If the build fails, the Retry button reappears. The status line names
-the failing step; cross-reference the
-[troubleshooting section in install-switch.md](install-switch.md#troubleshooting).
-
-### 5. Deploy page
+### 4. Deploy page
 
 Three radio buttons:
 
@@ -124,10 +103,10 @@ Three radio buttons:
   same layout the SD-card deploy produces), so you can drop the
   whole subtree onto an SD card later.
 
-Click **Next**. The deploy step copies subsdk9 + main.npdm to the
-chosen destination.
+Click **Next**. The deploy step copies the bundled subsdk9 +
+main.npdm to the chosen destination.
 
-### 6. Done page
+### 5. Done page
 
 "Installation successful." plus a target-specific "what to do next"
 note:
@@ -144,7 +123,7 @@ note:
 Click **Close**. The wizard exits; DreadClient is still up in the
 other window.
 
-### 7. Connect to AP
+### 6. Connect to AP
 
 In DreadClient, type or paste:
 
@@ -163,7 +142,7 @@ Auto-patch: writing per-seed romfs overlay to
 The per-seed patcher runs in a worker thread (~3 seconds). When it's
 done, you can launch Dread.
 
-### 8. Play
+### 7. Play
 
 **Ryujinx**: in the Ryujinx window, close Dread and relaunch it. The
 seed should load; collected pickups appear in DreadClient's log as
@@ -177,9 +156,8 @@ You'll need to re-run the wizard if:
 
 - You switch deploy targets (Ryujinx -> Real Switch, or vice versa).
 - You move the extracted romfs folder.
-- You update the apworld to a newer version.
-- The subsdk9 sysmodule wedges and the troubleshooting section says
-  to rebuild from scratch.
+- You update the apworld to a newer version (re-running deploys the
+  newer bundled sysmodule).
 
 You DO NOT need to re-run /setup for:
 
@@ -191,8 +169,7 @@ You DO NOT need to re-run /setup for:
 
 | Path | What |
 |---|---|
-| `%APPDATA%/dread_ap/build/exlaunch-checkout/` | The cloned upstream repo |
-| `%APPDATA%/dread_ap/build/exlaunch-checkout/src/open_dread_rando_exlaunch/deploy/` | subsdk9 + main.npdm before deploy |
+| `%APPDATA%/dread_ap/build/prebuilt/` | subsdk9 + main.npdm unpacked from the apworld, before deploy |
 | `%APPDATA%/dread_ap/setup_state.json` | The wizard's persistent state |
 | `%APPDATA%/dread_ap/wizard.log` | Wizard breadcrumb log (page transitions, populate() crashes) |
 | `%APPDATA%/dread_ap/launch-crash.log` | Tk-surfaced launch crashes (when launching from a .pythonw-style ArchipelagoLauncher.exe) |
