@@ -407,6 +407,27 @@ def test_configuration_identifier_includes_seed_prefix_only():
     assert out["configuration_identifier"] == "AP-12345678"
 
 
+# ---- split_saves stays OFF -------------------------------------------------
+
+def test_split_saves_is_disabled_in_the_starter_preset():
+    """``cosmetic_patches.split_saves`` must stay False.
+
+    Turning it on arms open-dread-rando's ``patch_saveslot`` (writes
+    ``rom:/RDVHASH``), which in turn arms the exlaunch sysmodule's
+    ``setSeedSaveProfile``. That runs at ``nn::fs::MountRom`` on every boot and
+    writes three CStrId entries at a HARDCODED bank index (``STRINGBANK_PROFILE0
+    = 917``) under a per-version bank base — a boot-time in-place overwrite whose
+    first consumer is the main menu's save-slot list. See the ``SPLIT_SAVES``
+    block in patcher_pipeline for the full rationale.
+
+    This pins the JSON against the documented constant so a future re-import of
+    the starter preset (upstream's schema default is False, but the file is
+    hand-maintained) can't silently flip it back on."""
+    from dread.patcher_pipeline import SPLIT_SAVES, load_starter_template
+    preset = load_starter_template()
+    assert preset["cosmetic_patches"]["split_saves"] is SPLIT_SAVES is False
+
+
 # ---- Switch save-fs entry-name budget (64-byte hardware cap) ---------------
 #
 # open-dread-rando derives the in-game save profile directory as
