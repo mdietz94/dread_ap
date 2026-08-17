@@ -1327,6 +1327,57 @@ no baseline off a title screen, menu-reports-zero can't lower the baseline, rise
 outside INGAME still broadcasts, earlier-save re-baseline), `test_protocol.py`
 (nil ⇒ `""`, never `or 0`).
 
+UPDATE (`split_saves` turned OFF — per-seed save profiles abandoned): a user hit
+a DETERMINISTIC `strlen(NULL)` crash on real hardware at the main menu, in the
+beat right before the save-slot list renders, with the PC client NOT RUNNING
+(so: romfs + sysmodule only, no bridge, no bootstrap Lua — a different failure
+from the Hanubia multi-model crash despite the shared signature; that one was
+`cazadora.nss+0x11ac3d8` on scenario load, this one `+0x11cdc3c` off the game's
+main loop). Suspect, from reading the sysmodule fork: `cosmetic_patches.
+split_saves` was forced `true` in our starter preset (upstream's own schema
+defaults it FALSE), which arms open-dread-rando's `patch_saveslot` (writes
+`rom:/RDVHASH`), which arms exlaunch `romfs.cpp::setSeedSaveProfile`. That runs
+from the `nn::fs::MountRom` hook on EVERY boot and overwrites three entries of
+the game's static CStrId bank in place — and while the bank BASE is version-gated
+(`StaticStringBank` 0x1d552d0 on 2.1.0 vs 0x1cfc2d0 on 1.0.0-2.0.0), the INDEX is
+a single hardcoded `STRINGBANK_PROFILE0 = 917` shared across every version, into
+"a large array of common CStrId in alpha order". A one-entry shift between builds
+puts that write on the wrong string: silent boot-time corruption whose FIRST
+consumer is the main menu's save-slot list. Timing, determinism, the null-string
+fault, and the client-closed repro all line up. NOT PROVEN (no disassembly of
+`cazadora.nss`) — the isolating test is to delete `rom:/RDVHASH` from the deployed
+romfs, which makes `setSeedSaveProfile` bail at its NULL check without touching
+the bank. Decision (owner): don't chase the index, just turn the feature off
+generally — it has cost more than it returned. `split_saves` is now `false`,
+matching upstream's default. NOTHING load-bearing is lost: cross-seed save
+protection does NOT come from this flag — `custom_scenario.lua` patches
+`Scenario.InitScenario` to cross-check the save's `THIS_RANDO_IDENTIFIER`
+blackboard prop against `Init.sThisRandoIdentifier` and hard-refuses a foreign
+save with a fatal-error screen ("DO NOT save over their game!"), independently.
+What IS lost: rando saves share the vanilla `profile0/1/2` slots, so a new seed
+can occupy a slot a previous seed or a vanilla playthrough was using (the
+InitScenario guard means it can't be silently entered or written over). The
+`SWITCH_SAVE_ENTRY_MAX_BYTES` / `save_entry_name` / `_assert_save_entry_fits`
+budget machinery is now DORMANT (no RDVHASH ⇒ no save entry named from those
+fields) but deliberately KEPT — it's the only record of that hardware-only
+64-byte failure and it re-arms if anyone flips the flag back. Rationale lives at
+`patcher_pipeline.SPLIT_SAVES`; `test_seed_to_patcher.py::
+test_split_saves_is_disabled_in_the_starter_preset` pins the JSON against the
+constant so a starter-preset re-import can't silently re-enable it. NOTE for
+in-progress saves: a save made under the old `RDV_..._0` profile no longer
+appears in the slot list (it is not deleted — it's in a save entry the game no
+longer names).
+
+ALSO FOUND while reading `romfs.cpp` (latent, NOT this crash, unfixed):
+`populateStringReplacementList` sets `g_stringList[i].replacement = NULL` when a
+`replacements.json` entry is an object whose child isn't a string, and leaves
+entries UNINITIALIZED for any element that is neither string nor object (`i++`
+runs unconditionally over a non-zeroed `malloc`). `replaceString` writes that
+into `*str`, and `ForceRomfs::Callback` null-checks the path only BEFORE the
+replacement — so a null introduced BY the replacement goes straight into the
+game's `CFilePathStrId` ctor. Inert for us today: nothing in `open_dread_rando`
+generates `replacements.json`, so the function warns and returns an empty list.
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**

@@ -270,6 +270,13 @@ def _set_in(root: dict, path: tuple[str, ...], value: Any) -> None:
 
 # ---- Switch save-profile name budget --------------------------------
 #
+# DORMANT since ``split_saves`` was turned OFF in the starter preset (see
+# SPLIT_SAVES below): with it off, ``patch_saveslot`` early-returns, no
+# ``rom:/RDVHASH`` is written, and no save entry is ever named from these
+# fields. The budget + guard are KEPT because they are the only record of a
+# hardware-only failure mode, and they re-arm the moment anyone flips
+# ``split_saves`` back on. The text below describes that enabled behavior.
+#
 # open-dread-rando (patch_saveslot) writes ``rom:/RDVHASH`` =
 # ``RDV_{configuration_identifier}_{layout_uuid}`` and the exlaunch
 # sysmodule (romfs.cpp setSeedSaveProfile) renames the game's three save
@@ -312,6 +319,41 @@ def _assert_save_entry_fits(configuration_identifier: str, layout_uuid: str) -> 
             f"({configuration_identifier!r}) — layout_uuid already makes the "
             f"name unique per (seed, slot)."
         )
+
+
+# ---- split_saves: deliberately OFF ----------------------------------
+#
+# ``cosmetic_patches.split_saves`` gives each seed its own save profiles.
+# open-dread-rando's own schema defaults it to False; our starter preset used
+# to force it True. It is now False, matching upstream's default.
+#
+# WHY OFF: turning it on is what arms the exlaunch sysmodule's
+# ``setSeedSaveProfile`` (romfs.cpp), which runs from the ``nn::fs::MountRom``
+# hook on every boot and OVERWRITES three entries of the game's static CStrId
+# bank in place::
+#
+#     const int STRINGBANK_PROFILE0 = 917;   // romfs.hpp — NOT version-gated
+#     offsets->StaticStringBank = 0x1d552d0; // main.cpp  — IS version-gated
+#
+# The bank BASE is selected per game version; the INDEX 917 is a single
+# hardcoded constant shared across 1.0.0-2.1.0. If the bank ("a large array of
+# common CStrId in alpha order") shifted by even one entry between builds, that
+# write lands on the wrong string — a silent memory corruption at boot whose
+# first consumer is the main menu's save-slot list. That is the shape of the
+# deterministic ``strlen(NULL)`` crash-on-title we chased (Atmosphere report,
+# MainThread, pure cazadora.nss frames, PC client not even running).
+#
+# WHAT WE GIVE UP: nothing load-bearing. Cross-seed save protection does NOT
+# come from split_saves — ``custom_scenario.lua`` patches
+# ``Scenario.InitScenario`` to cross-check the save's ``THIS_RANDO_IDENTIFIER``
+# blackboard prop against ``Init.sThisRandoIdentifier`` and hard-refuses a
+# foreign save with a fatal-error screen ("DO NOT save over their game!"),
+# independently of this flag. What we lose is only the convenience of separate
+# per-seed slots: rando saves now share the vanilla ``profile0/1/2`` slots, so a
+# new seed's save can occupy a slot a previous seed (or a vanilla playthrough)
+# was using. The InitScenario guard means a mismatched save cannot be entered or
+# written over silently — it is refused at load.
+SPLIT_SAVES = False
 
 
 def layout_uuid_from_seed(seed_id: str, slot_name: str) -> str:
