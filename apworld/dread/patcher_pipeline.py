@@ -197,6 +197,8 @@ COSMETIC_COMBAT_PATHS: dict[str, tuple[str, ...]] = {
     "enable_room_name_display": ("cosmetic_patches", "lua", "custom_init", "enable_room_name_display"),
     "raven_beak_damage_table_handling": ("game_patches", "raven_beak_damage_table_handling"),
     "nerf_power_bombs": ("game_patches", "nerf_power_bombs"),
+    "remove_tutorial_popups": ("game_patches", "remove_tutorial_popups"),
+    "remove_burenia_bots_vignette": ("game_patches", "remove_burenia_bots_vignette"),
     "default_x_released": ("game_patches", "default_x_released"),
     # Top-level template field; controls Samus's base HP and per-tank grant.
     "energy_per_tank": ("energy_per_tank",),

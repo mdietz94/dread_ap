@@ -248,6 +248,18 @@ class NerfPowerBombs(DefaultOnToggle):
     display_name = "Nerf Power Bombs"
 
 
+class RemoveTutorialPopups(Toggle):
+    """Removes most of the tutorial popups in Artaria in Elun. Cosmetic
+    only. Template default: OFF."""
+    display_name = "Remove Tutorial Popups"
+
+
+class RemoveBureniaVignette(Toggle):
+    """Removes a concealing vignette near Green Teleportal in Burenia.
+    Cosmetic only. Template default: OFF."""
+    display_name = "Remove Burenia Vignette"
+
+
 class DisabledLights(OptionSet):
     """Which regions have their lights turned off, making them pitch dark to
     explore (Randovania's per-region "Lights Out" checkboxes,
@@ -623,6 +635,8 @@ class _DreadOptionsBase(PerGameCommonOptions):
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
+    remove_tutorial_popups: RemoveTutorialPopups
+    remove_burenia_bots_vignette: RemoveBureniaVignette
     disabled_lights: DisabledLights
     x_starts_released: XStartsReleased
     progressive_suit: ProgressiveSuit
