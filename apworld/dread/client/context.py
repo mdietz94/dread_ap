@@ -308,6 +308,31 @@ class DreadContext(CommonContext):
         # bleeds across seeds. Set in _on_connected once slot/seed are known; None
         # while offline / pre-connect (persistence is then a no-op).
         self._warp_visited_key: Optional[str] = None
+        # Every room (scenario, collision camera) the player has stood in, and
+        # the room they are in now, mirrored into AP DataStorage for external
+        # trackers (the PopTracker pack reveals door locks / transport rides
+        # adjacent to visited rooms and follows the current region). Keys are
+        # team+slot scoped; DataStorage is already per multiworld room.
+        self._visited_rooms: set[tuple[str, str]] = set()
+        self._last_room: Optional[tuple[str, str]] = None
+        self._rooms_key: Optional[str] = None
+        self._current_room_key: Optional[str] = None
+        # Ride detection for the same trackers: the last room the player was
+        # reliably seen in, and whether a load (a poll outside INGAME) happened
+        # since. Each "room before -> first room after" across a region change
+        # or a load is published as a candidate ride; the tracker confirms it
+        # against the seed's transport matching (deaths / warps / teleportals
+        # produce pairs too, which simply never match a transport).
+        self._rides_key: Optional[str] = None
+        # Where in each room the player has been, as 250-unit grid cells
+        # (``dread_seen_<team>_<slot>_<scenario>``: {"camera:cx:cy": 1}), so a
+        # tracker can reveal a door only once it has been on screen rather than
+        # as soon as its (possibly huge) room is entered. One key per scenario
+        # keeps each DataStorage update small.
+        self._seen_cells: set[tuple[str, str, int, int]] = set()
+        self._seen_key_prefix: Optional[str] = None
+        self._last_fresh_room: Optional[tuple[str, str]] = None
+        self._ride_gap = False
 
         # Nav Station hint registration. Built from slot_data on connect:
         # (scenario, camera) -> [(location_owner_slot, location_id), ...] for the
@@ -609,6 +634,11 @@ class DreadContext(CommonContext):
             # THIS one, so drop the in-memory set; this seed's own DataStorage key
             # (below) restores the correct set for it.
             self._visited_saves.clear()
+            self._visited_rooms.clear()
+            self._last_room = None
+            self._last_fresh_room = None
+            self._ride_gap = False
+            self._seen_cells.clear()
             self._synced_seed = new_seed
         else:
             # Same multiworld, fresh socket: re-assert everything we believe is
@@ -633,6 +663,10 @@ class DreadContext(CommonContext):
             self._warp_visited_key = (
                 f"dread_warp_visited_{new_seed}_{self.team}_{self.slot}")
             self.set_notify(self._warp_visited_key)
+            self._rooms_key = f"dread_visited_rooms_{self.team}_{self.slot}"
+            self._current_room_key = f"dread_current_room_{self.team}_{self.slot}"
+            self._rides_key = f"dread_rides_{self.team}_{self.slot}"
+            self._seen_key_prefix = f"dread_seen_{self.team}_{self.slot}_"
         # New connection ⇒ re-baseline death detection on the next poll so a
         # historical death count from a prior session isn't reported now.
         self._last_death_count = None
@@ -1151,6 +1185,10 @@ class DreadContext(CommonContext):
             mode = mode_resp.payload.decode("utf-8", "replace")
             self.state.update_game_state(game_mode_id=mode)
             ingame = mode == "INGAME"
+        if not ingame:
+            # Loading screen (ride, death reload, warp): the next room seen is
+            # reached through it, see _publish_room.
+            self._ride_gap = True
         # The three pickup/inventory pushes are only meaningful in-world, and
         # firing them during a death reload just wastes timeouts and risks
         # orphaned pushes. Skip them until the reload settles back to INGAME;
@@ -1223,8 +1261,20 @@ class DreadContext(CommonContext):
         if not resp.success or not resp.payload:
             return
         body = resp.payload.decode("utf-8", "replace").strip()
-        scenario, _, camera = body.partition(",")
-        key = (scenario.strip(), camera.strip())
+        # "tracked_scenario,camera[,live_scenario]" (see
+        # build_read_current_subarea_lua); an absent live field means "same".
+        parts = [p.strip() for p in body.split(",")]
+        scenario = parts[0]
+        camera = parts[1] if len(parts) > 1 else ""
+        live = parts[2] if len(parts) > 2 and parts[2] else scenario
+        pos = None
+        if len(parts) > 4:
+            try:
+                pos = (int(float(parts[3])), int(float(parts[4])))
+            except ValueError:
+                pos = None
+        await self._publish_room(scenario, camera, live, pos)
+        key = (scenario, camera)
         if "" in key:
             return
         target = WARP_TARGET_BY_CAMERA.get(key)
@@ -1266,6 +1316,73 @@ class DreadContext(CommonContext):
             log.info("/warp: restored %d station(s) from AP storage",
                      len(restored))
         return bool(before - stored)             # local-only entries to push
+
+    SEEN_CELL = 250   # world units per grid cell of the dread_seen_* keys
+
+    async def _publish_room(self, scenario: str, camera: str, live: str,
+                            pos: Optional[tuple[int, int]] = None) -> None:
+        """Mirror where the player is into DataStorage for external trackers
+        (the PopTracker pack reveals door locks next to visited rooms and
+        follows the current region on its map tabs).
+
+        * ``dread_visited_rooms_<team>_<slot>``: dict ``{"scenario:camera": 1}``,
+          grown with ``update`` (idempotent, so restarted clients and several
+          clients on one slot merge cleanly). A room is only recorded when the
+          tracked pair belongs to the LIVE scenario — right after a transport or
+          teleportal the pair still names the room the player left.
+        * ``dread_current_room_<team>_<slot>``: ``"live_scenario:camera"``, the
+          camera left empty while the tracked pair is stale, replaced on change.
+        * ``dread_rides_<team>_<slot>``: dict ``{"s:cam>s:cam": 1}`` of candidate
+          rides — the last room before and the first room after a region
+          change or a load. A tracker keeps the pairs that match a transport.
+        * ``dread_seen_<team>_<slot>_<scenario>``: dict ``{"cam:cx:cy": 1}`` of
+          the 250-unit cells Samus has stood in, per room.
+
+        Best-effort, like ``_persist_visited``."""
+        if not self._rooms_key or not live:
+            return
+        fresh = bool(camera) and scenario == live
+        msgs = []
+        if fresh and (scenario, camera) not in self._visited_rooms:
+            self._visited_rooms.add((scenario, camera))
+            msgs.append({"cmd": "Set", "key": self._rooms_key, "default": {},
+                         "want_reply": False,
+                         "operations": [{"operation": "update",
+                                         "value": {f"{scenario}:{camera}": 1}}]})
+        if fresh:
+            here = (scenario, camera)
+            prev = self._last_fresh_room
+            if prev is not None and prev != here and (
+                    prev[0] != scenario or self._ride_gap):
+                msgs.append({"cmd": "Set", "key": self._rides_key, "default": {},
+                             "want_reply": False,
+                             "operations": [{"operation": "update", "value": {
+                                 f"{prev[0]}:{prev[1]}>{scenario}:{camera}": 1}}]})
+            self._last_fresh_room = here
+            self._ride_gap = False
+            if pos is not None and self._seen_key_prefix:
+                cell = (scenario, camera, pos[0] // self.SEEN_CELL,
+                        pos[1] // self.SEEN_CELL)
+                if cell not in self._seen_cells:
+                    self._seen_cells.add(cell)
+                    msgs.append({"cmd": "Set",
+                                 "key": self._seen_key_prefix + scenario,
+                                 "default": {}, "want_reply": False,
+                                 "operations": [{"operation": "update", "value": {
+                                     f"{camera}:{cell[2]}:{cell[3]}": 1}}]})
+        current = (live, camera if fresh else "")
+        if current != self._last_room:
+            self._last_room = current
+            msgs.append({"cmd": "Set", "key": self._current_room_key, "default": "",
+                         "want_reply": False,
+                         "operations": [{"operation": "replace",
+                                         "value": f"{current[0]}:{current[1]}"}]})
+        if not msgs:
+            return
+        try:
+            await self.send_msgs(msgs)
+        except Exception as exc:  # noqa: BLE001 — never let publishing break the poll
+            log.debug("room publish failed: %s", exc)
 
     async def _persist_visited(self) -> None:
         """Write the visited-warp set to AP DataStorage (full ``replace``). Safe

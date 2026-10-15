@@ -642,3 +642,129 @@ async def test_restart_roundtrip_then_warp(ctx):
     fresh._warp_visited_key = _KEY
     fresh._absorb_visited_storage({"keys": {_KEY: stored}})
     assert ("s080_shipyard", "collision_camera_003") in fresh._visited_saves
+
+
+# ---- Room publishing for external trackers (PopTracker pack) ---------------
+
+def _three_field_bridge(ctx, scenario: str, camera: str, live: str):
+    bridge = unittest.mock.MagicMock()
+    bridge.is_connected.return_value = True
+    bridge.run_lua = unittest.mock.AsyncMock(
+        return_value=Response(success=True,
+                              payload=f"{scenario},{camera},{live}".encode()))
+    ctx._bridge = bridge
+    return bridge
+
+
+def _room_keys(ctx):
+    ctx._rooms_key = "dread_visited_rooms_0_1"
+    ctx._current_room_key = "dread_current_room_0_1"
+
+
+@pytest.mark.asyncio
+async def test_publish_room_records_visit_and_current(ctx):
+    _room_keys(ctx)
+    sent = _capture_msgs(ctx)
+    _three_field_bridge(ctx, "s010_cave", "collision_camera_012", "s010_cave")
+    await ctx._record_room_visit(1.0)
+    by_key = {m["key"]: m["operations"][0] for m in sent}
+    assert by_key["dread_visited_rooms_0_1"] == {
+        "operation": "update", "value": {"s010_cave:collision_camera_012": 1}}
+    assert by_key["dread_current_room_0_1"] == {
+        "operation": "replace", "value": "s010_cave:collision_camera_012"}
+
+    # Standing still publishes nothing new.
+    sent.clear()
+    await ctx._record_room_visit(1.0)
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_publish_room_stale_pair_after_transport(ctx):
+    # Just after a ride the tracked pair still names the room left behind: the
+    # current region follows the live scenario, but no room is recorded.
+    _room_keys(ctx)
+    sent = _capture_msgs(ctx)
+    _three_field_bridge(ctx, "s010_cave", "collision_camera_034", "s030_baselab")
+    await ctx._record_room_visit(1.0)
+    assert [m["key"] for m in sent] == ["dread_current_room_0_1"]
+    assert sent[0]["operations"][0]["value"] == "s030_baselab:"
+    assert ctx._visited_rooms == set()
+
+
+@pytest.mark.asyncio
+async def test_publish_room_inert_before_connect(ctx):
+    # No DataStorage keys yet (offline / pre-connect) -> nothing is sent, and
+    # the legacy two-field read still records warp targets.
+    sent = _capture_msgs(ctx)
+    _subarea_bridge(ctx, "s030_baselab", "collision_camera_000")
+    await ctx._record_room_visit(1.0)
+    assert sent == []
+    assert _DAIRON_EAST in ctx._visited_saves
+
+
+def _rides(sent):
+    return [next(iter(m["operations"][0]["value"])) for m in sent
+            if m["key"] == "dread_rides_0_1"]
+
+
+@pytest.mark.asyncio
+async def test_publish_ride_across_regions(ctx):
+    # Leave Artaria's Dairon elevator room; the first poll after the ride still
+    # reports the stale pair, then the arrival room. One ride pair results.
+    _room_keys(ctx)
+    ctx._rides_key = "dread_rides_0_1"
+    sent = _capture_msgs(ctx)
+    for payload in ("s010_cave,collision_camera_034,s010_cave",
+                    "s010_cave,collision_camera_034,s030_baselab",
+                    "s030_baselab,collision_camera_019,s030_baselab"):
+        _three_field_bridge(ctx, *payload.split(","))
+        await ctx._record_room_visit(1.0)
+    assert _rides(sent) == ["s010_cave:collision_camera_034>s030_baselab:collision_camera_019"]
+
+
+@pytest.mark.asyncio
+async def test_publish_ride_within_region_needs_load(ctx):
+    # Walking between rooms of one region is not a ride; the same room change
+    # with a load in between (a same-region shuttle pairing) is.
+    _room_keys(ctx)
+    ctx._rides_key = "dread_rides_0_1"
+    sent = _capture_msgs(ctx)
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_001", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_002", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    assert _rides(sent) == []
+    ctx._ride_gap = True          # a poll saw the loading screen
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_030", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    assert _rides(sent) == ["s040_aqua:collision_camera_002>s040_aqua:collision_camera_030"]
+
+
+@pytest.mark.asyncio
+async def test_publish_seen_cells(ctx):
+    # Positions become 250-unit cells per room, one key per scenario; a second
+    # sample in the same cell sends nothing, and a stale pair records nothing.
+    _room_keys(ctx)
+    ctx._rides_key = "dread_rides_0_1"
+    ctx._seen_key_prefix = "dread_seen_0_1_"
+    sent = _capture_msgs(ctx)
+    for payload in ("s040_aqua,collision_camera_001,s040_aqua,1010,-260",
+                    "s040_aqua,collision_camera_001,s040_aqua,1100,-251",
+                    "s040_aqua,collision_camera_001,s030_baselab,1600,-251"):
+        bridge = unittest.mock.MagicMock()
+        bridge.is_connected.return_value = True
+        bridge.run_lua = unittest.mock.AsyncMock(
+            return_value=Response(success=True, payload=payload.encode()))
+        ctx._bridge = bridge
+        await ctx._record_room_visit(1.0)
+    seen = [(m["key"], next(iter(m["operations"][0]["value"]))) for m in sent
+            if m["key"].startswith("dread_seen_")]
+    assert seen == [("dread_seen_0_1_s040_aqua", "collision_camera_001:4:-2")]
+
+
+def test_subarea_read_includes_guarded_position():
+    from dread.client.protocol import build_read_current_subarea_lua
+    lua = build_read_current_subarea_lua()
+    assert "pcall" in lua and "GetPlayer().vPos" in lua
+    assert "v[0]" in lua and "v[1]" in lua   # 0-indexed: X, Y

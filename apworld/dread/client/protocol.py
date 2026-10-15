@@ -503,9 +503,27 @@ def build_read_current_subarea_lua() -> str:
     ``"scenario,camera"`` (empty halves if untracked — e.g. warp guard not
     installed, or no subarea transition since connect). The client uses this to
     record which save stations the player has stood in, and to register a Nav
-    Station's hint with the AP server when the player reaches it."""
-    return ('return tostring(RL.CurrentScenario or "").."," '
-            '..tostring(RL.CurrentSubArea or "")')
+    Station's hint with the AP server when the player reaches it.
+
+    A third field carries the LIVE scenario (``CurrentScenarioID``). The tracked
+    pair only updates on a subarea transition, so right after a transport /
+    teleportal it still names the previous room; the live scenario lets the
+    client tell a stale pair apart and report the region the player is really
+    in (see ``DreadContext._publish_room``).
+
+    Fields four and five are Samus's world X / Y (``Game.GetPlayer().vPos``,
+    0-indexed: ``[0]`` = X, ``[1]`` = Y -- the game's own s020_magma script
+    compares ``vPos[1]`` against a Y boundary). Read under ``pcall`` so a
+    missing player (menus, loads) just leaves them empty instead of failing the
+    whole read; trackers use them to reveal doors only once on screen."""
+    return ('local ok, px, py = pcall(function() '
+            'local v = Game.GetPlayer().vPos; '
+            'return math.floor(v[0]), math.floor(v[1]) end) '
+            'if not ok then px, py = "", "" end '
+            'return tostring(RL.CurrentScenario or "").."," '
+            '..tostring(RL.CurrentSubArea or "").."," '
+            '..tostring(CurrentScenarioID or "")..","'
+            '..tostring(px)..","..tostring(py)')
 
 
 # Navigation Station hint plaques, in the SAME order as the patcher template's
