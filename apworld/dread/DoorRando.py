@@ -297,6 +297,7 @@ def roll_assignments(
     start_comp: int | None = None, transport_matching: dict | None = None,
     energy_per_tank: int = 100, ammo_amounts: dict | None = None,
     doors_to_change: set | None = None, change_doors_to: set | None = None,
+    no_logic: bool = False,
 ) -> dict[str, str]:
     """Return ``{side_id: weakness}`` for door rando. ``mode`` names mirror
     Randovania's ``DockRandoMode``:
@@ -354,7 +355,7 @@ def roll_assignments(
     # not be inflated by vanilla-locks-only maneuvers (NOT-DoorLocks branches)
     # that will be dead in the final seed.
     protected: set[str] = set()
-    if starting_items is not None:
+    if not no_logic and starting_items is not None:
         reach, side_comp = early_reachable(
             graph, starting_items, trick_levels or {}, start_comp,
             transport_matching=transport_matching,

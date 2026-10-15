@@ -177,6 +177,9 @@ def build_regions(world, dock_assignments: dict[str, str] | None = None,
 
     indirect: list = []
     for i, (csrc, cdst, ast) in enumerate(g["entrances"]):
+        if world.no_logic:
+            regions[csrc].connect(regions[cdst], f"e{i}")
+            continue
         resolved = _resolve_docks(ast, assign, dock_sides, wreq)
         rt = resolved.get("type")
         if rt == "impossible":
@@ -313,18 +316,27 @@ def set_graph_rules(world) -> None:
         for ev_region, ent in getattr(world, "_graph_indirect", []):
             mw.register_indirect_condition(ev_region, ent)
 
-    victory = compile_to_lambda(world._graph_victory, player, tl, graph_mode=True,
-                                energy_per_tank=ept, ammo_amounts=amm,
-                                door_lock_rando=dlr)
-    n_dna = int(world.options.required_artifacts.value)
-    if n_dna > 0:
-        dna = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))
-        mw.completion_condition[player] = (
-            lambda state, v=victory, ns=dna, p=player:
-            v(state) and all(state.has(n, p) for n in ns)
-        )
+    if world.no_logic:
+        # no_logic: the YAML is assumed valid. Every item is filler, and AP's
+        # beatability sweep only collects advancement items, so an item-based
+        # goal (victory AST / Metroid DNA) can never be satisfied. Don't gate
+        # generation on it.
+        mw.completion_condition[player] = lambda state: True
+        # still used by the DNA placement block below
+        n_dna = int(world.options.required_artifacts.value)
     else:
-        mw.completion_condition[player] = victory
+        victory = compile_to_lambda(world._graph_victory, player, tl, graph_mode=True,
+                                    energy_per_tank=ept, ammo_amounts=amm,
+                                    door_lock_rando=dlr)
+        n_dna = int(world.options.required_artifacts.value)
+        if n_dna > 0:
+            dna = tuple(f"Metroid DNA {k}" for k in range(1, n_dna + 1))
+            mw.completion_condition[player] = (
+                lambda state, v=victory, ns=dna, p=player:
+                v(state) and all(state.has(n, p) for n in ns)
+            )
+        else:
+            mw.completion_condition[player] = victory
 
     # Locked-DNA placement consumes world.random and pins items onto boss
     # locations. On a Universal Tracker regen the RNG stream differs, so this

@@ -2,3 +2,7 @@
 	path = vendor/open-dread-rando
 	url = https://github.com/mdietz94/open-dread-rando.git
 	branch = main
+[submodule "vendor/open-dread-plando"]
+	path = vendor/open-dread-plando
+	url = https://github.com/realtetrisfreak/open-dread-rando.git
+	branch = open-dread-plando

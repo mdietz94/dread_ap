@@ -40,8 +40,16 @@ _REPO_ROOT = _APWORLD_DIR.parent                          # repo root
 # Relative path inside the apworld where install_apworld.py copies the
 # vendored patcher source. Kept in sync with ``BUNDLED_PATCHER_REL`` in
 # scripts/install_apworld.py.
+# Finds a particular vendored implementation based on requested patcher name.
+
 _BUNDLED_REL = Path("_vendored_patcher")
-_BUNDLED_PKG = _BUNDLED_REL / "open_dread_rando"
+# Inner package name is "open_dread_rando" in BOTH forks; the patcher_name only
+# selects which sys.path root we hand to the subprocess.
+_PATCHER_PKG = "open_dread_rando"
+_BUNDLED_ROOTS = {
+    "open_dread_rando": _BUNDLED_REL / "open_dread_rando",
+    "open_dread_plando": _BUNDLED_REL / "open_dread_plando",
+}
 
 
 def _hosting_zip() -> Optional[Path]:
@@ -53,7 +61,7 @@ def _hosting_zip() -> Optional[Path]:
     return None
 
 
-def _extract_bundled_from_zip(zip_path: Path) -> Optional[Path]:
+def _extract_bundled_from_zip(zip_path: Path, patcher_name: str) -> Optional[Path]:
     """Extract ``dread/_vendored_patcher/`` from the hosting apworld zip to a
     per-zip-mtime cache directory under the user's home, then return the
     parent dir of ``open_dread_rando`` (the directory to put on PYTHONPATH).
@@ -73,9 +81,9 @@ def _extract_bundled_from_zip(zip_path: Path) -> Optional[Path]:
         f"{zip_path}|{int(st.st_mtime)}|{st.st_size}".encode("utf-8")
     ).hexdigest()[:16]
     cache_root = Path.home() / ".cache" / "dread_ap" / "vendored_patcher" / digest
-    marker = cache_root / "open_dread_rando" / "__init__.py"
+    marker = cache_root / patcher_name / _PATCHER_PKG / "__init__.py"
     if marker.is_file():
-        return cache_root
+        return cache_root / patcher_name
 
     # Locate the bundled tree inside the zip. install_apworld.py writes
     # entries under ``dread/_vendored_patcher/`` (the ``dread/`` prefix is
@@ -106,31 +114,37 @@ def _extract_bundled_from_zip(zip_path: Path) -> Optional[Path]:
                     fdst.write(fsrc.read())
     except (OSError, zipfile.BadZipFile):
         return None
-    return cache_root if marker.is_file() else None
+    return cache_root / patcher_name if marker.is_file() else None
 
 
-def vendored_open_dread_rando_src() -> Optional[Path]:
+def vendored_open_dread_rando_src(patcher_name: str = "open_dread_rando") -> Optional[Path]:
     """Directory to prepend to ``PYTHONPATH`` so ``import open_dread_rando``
-    resolves to the vendored copy. Checks three locations in order: the
-    source-tree submodule, the apworld's bundled ``_vendored_patcher/``
-    folder, and the bundled tree inside a hosting ``.apworld`` zip (extracted
-    to cache on demand). Returns ``None`` if no source is found."""
+    resolves to the requested vendored fork. ``patcher_name`` must be
+    ``open_dread_rando`` (default) or ``open_dread_plando``; both forks expose
+    a package named ``open_dread_rando``, so each gets its own path root.
+
+    Checks, in order: the source-tree submodule, the apworld's bundled
+    ``_vendored_patcher/<patcher_name>/`` folder, and the same tree inside a
+    hosting ``.apworld`` zip (extracted to cache on demand). Returns ``None``
+    if no source is found."""
+    if patcher_name not in _BUNDLED_ROOTS:
+        raise ValueError(f"unknown vendored patcher: {patcher_name}")
     # 1. Source-tree submodule (dev).
-    repo_src = _REPO_ROOT / "vendor" / "open-dread-rando" / "src"
-    if (repo_src / "open_dread_rando").is_dir():
+    repo_src = _REPO_ROOT / "vendor" / patcher_name.replace("_", "-") / "src"
+    if (repo_src / _PATCHER_PKG / "__init__.py").is_file():
         return repo_src
-    # 2. Bundled folder install — install_apworld.py copied the package in.
-    bundled = _DREAD_PKG / _BUNDLED_REL
-    if (bundled / "open_dread_rando").is_dir():
-        return bundled
-    # 3. Bundled inside a zipped apworld — extract once to a cache dir.
+    # 2. Bundled folder install.
+    bundled_root = _DREAD_PKG / _BUNDLED_ROOTS[patcher_name]
+    if (bundled_root / _PATCHER_PKG / "__init__.py").is_file():
+        return bundled_root
+    # 3. Bundled inside a zipped apworld.
     zip_path = _hosting_zip()
     if zip_path is not None:
-        return _extract_bundled_from_zip(zip_path)
+        return _extract_bundled_from_zip(zip_path, patcher_name)
     return None
 
 
-def vendor_unavailable_diagnostic() -> str:
+def vendor_unavailable_diagnostic(patcher_name: str = "open_dread_rando") -> str:
     """One-line user-readable explanation of why
     :func:`vendored_open_dread_rando_src` returned ``None``. Differs between
     a dev clone (submodule init missing) and an installed apworld (bundling
@@ -138,15 +152,16 @@ def vendor_unavailable_diagnostic() -> str:
 
     Callers should embed this into a higher-level error message; the string
     has no trailing period."""
+    sub = patcher_name.replace("_", "-")
     if (_REPO_ROOT / "vendor").is_dir():
         return (
-            "the vendored open-dread-rando submodule isn't checked out — run "
-            "`git submodule update --init vendor/open-dread-rando`"
+            f"the vendored {sub} submodule isn't checked out — run "
+            f"`git submodule update --init vendor/{sub}`"
         )
     return (
-        "the bundled open-dread-rando source wasn't found in this apworld — "
+        f"the bundled {sub} source wasn't found in this apworld — "
         "re-install the apworld; if you assembled it yourself, init the "
-        "submodule then re-run `python scripts/install_apworld.py`"
+        "submodules then re-run `python scripts/install_apworld.py`"
     )
 
 

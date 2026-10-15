@@ -50,6 +50,7 @@ from .protocol import (
     build_warp_src,
     build_read_current_subarea_lua,
     pickup_class_for,
+    plando_safe_class,
     pickup_resource_stage,
     NAV_HINT_STATIONS,
     WARP_TARGETS_BY_REGION,
@@ -397,6 +398,7 @@ class DreadContext(CommonContext):
         # copy grants the seed's configured amount. Empty ⇒ fall back to
         # items.json (older seeds / offline).
         self._item_amounts: dict[str, int] = {}
+        self._no_logic: bool = False
 
         # DeathLink. ``_last_death_count`` is the last value we read from the
         # game's ProgressStat_PlayerDeaths prop; None means "no baseline yet"
@@ -674,6 +676,7 @@ class DreadContext(CommonContext):
         sd = args.get("slot_data")
         if isinstance(sd, dict):
             self.slot_data = sd
+            self._no_logic = bool(sd.get("no_logic"))
             self._item_amounts = {
                 str(name): int(qty)
                 for name, qty in (sd.get("item_amounts") or {}).items()
@@ -755,6 +758,7 @@ class DreadContext(CommonContext):
             qty = self._item_amounts.get(dread_item.ap_item_name, dread_item.quantity)
             progression = [pickup_resource_stage(dread_item.patcher_item_id, qty)]
             cls = pickup_class_for(dread_item.patcher_item_id)
+        cls = plando_safe_class(cls, self._no_logic)
         inv_idx = self.state.game_inventory_index()
         # Surface each delivery attempt. The game grants only when the sent
         # received/inventory indices match its live counters, then silently
@@ -1835,7 +1839,8 @@ class DreadContext(CommonContext):
 
         restored: list[str] = []
         for item_id, qty in deficits:
-            cls = pickup_class_for(item_id)
+            cls = plando_safe_class(pickup_class_for(item_id), self._no_logic)
+            # (the old `cls = pickup_class_for(item_id)` line is removed)
             try:
                 await self._bridge.run_lua(
                     build_restore_grant_lua(item_id, qty, cls))

@@ -129,13 +129,13 @@ def _patcher_error_hint(stderr: str) -> Optional[str]:
     return None
 
 
-def _patcher_subprocess_env(env: Optional[dict[str, str]] = None) -> dict[str, str]:
+def _patcher_subprocess_env(env: Optional[dict[str, str]] = None, *, patcher_name: str = "open_dread_rando") -> dict[str, str]:
     """Copy of ``env`` (or ``os.environ``) with ``PYTHONPATH`` prepended to
     include the vendored ``open_dread_rando`` source. The submodule path is
     only prepended when it actually exists — otherwise the env is unchanged
     so callers can still fall back to a pip-installed copy."""
     out = dict(env) if env is not None else os.environ.copy()
-    src = vendored_open_dread_rando_src()
+    src = vendored_open_dread_rando_src(patcher_name)
     if src is not None:
         existing = out.get("PYTHONPATH", "")
         out["PYTHONPATH"] = (
@@ -197,6 +197,8 @@ COSMETIC_COMBAT_PATHS: dict[str, tuple[str, ...]] = {
     "enable_room_name_display": ("cosmetic_patches", "lua", "custom_init", "enable_room_name_display"),
     "raven_beak_damage_table_handling": ("game_patches", "raven_beak_damage_table_handling"),
     "nerf_power_bombs": ("game_patches", "nerf_power_bombs"),
+    "remove_tutorial_popups": ("game_patches", "remove_tutorial_popups"),
+    "remove_burenia_bots_vignette": ("game_patches", "remove_burenia_bots_vignette"),
     "default_x_released": ("game_patches", "default_x_released"),
     # Top-level template field; controls Samus's base HP and per-tank grant.
     "energy_per_tank": ("energy_per_tank",),
@@ -850,7 +852,7 @@ def describe_python(python_executable: Optional[str] = None) -> str:
     return f"{py}  (sys.executable)"
 
 
-def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]:
+def check_dependencies(python_executable: Optional[str] = None, *, patcher_name: str = "open_dread_rando") -> Optional[str]:
     """Return None if the patcher's Python deps are importable from the
     target interpreter; else a user-readable message naming what's
     missing and how to fix it.
@@ -868,7 +870,7 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
                  f"import open_dread_rando, mercury_engine_data_structures; "
                  f"print('{_PROBE_OK_TOKEN}')"],
                 capture_output=True, text=True, timeout=30,
-                env=_patcher_subprocess_env(),
+                env=_patcher_subprocess_env(patcher_name=patcher_name),
             )
         except FileNotFoundError:
             return (
@@ -896,8 +898,8 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
         err = (proc.stderr or proc.stdout or "").strip()
         last = err.splitlines()[-1] if err else f"exit {proc.returncode}"
         hint = (
-            vendor_unavailable_diagnostic()
-            if vendored_open_dread_rando_src() is None
+            vendor_unavailable_diagnostic(patcher_name)
+            if vendored_open_dread_rando_src(patcher_name) is None
             else f"install patcher deps with:  {python_executable} -m pip install {deps_pip}"
         )
         return (
@@ -909,7 +911,7 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
 
     # In-process probe path. Inject the vendored source onto sys.path so the
     # import matches what the patcher subprocess would see at runtime.
-    vendored_src = vendored_open_dread_rando_src()
+    vendored_src = vendored_open_dread_rando_src(patcher_name)
     if vendored_src is not None and str(vendored_src) not in sys.path:
         sys.path.insert(0, str(vendored_src))
     try:
@@ -918,7 +920,7 @@ def check_dependencies(python_executable: Optional[str] = None) -> Optional[str]
         if vendored_src is None:
             return (
                 f"open_dread_rando isn't available in {describe_python()}: "
-                f"{vendor_unavailable_diagnostic()}."
+                f"{vendor_unavailable_diagnostic(patcher_name)}."
             )
         return (
             f"open_dread_rando is vendored at {vendored_src} but import still "
@@ -1230,7 +1232,24 @@ def patch(
     The Switch→PC collected-checks wiring lives in the client-sent
     Randovania bootstrap, so no post-patch init.lc edit is needed.
     """
-    dep_err = check_dependencies(python_executable)
+    patcher_name = (
+        "open_dread_plando"
+        if placements.get("no_logic", False)
+        else "open_dread_rando"
+        )
+    # If a pip-installed `open_dread_rando exists`, `check_dependencies` passes and
+    # the stock patcher runs on a `no_logic` seed. This guard after the
+    # `patcher_name` assignment fixes that.
+    if (patcher_name != "open_dread_rando"
+            and vendored_open_dread_rando_src(patcher_name) is None):
+        return PatchResult(
+            ok=False,
+            message=(
+                f"no_logic requires the vendored {patcher_name}, but "
+                f"{vendor_unavailable_diagnostic(patcher_name)}."
+            ),
+        )
+    dep_err = check_dependencies(python_executable, patcher_name=patcher_name)
     if dep_err:
         return PatchResult(ok=False, message=dep_err)
 
@@ -1310,7 +1329,7 @@ def patch(
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=600,
-            env=_patcher_subprocess_env(),
+            env=_patcher_subprocess_env(patcher_name=patcher_name),
         )
     except subprocess.TimeoutExpired:
         return PatchResult(ok=False, message="patcher CLI timed out after 600s",

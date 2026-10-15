@@ -248,6 +248,18 @@ class NerfPowerBombs(DefaultOnToggle):
     display_name = "Nerf Power Bombs"
 
 
+class RemoveTutorialPopups(Toggle):
+    """Removes most of the tutorial popups in Artaria in Elun. Cosmetic
+    only. Template default: OFF."""
+    display_name = "Remove Tutorial Popups"
+
+
+class RemoveBureniaVignette(Toggle):
+    """Removes a concealing vignette near Green Teleportal in Burenia.
+    Cosmetic only. Template default: OFF."""
+    display_name = "Remove Burenia Vignette"
+
+
 class DisabledLights(OptionSet):
     """Which regions have their lights turned off, making them pitch dark to
     explore (Randovania's per-region "Lights Out" checkboxes,
@@ -596,6 +608,13 @@ class FlashShiftUpgradeRequiresMainItem(DefaultOnToggle):
     display_name = "Flash Shift Upgrade Requires Main Item"
 
 
+class NoLogic(Toggle):
+    """TOGGLE ONLY WHEN USING PLANDOS!
+    Ignores all trick requirements. OFF by default."""
+    display_name = "No Logic (Toggle ON for Plandos, otherwise keep OFF)"
+    default = 0
+
+
 @dataclass
 class _DreadOptionsBase(PerGameCommonOptions):
     starting_area: StartingArea
@@ -616,6 +635,8 @@ class _DreadOptionsBase(PerGameCommonOptions):
     room_name_display: RoomNameDisplay
     raven_beak_damage_table: RavenBeakDamageTable
     nerf_power_bombs: NerfPowerBombs
+    remove_tutorial_popups: RemoveTutorialPopups
+    remove_burenia_bots_vignette: RemoveBureniaVignette
     disabled_lights: DisabledLights
     x_starts_released: XStartsReleased
     progressive_suit: ProgressiveSuit
@@ -643,6 +664,7 @@ class _DreadOptionsBase(PerGameCommonOptions):
     speed_booster_upgrade_count: SpeedBoosterUpgradeCount
     flash_shift_included_ammo: FlashShiftIncludedAmmo
     flash_shift_upgrade_requires_main_item: FlashShiftUpgradeRequiresMainItem
+    no_logic: NoLogic
 
 
 # Final options dataclass = the explicit base above + one generated field per

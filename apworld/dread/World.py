@@ -221,13 +221,19 @@ class DreadWorld(World):
     item_name_to_id = item_name_to_id
     location_name_to_id = location_name_to_id
 
+    @property
+    def no_logic(self) -> bool:
+        return bool(self.options.no_logic.value)
+
     web = DreadWebWorld()
 
     required_client_version = (0, 5, 0)
 
     def create_item(self, name: str,
                     classification: ItemClassification | None = None) -> Item:
-        if classification is None:
+        if self.no_logic:
+            classification = ItemClassification.filler
+        elif classification is None:
             classification = get_item_classification(name)
         return DreadItem(
             name,
@@ -290,7 +296,8 @@ class DreadWorld(World):
             from .TransportRando import roll_connected_matching
             self._transport_matching = roll_connected_matching(
                 graph, self.random, tl, mode="randomized",
-                door_lock_rando=door_on)
+                door_lock_rando=door_on,
+                no_logic=self.no_logic)
         tm = self._transport_matching
 
         # Spawn point + the minimal extra starting kit that bootstraps it.
@@ -299,9 +306,13 @@ class DreadWorld(World):
                                     door_lock_rando=door_on)
             if chosen is not None:
                 _key, self._start_comp, self._start_patcher = chosen
-                self._start_extra_items = minimal_start_items(
-                    graph, self._start_comp, base_items, tl, transport_matching=tm,
-                    door_lock_rando=door_on)
+
+                if self.no_logic:
+                    self._start_extra_items = []
+                else:
+                    self._start_extra_items = minimal_start_items(
+                        graph, self._start_comp, base_items, tl, transport_matching=tm,
+                        door_lock_rando=door_on)
                 for n in self._start_extra_items:
                     base_items[n] = 1
 
@@ -322,7 +333,8 @@ class DreadWorld(World):
                 energy_per_tank=int(self.options.energy_per_tank.value),
                 ammo_amounts=ammo_amounts_from_options(self.options),
                 doors_to_change=set(self.options.doors_to_change.value),
-                change_doors_to=set(self.options.change_doors_to.value))
+                change_doors_to=set(self.options.change_doors_to.value),
+                no_logic=self.no_logic)
 
     def _compute_dropped_locations(self) -> set[str]:
         """AP-names of pickup locations that are unreachable even with a FULL
@@ -348,6 +360,8 @@ class DreadWorld(World):
         Returns the empty set under ``minimal`` (unreachable spots stay as
         tracked filler, the Randovania-faithful behavior) and whenever the config
         leaves nothing stranded (the default Beginner config)."""
+        if self.no_logic:
+            return set()
         acc = self.options.accessibility
         if acc.value == acc.option_minimal:
             return set()
@@ -418,51 +432,52 @@ class DreadWorld(World):
         # Power bombs: PB gates need >= MAX_BINDING_PB_CAP. The only PB capacity
         # sources are the launcher's starting_power_bombs and PB Tanks; if neither
         # can contribute, the gates are unreachable.
-        if (int(o.starting_power_bombs.value) < MAX_BINDING_PB_CAP
-                and (int(o.power_bomb_tank_count.value) == 0
-                     or int(o.power_bomb_tank_ammo.value) == 0)):
-            raise OptionError(
-                "Power Bomb capacity can never reach the in-logic requirement "
-                f"({MAX_BINDING_PB_CAP}): starting_power_bombs="
-                f"{int(o.starting_power_bombs.value)} and no PB Tank capacity "
-                "(power_bomb_tank_count or power_bomb_tank_ammo is 0). Raise "
-                "starting_power_bombs, or give Power Bomb Tanks a nonzero count "
-                "and ammo."
+        if not self.no_logic:
+            if (int(o.starting_power_bombs.value) < MAX_BINDING_PB_CAP
+                    and (int(o.power_bomb_tank_count.value) == 0
+                        or int(o.power_bomb_tank_ammo.value) == 0)):
+                raise OptionError(
+                    "Power Bomb capacity can never reach the in-logic requirement "
+                    f"({MAX_BINDING_PB_CAP}): starting_power_bombs="
+                    f"{int(o.starting_power_bombs.value)} and no PB Tank capacity "
+                    "(power_bomb_tank_count or power_bomb_tank_ammo is 0). Raise "
+                    "starting_power_bombs, or give Power Bomb Tanks a nonzero count "
+                    "and ammo."
+                )
+            # Missiles: missile gates need >= MAX_BINDING_MISSILE_CAP. Sources are
+            # starting_missiles + the precollected Missile Tank + findable tanks.
+            max_missiles = (
+                int(o.starting_missiles.value)
+                + (PRECOLLECTED_MISSILE_TANKS + int(o.missile_tank_count.value))
+                * int(o.missile_tank_ammo.value)
+                + int(o.missile_plus_tank_count.value)
+                * int(o.missile_plus_tank_ammo.value)
             )
-        # Missiles: missile gates need >= MAX_BINDING_MISSILE_CAP. Sources are
-        # starting_missiles + the precollected Missile Tank + findable tanks.
-        max_missiles = (
-            int(o.starting_missiles.value)
-            + (PRECOLLECTED_MISSILE_TANKS + int(o.missile_tank_count.value))
-            * int(o.missile_tank_ammo.value)
-            + int(o.missile_plus_tank_count.value)
-            * int(o.missile_plus_tank_ammo.value)
-        )
-        if max_missiles < MAX_BINDING_MISSILE_CAP:
-            raise OptionError(
-                "Missile capacity can never reach the in-logic requirement "
-                f"({MAX_BINDING_MISSILE_CAP}): the most missiles obtainable is "
-                f"{max_missiles} (starting_missiles + all tanks at their ammo "
-                "values). Raise starting_missiles or missile_tank_ammo / "
-                "missile_plus_tank_ammo."
-            )
-        # Zero starting missile capacity (starting_missiles=0 AND
-        # missile_tank_ammo=0, so the precollected Missile Tank also grants 0)
-        # forces ALL missile capacity through the 12 Missile+ Tanks — but the
-        # earliest missile gates then require a *found* Missile+ Tank that itself
-        # sits behind missile gates. That self-gate is unsolvable for fill at any
-        # accessibility (verified across seeds). This mirrors the known-
-        # unsupported energy_tank_count=0 extreme (CLAUDE.md v0.3). Any nonzero
-        # starting_missiles OR missile_tank_ammo bootstraps the early sphere and
-        # is fine.
-        if (int(o.starting_missiles.value) == 0
-                and int(o.missile_tank_ammo.value) == 0):
-            raise OptionError(
-                "starting_missiles=0 with missile_tank_ammo=0 leaves no early "
-                "missile capacity (the abundant Missile Tank pool grants 0), so "
-                "the missile-gated start sphere can't bootstrap. Give "
-                "starting_missiles or missile_tank_ammo a nonzero value."
-            )
+            if max_missiles < MAX_BINDING_MISSILE_CAP:
+                raise OptionError(
+                    "Missile capacity can never reach the in-logic requirement "
+                    f"({MAX_BINDING_MISSILE_CAP}): the most missiles obtainable is "
+                    f"{max_missiles} (starting_missiles + all tanks at their ammo "
+                    "values). Raise starting_missiles or missile_tank_ammo / "
+                    "missile_plus_tank_ammo."
+                )
+            # Zero starting missile capacity (starting_missiles=0 AND
+            # missile_tank_ammo=0, so the precollected Missile Tank also grants 0)
+            # forces ALL missile capacity through the 12 Missile+ Tanks — but the
+            # earliest missile gates then require a *found* Missile+ Tank that itself
+            # sits behind missile gates. That self-gate is unsolvable for fill at any
+            # accessibility (verified across seeds). This mirrors the known-
+            # unsupported energy_tank_count=0 extreme (CLAUDE.md v0.3). Any nonzero
+            # starting_missiles OR missile_tank_ammo bootstraps the early sphere and
+            # is fine.
+            if (int(o.starting_missiles.value) == 0
+                    and int(o.missile_tank_ammo.value) == 0):
+                raise OptionError(
+                    "starting_missiles=0 with missile_tank_ammo=0 leaves no early "
+                    "missile capacity (the abundant Missile Tank pool grants 0), so "
+                    "the missile-gated start sphere can't bootstrap. Give "
+                    "starting_missiles or missile_tank_ammo a nonzero value."
+                )
 
         # Option-driven counts override items.json pool_count for tanks.
         # Flash Shift / Speed Booster Upgrade default to 0 (Randovania doesn't
@@ -1246,6 +1261,8 @@ class DreadWorld(World):
             "enable_room_name_display": o.room_name_display.current_key.upper(),
             "raven_beak_damage_table_handling": o.raven_beak_damage_table.current_key,
             "nerf_power_bombs": bool(o.nerf_power_bombs.value),
+            "remove_tutorial_popups": bool(o.remove_tutorial_popups.value),
+            "remove_burenia_bots_vignette": bool(o.remove_burenia_bots_vignette.value),
             # Release the X from Elun at game start. Logic-safe to toggle (the
             # compiled rules assume the release must be triggered, so ON only
             # relaxes X-gated encounters). Routed to game_patches.default_x_released.
@@ -1260,6 +1277,8 @@ class DreadWorld(World):
             "seed_id": seed_id,
             "starting_area": int(o.starting_area.value),
             "include_boss_pickups": bool(o.include_boss_pickups.value),
+            # ADD: selects the vendored patcher in patcher_pipeline.patch()
+            "no_logic": self.no_logic,
             # Client-only: drives whether DreadContext enables the DeathLink tag
             # and the death-detection poll. Not consumed by the patcher.
             "death_link": bool(o.death_link.value),

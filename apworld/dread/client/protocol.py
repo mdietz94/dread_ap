@@ -106,6 +106,22 @@ PATCHER_ITEM_ID_TO_CLASS: dict[str, str] = {
 }
 
 
+# Classes the plando patcher (no_logic) does NOT define in-game. Calling
+# <cls>.OnPickedUp on these is a nil call, which stalls delivery.
+PLANDO_UNDEFINED_CLASSES = frozenset({
+    "RandomizerPowerBeam", "RandomizerWideBeam", "RandomizerPlasmaBeam",
+    "RandomizerWaveBeam", "RandomizerMissileLauncher",
+    "RandomizerSuperMissile", "RandomizerIceMissile",
+})
+
+
+def plando_safe_class(cls: str, no_logic: bool) -> str:
+    """Fall back to the base class for classes the plando patcher omits."""
+    if no_logic and cls in PLANDO_UNDEFINED_CLASSES:
+        return "RandomizerPowerup"
+    return cls
+
+
 def pickup_class_for(patcher_item_id: str) -> str:
     """Return the Lua pickup class that should run OnPickedUp for this item."""
     return PATCHER_ITEM_ID_TO_CLASS.get(patcher_item_id, "RandomizerPowerup")

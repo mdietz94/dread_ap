@@ -115,7 +115,8 @@ _ALL_ITEMS = (
 
 def roll_connected_matching(graph: dict, rng, tl: dict,
                             mode: str = "randomized", attempts: int = 50,
-                            door_lock_rando: bool = False):
+                            door_lock_rando: bool = False,
+                            no_logic: bool = False):
     """Roll a matching that strands no pickup reachable under vanilla transports
     (full loadout, given trick levels), retrying up to ``attempts`` times; falls
     back to vanilla if none found. ``door_lock_rando`` selects the faithful
@@ -124,6 +125,8 @@ def roll_connected_matching(graph: dict, rng, tl: dict,
     like with like)."""
     if mode in ("off", "vanilla", None):
         return {}
+    if no_logic:
+        return roll_matching(graph, rng, mode)
     for _ in range(attempts):
         m = roll_matching(graph, rng, mode)
         if _no_reachability_regression(graph, m, tl, is_door_rando=door_lock_rando):
