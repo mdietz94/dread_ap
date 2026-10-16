@@ -333,6 +333,8 @@ class DreadContext(CommonContext):
         self._seen_key_prefix: Optional[str] = None
         self._last_fresh_room: Optional[tuple[str, str]] = None
         self._ride_gap = False
+        # Every ride pair published so far, so a reconnect can re-send it.
+        self._published_rides: set[str] = set()
 
         # Nav Station hint registration. Built from slot_data on connect:
         # (scenario, camera) -> [(location_owner_slot, location_id), ...] for the
@@ -634,11 +636,7 @@ class DreadContext(CommonContext):
             # THIS one, so drop the in-memory set; this seed's own DataStorage key
             # (below) restores the correct set for it.
             self._visited_saves.clear()
-            self._visited_rooms.clear()
-            self._last_room = None
-            self._last_fresh_room = None
-            self._ride_gap = False
-            self._seen_cells.clear()
+            self._reset_room_publish()
             self._synced_seed = new_seed
         else:
             # Same multiworld, fresh socket: re-assert everything we believe is
@@ -663,10 +661,18 @@ class DreadContext(CommonContext):
             self._warp_visited_key = (
                 f"dread_warp_visited_{new_seed}_{self.team}_{self.slot}")
             self.set_notify(self._warp_visited_key)
-            self._rooms_key = f"dread_visited_rooms_{self.team}_{self.slot}"
+            rooms_key = f"dread_visited_rooms_{self.team}_{self.slot}"
+            if self._rooms_key not in (None, rooms_key):
+                # Same seed, different slot: what we observed belongs to the
+                # other slot's keys, don't replay it into this one's.
+                self._reset_room_publish()
+            self._rooms_key = rooms_key
             self._current_room_key = f"dread_current_room_{self.team}_{self.slot}"
             self._rides_key = f"dread_rides_{self.team}_{self.slot}"
             self._seen_key_prefix = f"dread_seen_{self.team}_{self.slot}_"
+            # Rooms / rides / cells seen while the AP socket was down were
+            # dropped by send_msgs; replay the whole local view (idempotent).
+            await self._resync_room_publish()
         # New connection ⇒ re-baseline death detection on the next poll so a
         # historical death count from a prior session isn't reported now.
         self._last_death_count = None
@@ -1319,6 +1325,15 @@ class DreadContext(CommonContext):
 
     SEEN_CELL = 250   # world units per grid cell of the dread_seen_* keys
 
+    def _reset_room_publish(self) -> None:
+        """Forget the tracker-publishing view (a different seed or slot)."""
+        self._visited_rooms.clear()
+        self._seen_cells.clear()
+        self._published_rides.clear()
+        self._last_room = None
+        self._last_fresh_room = None
+        self._ride_gap = False
+
     async def _publish_room(self, scenario: str, camera: str, live: str,
                             pos: Optional[tuple[int, int]] = None) -> None:
         """Mirror where the player is into DataStorage for external trackers
@@ -1338,51 +1353,91 @@ class DreadContext(CommonContext):
         * ``dread_seen_<team>_<slot>_<scenario>``: dict ``{"cam:cx:cy": 1}`` of
           the 250-unit cells Samus has stood in, per room.
 
-        Best-effort, like ``_persist_visited``."""
+        Everything published is also kept in memory, and ``_resync_room_publish``
+        re-sends it all on every (re)connect: ``send_msgs`` silently drops a
+        message while the AP socket is down, so a room seen during an AP outage
+        would otherwise never reach the tracker. Best-effort, like
+        ``_persist_visited``."""
         if not self._rooms_key or not live:
             return
         fresh = bool(camera) and scenario == live
         msgs = []
         if fresh and (scenario, camera) not in self._visited_rooms:
             self._visited_rooms.add((scenario, camera))
-            msgs.append({"cmd": "Set", "key": self._rooms_key, "default": {},
-                         "want_reply": False,
-                         "operations": [{"operation": "update",
-                                         "value": {f"{scenario}:{camera}": 1}}]})
+            msgs.append(self._storage_update(
+                self._rooms_key, {f"{scenario}:{camera}": 1}))
         if fresh:
             here = (scenario, camera)
             prev = self._last_fresh_room
-            if prev is not None and prev != here and (
-                    prev[0] != scenario or self._ride_gap):
-                msgs.append({"cmd": "Set", "key": self._rides_key, "default": {},
-                             "want_reply": False,
-                             "operations": [{"operation": "update", "value": {
-                                 f"{prev[0]}:{prev[1]}>{scenario}:{camera}": 1}}]})
-            self._last_fresh_room = here
-            self._ride_gap = False
+            # A poll can still see the room the player LEFT after the load (the
+            # pair is stale until the arrival subarea fires; same scenario for a
+            # same-region shuttle, so it reads as fresh). Only a real room change
+            # consumes the load gap, or that stale poll would swallow the ride.
+            if prev != here:
+                if prev is not None and (prev[0] != scenario or self._ride_gap):
+                    ride = f"{prev[0]}:{prev[1]}>{scenario}:{camera}"
+                    self._published_rides.add(ride)
+                    msgs.append(self._storage_update(self._rides_key, {ride: 1}))
+                self._last_fresh_room = here
+                self._ride_gap = False
             if pos is not None and self._seen_key_prefix:
                 cell = (scenario, camera, pos[0] // self.SEEN_CELL,
                         pos[1] // self.SEEN_CELL)
                 if cell not in self._seen_cells:
                     self._seen_cells.add(cell)
-                    msgs.append({"cmd": "Set",
-                                 "key": self._seen_key_prefix + scenario,
-                                 "default": {}, "want_reply": False,
-                                 "operations": [{"operation": "update", "value": {
-                                     f"{camera}:{cell[2]}:{cell[3]}": 1}}]})
+                    msgs.append(self._storage_update(
+                        self._seen_key_prefix + scenario,
+                        {f"{camera}:{cell[2]}:{cell[3]}": 1}))
         current = (live, camera if fresh else "")
         if current != self._last_room:
             self._last_room = current
-            msgs.append({"cmd": "Set", "key": self._current_room_key, "default": "",
-                         "want_reply": False,
-                         "operations": [{"operation": "replace",
-                                         "value": f"{current[0]}:{current[1]}"}]})
+            msgs.append(self._current_room_msg())
+        await self._send_room_msgs(msgs)
+
+    @staticmethod
+    def _storage_update(key: str, value: dict) -> dict:
+        return {"cmd": "Set", "key": key, "default": {}, "want_reply": False,
+                "operations": [{"operation": "update", "value": value}]}
+
+    def _current_room_msg(self) -> dict:
+        live, camera = self._last_room or ("", "")
+        return {"cmd": "Set", "key": self._current_room_key, "default": "",
+                "want_reply": False,
+                "operations": [{"operation": "replace",
+                                "value": f"{live}:{camera}"}]}
+
+    async def _send_room_msgs(self, msgs: list) -> None:
         if not msgs:
             return
         try:
             await self.send_msgs(msgs)
         except Exception as exc:  # noqa: BLE001 — never let publishing break the poll
             log.debug("room publish failed: %s", exc)
+
+    async def _resync_room_publish(self) -> None:
+        """Re-send every room / ride / seen cell / current room known locally
+        (see ``_publish_room``). All ``update`` merges, so re-sending what the
+        server already has is a no-op; this only fills in what was observed
+        while the AP socket was down."""
+        if not self._rooms_key:
+            return
+        msgs = []
+        if self._visited_rooms:
+            msgs.append(self._storage_update(
+                self._rooms_key,
+                {f"{s}:{c}": 1 for s, c in sorted(self._visited_rooms)}))
+        if self._published_rides and self._rides_key:
+            msgs.append(self._storage_update(
+                self._rides_key, {r: 1 for r in sorted(self._published_rides)}))
+        if self._seen_cells and self._seen_key_prefix:
+            by_scenario: dict[str, dict[str, int]] = {}
+            for s, c, cx, cy in sorted(self._seen_cells):
+                by_scenario.setdefault(s, {})[f"{c}:{cx}:{cy}"] = 1
+            for s, cells in by_scenario.items():
+                msgs.append(self._storage_update(self._seen_key_prefix + s, cells))
+        if self._last_room is not None:
+            msgs.append(self._current_room_msg())
+        await self._send_room_msgs(msgs)
 
     async def _persist_visited(self) -> None:
         """Write the visited-warp set to AP DataStorage (full ``replace``). Safe
