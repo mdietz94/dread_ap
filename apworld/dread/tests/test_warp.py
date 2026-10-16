@@ -763,6 +763,70 @@ async def test_publish_seen_cells(ctx):
     assert seen == [("dread_seen_0_1_s040_aqua", "collision_camera_001:4:-2")]
 
 
+
+@pytest.mark.asyncio
+async def test_publish_ride_within_region_survives_stale_poll(ctx):
+    # After a same-region shuttle the first in-game poll can still report the
+    # room LEFT (stale pair, same scenario => reads as fresh). That poll must
+    # not consume the load gap, or the arrival never pairs into a ride.
+    _room_keys(ctx)
+    ctx._rides_key = "dread_rides_0_1"
+    sent = _capture_msgs(ctx)
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_002", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    ctx._ride_gap = True          # a poll saw the loading screen
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_002", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    assert _rides(sent) == []
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_030", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    assert _rides(sent) == ["s040_aqua:collision_camera_002>s040_aqua:collision_camera_030"]
+    # The gap is consumed by that ride: plain walking afterwards is no ride.
+    _three_field_bridge(ctx, "s040_aqua", "collision_camera_031", "s040_aqua")
+    await ctx._record_room_visit(1.0)
+    assert len(_rides(sent)) == 1
+
+
+@pytest.mark.asyncio
+async def test_resync_room_publish_replays_everything(ctx):
+    # Publishing while the AP socket is down is silently dropped by send_msgs;
+    # the reconnect resync re-sends the whole local view as idempotent updates.
+    _room_keys(ctx)
+    ctx._rides_key = "dread_rides_0_1"
+    ctx._seen_key_prefix = "dread_seen_0_1_"
+    _capture_msgs(ctx)            # "offline": these sends go nowhere
+    for payload in ("s010_cave,collision_camera_034,s010_cave,10,10",
+                    "s030_baselab,collision_camera_019,s030_baselab,300,-10"):
+        bridge = unittest.mock.MagicMock()
+        bridge.is_connected.return_value = True
+        bridge.run_lua = unittest.mock.AsyncMock(
+            return_value=Response(success=True, payload=payload.encode()))
+        ctx._bridge = bridge
+        await ctx._record_room_visit(1.0)
+
+    sent = _capture_msgs(ctx)
+    await ctx._resync_room_publish()
+    by_key = {m["key"]: m["operations"][0] for m in sent}
+    assert by_key["dread_visited_rooms_0_1"] == {"operation": "update", "value": {
+        "s010_cave:collision_camera_034": 1,
+        "s030_baselab:collision_camera_019": 1}}
+    assert by_key["dread_rides_0_1"]["value"] == {
+        "s010_cave:collision_camera_034>s030_baselab:collision_camera_019": 1}
+    assert by_key["dread_seen_0_1_s010_cave"]["value"] == {"collision_camera_034:0:0": 1}
+    assert by_key["dread_seen_0_1_s030_baselab"]["value"] == {
+        "collision_camera_019:1:-1": 1}
+    assert by_key["dread_current_room_0_1"] == {
+        "operation": "replace", "value": "s030_baselab:collision_camera_019"}
+
+
+@pytest.mark.asyncio
+async def test_resync_room_publish_noop_without_state(ctx):
+    _room_keys(ctx)
+    sent = _capture_msgs(ctx)
+    await ctx._resync_room_publish()
+    assert sent == []
+
+
 def test_subarea_read_includes_guarded_position():
     from dread.client.protocol import build_read_current_subarea_lua
     lua = build_read_current_subarea_lua()

@@ -340,3 +340,53 @@ async def test_nav_hint_skips_own_location_not_in_slot(ctx, monkeypatch):
     await ctx._register_nav_hints(NAV_HINT_STATIONS[0])
     assert sent == [{"cmd": "LocationScouts", "locations": [held],
                      "create_as_hint": 2}]
+
+
+def _room_sets(ctx) -> list:
+    return [m for call in ctx.send_msgs.await_args_list for m in call.args[0]
+            if m.get("cmd") == "Set" and m["key"].startswith("dread_")
+            and not m["key"].startswith("dread_warp_visited_")]
+
+
+@pytest.mark.asyncio
+async def test_same_seed_reconnect_replays_tracker_rooms(ctx, monkeypatch):
+    """Rooms seen while the AP socket was down never reached DataStorage
+    (send_msgs drops them); a same-seed reconnect replays the local view."""
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    await ctx._publish_room("s010_cave", "collision_camera_012", "s010_cave")
+
+    ctx.send_msgs.reset_mock()
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    by_key = {m["key"]: m["operations"][0]["value"] for m in _room_sets(ctx)}
+    assert by_key[f"dread_visited_rooms_{ctx.team}_{ctx.slot}"] == {
+        "s010_cave:collision_camera_012": 1}
+    assert by_key[f"dread_current_room_{ctx.team}_{ctx.slot}"] == (
+        "s010_cave:collision_camera_012")
+
+
+@pytest.mark.asyncio
+async def test_seed_change_does_not_replay_tracker_rooms(ctx, monkeypatch):
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    await ctx._publish_room("s010_cave", "collision_camera_012", "s010_cave")
+
+    ctx.send_msgs.reset_mock()
+    await ctx._on_connected({"seed_name": "AP-bbbb", "slot_data": {}})
+    assert _room_sets(ctx) == []
+    assert ctx._visited_rooms == set()
+
+
+@pytest.mark.asyncio
+async def test_slot_change_does_not_replay_tracker_rooms(ctx, monkeypatch):
+    """Same seed, different slot: the observed rooms belong to the other
+    slot's keys and must not be replayed into this one's."""
+    _quiet_connect_deps(ctx, monkeypatch)
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    await ctx._publish_room("s010_cave", "collision_camera_012", "s010_cave")
+
+    ctx.send_msgs.reset_mock()
+    ctx.slot = (ctx.slot or 0) + 1
+    await ctx._on_connected({"seed_name": "AP-aaaa", "slot_data": {}})
+    assert _room_sets(ctx) == []
+    assert ctx._rooms_key == f"dread_visited_rooms_{ctx.team}_{ctx.slot}"
