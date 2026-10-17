@@ -15,6 +15,10 @@ brand-new machine. For the architectural backgrounder, see
 
 ## What you need before starting
 
+For experimental Eden support, see [Eden setup and test report](eden.md),
+including its Android startup-memory limitation. The walkthrough below covers
+the existing Switch/Ryujinx targets.
+
 1. A modded Switch on Atmosphere CFW, OR Ryujinx installed on the PC.
 2. A copy of Metroid Dread 2.1.0. Real cartridge or a clean digital dump.
 3. An extracted vanilla Dread 2.1.0 romfs on the PC. If you haven't

@@ -1176,6 +1176,7 @@ def patch(
     exefs_overlay: Optional[dict[str, Path]] = None,
     mod_compatibility: Optional[str] = None,
     bridge_host: Optional[str] = None,
+    eden_compatibility: bool = False,
 ) -> PatchResult:
     """End-to-end /patch implementation. Pure-ish (writes to disk, runs
     a subprocess) — returns a PatchResult that the caller surfaces as
@@ -1229,7 +1230,21 @@ def patch(
 
     The Switch→PC collected-checks wiring lives in the client-sent
     Randovania bootstrap, so no post-patch init.lc edit is needed.
+
+    ``eden_compatibility`` is opt-in and requires the Ryujinx output layout.
+    It adapts only the final NPDM, leaving shared sysmodule inputs unchanged.
     """
+    eden_npdm = None
+    if eden_compatibility:
+        from ._setup.eden import compatible_npdm
+        if (mod_compatibility != "ryujinx" or not exefs_overlay
+                or "main.npdm" not in exefs_overlay):
+            return PatchResult(
+                ok=False, message="Eden requires Ryujinx layout and a sysmodule NPDM overlay")
+        try:
+            eden_npdm = compatible_npdm(exefs_overlay["main.npdm"].read_bytes())
+        except (OSError, ValueError) as exc:
+            return PatchResult(ok=False, message=f"Eden metadata compatibility failed: {exc}")
     dep_err = check_dependencies(python_executable)
     if dep_err:
         return PatchResult(ok=False, message=dep_err)
@@ -1366,7 +1381,10 @@ def patch(
         if exefs_overlay:
             exefs_dir.mkdir(parents=True, exist_ok=True)
             for name, src in exefs_overlay.items():
-                shutil.copy2(src, exefs_dir / name)
+                if name == "main.npdm" and eden_npdm is not None:
+                    (exefs_dir / name).write_bytes(eden_npdm)
+                else:
+                    shutil.copy2(src, exefs_dir / name)
             notes.append(
                 "re-asserted patched sysmodule ("
                 + ", ".join(sorted(exefs_overlay)) + f") into {exefs_dir}"

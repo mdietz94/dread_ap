@@ -920,6 +920,9 @@ class DreadContext(CommonContext):
             root = state.get("ryujinx_root") or ""
             return (Path(root) / "mods" / "contents" / DREAD_TITLE_ID
                     / RYU_MOD_NAME) if root else None
+        if target == "eden":
+            root = state.get("eden_root") or ""
+            return (Path(root) / "load" / DREAD_TITLE_ID / RYU_MOD_NAME) if root else None
         if target == "sd":
             root = state.get("sd_root") or ""
             return (Path(root) / "atmosphere" / "contents"
@@ -1002,7 +1005,7 @@ class DreadContext(CommonContext):
         # and our "custom" flat layout) writes into contents/<tid>/ with IPS
         # in the global exefs_patches tree. Pick the matching compatibility so
         # the seed doesn't land where the console can't read it.
-        mod_compat = "ryujinx" if state.get("deploy_target") == "ryujinx" else "atmosphere"
+        mod_compat = "ryujinx" if state.get("deploy_target") in ("ryujinx", "eden") else "atmosphere"
         # The bridge-IP override the user set on the Deploy page (empty ⇒
         # auto-detect via detect_lan_ip in patch()). Threaded through so the
         # re-asserted rom:/ap_config.json targets the same LAN the Deploy step
@@ -1017,6 +1020,7 @@ class DreadContext(CommonContext):
             self._run_patch(
                 str(deploy_dir), str(romfs_path),
                 mod_compatibility=mod_compat, bridge_host=bridge_host,
+                eden_compatibility=state.get("deploy_target") == "eden",
             )
         )
 
@@ -1050,6 +1054,7 @@ class DreadContext(CommonContext):
         *,
         mod_compatibility: Optional[str] = None,
         bridge_host: Optional[str] = None,
+        eden_compatibility: bool = False,
     ) -> None:
         from ..patcher_pipeline import patch
         from .._setup.build import resolve_build_outputs
@@ -1104,6 +1109,7 @@ class DreadContext(CommonContext):
                 exefs_overlay=exefs_overlay,
                 mod_compatibility=mod_compatibility,
                 bridge_host=bridge_host,
+                eden_compatibility=eden_compatibility,
             )
 
         try:

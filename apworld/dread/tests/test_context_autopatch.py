@@ -70,7 +70,7 @@ async def test_auto_patch_schedules_run_patch_with_ryujinx_paths(
     captured: dict = {}
 
     async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None,
-                             bridge_host=None):
+                             bridge_host=None, eden_compatibility=False):
         captured["deploy_dir"] = deploy_dir
         captured["romfs"] = romfs
         captured["mod_compatibility"] = mod_compatibility
@@ -91,6 +91,31 @@ async def test_auto_patch_schedules_run_patch_with_ryujinx_paths(
     assert captured["mod_compatibility"] == "ryujinx"
     # No bridge-IP override in state ⇒ None (patch() auto-detects via LAN IP).
     assert captured["bridge_host"] is None
+
+
+@pytest.mark.asyncio
+async def test_eden_autopatch_uses_load_layout_and_explicit_compatibility(ctx, tmp_path, monkeypatch):
+    state_file = tmp_path / "setup_state.json"
+    romfs = tmp_path / "romfs"
+    romfs.mkdir()
+    root = tmp_path / "eden"
+    _write_state(state_file, {"deploy_target": "eden", "eden_root": str(root),
+                             "romfs_path": str(romfs), "bridge_host": "192.168.7.42"})
+    monkeypatch.setattr("dread.client.context.setup_state_path", lambda: state_file)
+    ctx.slot_data = {"placements": {"foo": "bar"}}
+    calls = []
+
+    async def run_patch(*args, **kwargs):
+        calls.append((args, kwargs))
+    ctx._run_patch = run_patch
+    await ctx._maybe_auto_patch()
+    await asyncio.sleep(0)
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert Path(args[0]) == root / "load/010093801237c000/DreadRandovania"
+    assert Path(args[1]) == romfs
+    assert kwargs == {"mod_compatibility": "ryujinx", "bridge_host": "192.168.7.42",
+                      "eden_compatibility": True}
 
 
 @pytest.mark.asyncio
@@ -122,7 +147,7 @@ async def test_auto_patch_schedules_run_patch_with_sd_paths(
     captured: dict = {}
 
     async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None,
-                             bridge_host=None):
+                             bridge_host=None, eden_compatibility=False):
         captured["deploy_dir"] = deploy_dir
         captured["romfs"] = romfs
         captured["mod_compatibility"] = mod_compatibility
@@ -166,7 +191,7 @@ async def test_auto_patch_sd_not_mounted_skips_and_logs(
     ran = {"called": False}
 
     async def fake_run_patch(deploy_dir, romfs, *, mod_compatibility=None,
-                             bridge_host=None):
+                             bridge_host=None, eden_compatibility=False):
         ran["called"] = True
 
     ctx._run_patch = fake_run_patch  # type: ignore[assignment]
