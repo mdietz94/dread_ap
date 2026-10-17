@@ -1,6 +1,6 @@
 """Copy build outputs to the user's chosen deploy target.
 
-Two targets exist:
+Existing Switch/Ryujinx targets:
 
   - **Real Switch (SD card)**: files land at
     `<drive>:/atmosphere/contents/010093801237c000/{exefs,romfs}/`
@@ -139,6 +139,37 @@ def _ryujinx_layout(ryujinx_root: Path) -> dict[str, Path]:
         "main.npdm": mods / "exefs" / "main.npdm",
         "ap_config.json": sd / "romfs" / "ap_config.json",
     }
+
+
+def deploy_to_eden(
+    eden_root: Path,
+    build_outputs: dict[str, Path],
+    bridge_host: str | None = None,
+) -> DeployResult:
+    """Deploy to an explicitly selected Eden data directory (also portable).
+
+    Eden reads Ryujinx-style mod contents from load/<title>/DreadRandovania.
+    Only the destination NPDM is adapted; shared build outputs stay untouched.
+    """
+    from .eden import compatible_npdm
+
+    base = eden_root / "load" / DREAD_TITLE_ID / RYU_MOD_NAME
+    try:
+        # Validate before copying anything, including on a repeat deployment.
+        metadata = compatible_npdm(build_outputs["main.npdm"].read_bytes())
+        copied = _copy_files(
+            {"subsdk9": build_outputs["subsdk9"]},
+            {"subsdk9": base / "exefs" / "subsdk9"},
+        )
+        npdm = base / "exefs" / "main.npdm"
+        npdm.write_bytes(metadata)
+        copied.append((build_outputs["main.npdm"], npdm))
+        config = base / "romfs" / "ap_config.json"
+        _write_ap_config(config, _resolve_bridge_host(bridge_host))
+        copied.append((config, config))
+        return DeployResult(ok=True, target=f"Eden at {eden_root}", files=copied)
+    except (OSError, ValueError, KeyError) as exc:
+        return DeployResult(ok=False, target=f"Eden at {eden_root}", files=[], error=str(exc))
 
 
 class DeployCopyError(OSError):

@@ -78,6 +78,7 @@ from .build import (
 from .deploy import (
     DeployResult,
     deploy_to_custom_folder,
+    deploy_to_eden,
     deploy_to_ryujinx,
     deploy_to_sd,
     detect_ryujinx_path,
@@ -357,6 +358,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
         "ryujinx_root": str(detect_ryujinx_path() or saved_state.get("ryujinx_root", "")),
         "sd_root": saved_state.get("sd_root", ""),
         "custom_root": saved_state.get("custom_root", ""),
+        "eden_root": saved_state.get("eden_root", ""),
         # The PC LAN IP the Switch sweeps/dials, written to rom:/ap_config.json
         # at deploy time. A saved override (last run) wins; otherwise pre-fill
         # the auto-detected LAN IP so the field is never blank. Editable on the
@@ -982,7 +984,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
             "Where should we copy the compiled subsdk9 + main.npdm?"
         ))
 
-        # Three radio rows in a 4-column GridLayout so checkbox / label /
+        # Deploy choices in a 4-column GridLayout so checkbox / label /
         # input / browse-button align vertically across rows.
         sd_candidates = detect_sd_candidates()
         sd_default = str(sd_candidates[0]) if sd_candidates else ""
@@ -1013,6 +1015,25 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                                size_hint_x=None, width=_LBL_W))
         grid.add_widget(ryu_input)
         grid.add_widget(Widget(size_hint_x=None, width=_BROWSE_W))
+
+        # Explicit data-root picker supports portable and non-default installs.
+        eden_cb = CheckBox(group="target",
+                          active=(wizard_state["deploy_target"] == "eden"),
+                          size_hint_x=None, width=_CB_W)
+        eden_input = TextInput(text=wizard_state.get("eden_root", ""), multiline=False)
+        eden_browse = Button(text="Browse...", size_hint_x=None, width=_BROWSE_W)
+        grid.add_widget(eden_cb)
+        grid.add_widget(_label("Eden (experimental):", size_hint_x=None, width=_LBL_W))
+        grid.add_widget(eden_input)
+        grid.add_widget(eden_browse)
+
+        def open_eden_picker(_i):
+            chosen = _ask_directory("Select Eden data folder (File > Open Eden Folder)",
+                                    eden_input.text or None)
+            if chosen:
+                eden_input.text = chosen
+                eden_cb.active = True
+        eden_browse.bind(on_release=open_eden_picker)
 
         # SD row
         sd_cb = CheckBox(group="target",
@@ -1154,6 +1175,15 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 result = deploy_to_ryujinx(target, outputs, bridge_host=bridge_arg)
                 wizard_state["deploy_target"] = "ryujinx"
                 wizard_state["ryujinx_root"] = str(target)
+            elif eden_cb.active:
+                raw_target = eden_input.text.strip()
+                if not raw_target or not Path(raw_target).is_dir():
+                    status.text = "Select your existing Eden data folder (File > Open Eden Folder)."
+                    return
+                target = Path(raw_target)
+                result = deploy_to_eden(target, outputs, bridge_host=bridge_arg)
+                wizard_state["deploy_target"] = "eden"
+                wizard_state["eden_root"] = str(target)
             elif sd_cb.active:
                 target = Path(sd_input.text.strip())
                 if not target.exists():
@@ -1179,7 +1209,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 wizard_state["deploy_target"] = "custom"
                 wizard_state["custom_root"] = str(target)
             else:
-                status.text = "Pick a deploy target (Ryujinx, SD card, or Custom folder)."
+                status.text = "Pick a deploy target (Ryujinx, Eden, SD card, or Custom folder)."
                 return
             wizard_log(
                 f"deploy result ok={result.ok} target={result.target!r} "
@@ -1196,6 +1226,7 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                 "ryujinx_root": wizard_state["ryujinx_root"],
                 "sd_root": wizard_state["sd_root"],
                 "custom_root": wizard_state["custom_root"],
+                "eden_root": wizard_state.get("eden_root", ""),
                 # Persist the override (blank = "auto-detect") so a re-run
                 # pre-fills the same choice instead of re-detecting.
                 "bridge_host": wizard_state["bridge_host"],
@@ -1238,6 +1269,12 @@ def run_setup_wizard(dreadap_path: str | None = None) -> bool:
                         "relaunch it. Ryujinx applies exefs mods at process "
                         "start, so the new subsdk9 only loads on a fresh "
                         "boot of the game.\n"
+                    )
+                elif target_kind == "eden":
+                    next_step = (
+                        "  - In Eden: enable DreadRandovania and restart Dread completely. "
+                        "See docs/eden.md for tested versions and the Android startup "
+                        "memory limitation; Android is not plug-and-play support.\n"
                     )
                 elif target_kind == "sd":
                     next_step = (
