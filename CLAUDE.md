@@ -1378,6 +1378,32 @@ replacement — so a null introduced BY the replacement goes straight into the
 game's `CFilePathStrId` ctor. Inert for us today: nothing in `open_dread_rando`
 generates `replacements.json`, so the function warns and returns an empty list.
 
+UPDATE (Elun quarantine shutter re-sealed after `/warp` — FIXED client-side):
+a user entered Elun, lacked Bomb to reach the X-release trigger, `/warp`ed out,
+and on return the big shutter (`ev_gatesealed_second`, Exterior Bridge <->
+Bridge Gate) stayed shut, sealing the region. Cause (open-dread-rando
+`files/levels/s060_quarantine.lc.lua`): that gate's ONLY outside opener is
+`OnCutscene113Ended` (end callback of the one-shot "quarantine arrival"
+cutscene, launched on cc012 -> cc011); the other opener is the X-release
+trigger BEHIND it. The open state doesn't survive a scenario reload, and the
+cutscene won't replay, so any exit before X release (impossible in vanilla,
+trivial with `/warp`) left Elun permanently sealed — and `/warp elun` only
+reaches the Save Station outside the gate. RDV logic has Exterior Bridge ->
+Purple Drapes free, so this was a logic-vs-game mismatch introduced by `/warp`.
+Fix: `client/lua/elun_gate.lua` (bootstrap extra) chain-wraps
+`Scenario.OnSubAreaChange` (which the level handler calls AFTER
+`LaunchCutscene_113`) and, on s060 cc012 -> cc011, calls the level's own
+`OnCutscene113Ended` (EVENTPROP:ForceOpen) once `cutsceneplayer_113`
+`HasCutsceneBeenPlayed()` — first arrival is left to the cutscene; an erroring
+played-check opens anyway; all pcall'd; installs once (`RL._ElunGateInstalled`).
+Redundant ForceOpen is safe (vanilla does it in
+`OnBeforeQuarantineDoorsOpenCutsceneStarts`). Client-only: no re-patch, takes
+effect for existing saves on the next walk out of the Elun save room. NOT yet
+hardware-verified. Tests: `tests/test_elun_gate.py` (runs the real Lua under
+`lupa` against a fake engine; skips without lupa), `test_bootstrap.py`
+presence pin. A durable romfs-side fix would belong in the patcher fork's
+s060 level script (out of this repo's push scope).
+
 ## Known unknowns / risks for new work
 
 1. **Cutscene-blocked item delivery — RESOLVED from source (was risk #1).**

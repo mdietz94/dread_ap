@@ -92,6 +92,19 @@ def test_warp_guard_defined_before_bootstrap_flag(real_rows):
     assert guard_idx < len(blocks) - 1  # before the trailing RL.Bootstrap=true
 
 
+def test_elun_gate_reopen_defined_before_bootstrap_flag(real_rows):
+    """Our non-vendored Elun quarantine-gate fix (lua/elun_gate.lua) ships in
+    the bootstrap before the done flag. Behavior: tests/test_elun_gate.py."""
+    items, locations = real_rows
+    blocks = bs.build_bootstrap_code(items, locations)
+    idx = next(i for i, b in enumerate(blocks) if "function RL.ReopenElunGate" in b)
+    assert idx < len(blocks) - 1
+    block = blocks[idx]
+    assert "RL._ElunGateInstalled" in block
+    assert '"s060_quarantine"' in block
+    assert "cutsceneplayer_113" in block
+
+
 def test_num_pickup_nodes_matches_data(real_rows):
     items, locations = real_rows
     pickups = [loc for loc in locations if loc.get("pickup_index") is not None]
