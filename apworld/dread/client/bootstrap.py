@@ -51,7 +51,11 @@ _LOCATIONS_TEMPLATE = "bootstrap_locations"
 #                 OnSubAreaChange wrap that feeds them, so /warp can refuse to fire
 #                 from inside a boss arena, a Navigation (Adam) room, or a Ghavoran
 #                 flipper-trap room (where only a checkpoint reload recovers).
-_EXTRAS = ("deathlink", "warp_guard")
+#   elun_gate   — re-opens Elun's quarantine shutter on the Save Station ->
+#                 Exterior Bridge transition once the one-shot arrival cutscene
+#                 (whose callback is the gate's only outside opener) has played,
+#                 so leaving Elun pre-X-release (via /warp) can't seal it.
+_EXTRAS = ("deathlink", "warp_guard", "elun_gate")
 _BOOTSTRAP_DONE = "RL.Bootstrap=true"
 
 _TEMPLATE_LEFTOVER = re.compile(r'TEMPLATE\("([^"]+)"\)|T__(\w+)__T')
